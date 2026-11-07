@@ -345,6 +345,118 @@ public final class MatrixGboardReflector {
         }
     }
 
+    public static ViewGroup findHeaderContainer(View view) {
+        if (view == null) return null;
+        View cur = view;
+        while (cur != null) {
+            String name = cur.getClass().getName();
+            if (name.contains("ConstraintHeaderView") || name.contains("HeaderView") || name.contains("header")) {
+                if (cur instanceof ViewGroup vg) return vg;
+            }
+            if (cur.getParent() instanceof View parentView) {
+                String parentName = parentView.getClass().getName();
+                if (parentName.contains("SoftKeyboardView") || parentName.contains("KeyboardViewHolder")
+                        || parentName.contains("InputView") || parentName.contains("MainKeyboardView")) {
+                    if (cur instanceof ViewGroup vg) return vg;
+                }
+                cur = parentView;
+            } else {
+                break;
+            }
+        }
+        return (view.getParent() instanceof ViewGroup vg) ? vg : null;
+    }
+
+    public static boolean isVoiceButton(View view) {
+        if (view == null) return false;
+        try {
+            CharSequence cd = view.getContentDescription();
+            if (cd != null) {
+                String s = cd.toString().toLowerCase();
+                if (s.contains("voice") || s.contains("sprache") || s.contains("mic")
+                        || s.contains("diktier") || s.contains("vocal") || s.contains("voix")
+                        || s.contains("голос") || s.contains("語音") || s.contains("语音") || s.contains("音声")) {
+                    return true;
+                }
+            }
+            int id = view.getId();
+            if (id != View.NO_ID && id != 0) {
+                try {
+                    String resName = view.getResources().getResourceEntryName(id).toLowerCase();
+                    if (resName.contains("voice") || resName.contains("mic")) {
+                        return true;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            Object tag = view.getTag();
+            if (tag instanceof String t && t.toLowerCase().contains("voice")) {
+                return true;
+            }
+            String className = view.getClass().getName().toLowerCase();
+            if ((className.contains("voice") || className.contains("mic")) && !className.contains("setting")) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    public static View findVoiceButton(View headerRoot) {
+        if (headerRoot == null) return null;
+        try {
+            // 1. Recursive search for voice button by characteristics
+            View match = findVoiceButtonRecursive(headerRoot);
+            if (match != null) {
+                // If match is a nested descendant inside a direct child of headerRoot,
+                // return the direct child so LayoutParams match headerRoot
+                View cur = match;
+                while (cur.getParent() instanceof View p && p != headerRoot) {
+                    cur = p;
+                }
+                return cur;
+            }
+
+            // 2. Structural search: In ConstraintHeaderViewImpl, find the rightmost clickable child
+            if (headerRoot instanceof ViewGroup vg) {
+                View rightmost = null;
+                int maxRight = -1;
+                for (int i = 0; i < vg.getChildCount(); i++) {
+                    View child = vg.getChildAt(i);
+                    if (child.getVisibility() == View.VISIBLE) {
+                        String name = child.getClass().getName();
+                        if (!name.contains("CandidatesHolder") && !name.contains("Matrix") && !name.contains("FixedCount")) {
+                            if (child.getRight() > maxRight) {
+                                maxRight = child.getRight();
+                                rightmost = child;
+                            }
+                        }
+                    }
+                }
+                if (rightmost != null && maxRight > 0) {
+                    return rightmost;
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "findVoiceButton error: " + t.getMessage());
+        }
+        return null;
+    }
+
+    private static View findVoiceButtonRecursive(View view) {
+        if (view == null) return null;
+        if (isVoiceButton(view)) return view;
+        if (view instanceof ViewGroup vg) {
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                View found = findVoiceButtonRecursive(vg.getChildAt(i));
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
     /**
      * Manages header views visibility cleanly without tampering with parent ConstraintLayout.
      * When showMatrixBar is true:

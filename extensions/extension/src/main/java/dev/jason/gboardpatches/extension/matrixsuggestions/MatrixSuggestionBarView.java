@@ -38,8 +38,14 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         void onHistoryWordReplaced(int historyIndex, String oldWord, String newWord);
     }
 
+    public interface OnHistoryWordClickCallback {
+        void onHistoryWordClicked(int historyIndex, String word);
+    }
+
     private final LinearLayout contentLayout;
     private final VerticalWordWheelView currentWheelView;
+    private final List<VerticalWordWheelView> historyWheels = new java.util.ArrayList<>();
+    private int selectedHistoryIndex = -1;
 
     public MatrixSuggestionBarView(Context context) {
         super(context);
@@ -73,7 +79,19 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                              OnCommitCallback onCommit,
                              OnActiveWordSwapCallback onActiveSwap,
                              OnHistoryWordReplaceCallback onHistoryReplace) {
+        updateMatrix(history, currentAlternatives, preferredSelected, onCommit, onActiveSwap, onHistoryReplace, null);
+    }
+
+    public void updateMatrix(List<MatrixSentenceBuffer.WordEntry> history,
+                             List<String> currentAlternatives,
+                             int preferredSelected,
+                             OnCommitCallback onCommit,
+                             OnActiveWordSwapCallback onActiveSwap,
+                             OnHistoryWordReplaceCallback onHistoryReplace,
+                             OnHistoryWordClickCallback onHistoryClick) {
         contentLayout.removeAllViews();
+        historyWheels.clear();
+        selectedHistoryIndex = -1;
 
         int divWidth = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
@@ -96,7 +114,15 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 historyWheel.setIsActiveWord(false);
                 historyWheel.setAlpha(1.0f);
 
-                // History wheels are interactive: flicking or tapping them swaps that word in the sentence!
+                // Tapping center row of history column marks/selects that word in text field
+                historyWheel.setOnCenterClickListener((idx, word) -> {
+                    selectHistoryWord(historyColIndex);
+                    if (onHistoryClick != null) {
+                        onHistoryClick.onHistoryWordClicked(historyColIndex, word);
+                    }
+                });
+
+                // Flicking or tapping top/bottom swaps that word's alternative
                 historyWheel.setOnWordActionListener((newIndex, newWord) -> {
                     String oldWord = entry.getSelectedWord();
                     entry.selectedIndex = newIndex;
@@ -106,6 +132,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                     }
                 });
 
+                historyWheels.add(historyWheel);
                 contentLayout.addView(historyWheel, new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -150,7 +177,16 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
 
     public void updateHistoryOnly(List<MatrixSentenceBuffer.WordEntry> history,
                                   OnHistoryWordReplaceCallback onHistoryReplace) {
+        updateHistoryOnly(history, onHistoryReplace, null);
+    }
+
+    public void updateHistoryOnly(List<MatrixSentenceBuffer.WordEntry> history,
+                                  OnHistoryWordReplaceCallback onHistoryReplace,
+                                  OnHistoryWordClickCallback onHistoryClick) {
         contentLayout.removeAllViews();
+        historyWheels.clear();
+        selectedHistoryIndex = -1;
+
         if (history == null || history.isEmpty()) {
             setVisibility(View.GONE);
             return;
@@ -175,6 +211,13 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
             historyWheel.setIsActiveWord(false);
             historyWheel.setAlpha(1.0f);
 
+            historyWheel.setOnCenterClickListener((idx, word) -> {
+                selectHistoryWord(historyColIndex);
+                if (onHistoryClick != null) {
+                    onHistoryClick.onHistoryWordClicked(historyColIndex, word);
+                }
+            });
+
             historyWheel.setOnWordActionListener((newIndex, newWord) -> {
                 String oldWord = entry.getSelectedWord();
                 entry.selectedIndex = newIndex;
@@ -184,6 +227,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 }
             });
 
+            historyWheels.add(historyWheel);
             contentLayout.addView(historyWheel, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -200,6 +244,31 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         setVisibility(View.VISIBLE);
         post(() -> fullScroll(View.FOCUS_RIGHT));
         postDelayed(() -> fullScroll(View.FOCUS_RIGHT), 30);
+    }
+
+    public void selectHistoryWord(int historyIndex) {
+        this.selectedHistoryIndex = historyIndex;
+        for (int i = 0; i < historyWheels.size(); i++) {
+            VerticalWordWheelView wheel = historyWheels.get(i);
+            wheel.setIsActiveWord(i == historyIndex);
+        }
+        if (currentWheelView != null) {
+            currentWheelView.setIsActiveWord(historyIndex < 0);
+        }
+    }
+
+    public void clearHistorySelection() {
+        this.selectedHistoryIndex = -1;
+        for (VerticalWordWheelView wheel : historyWheels) {
+            wheel.setIsActiveWord(false);
+        }
+        if (currentWheelView != null) {
+            currentWheelView.setIsActiveWord(true);
+        }
+    }
+
+    public int getSelectedHistoryIndex() {
+        return selectedHistoryIndex;
     }
 
     public void clearCurrent() {

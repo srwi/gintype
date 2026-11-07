@@ -5,6 +5,8 @@ import android.content.ContextWrapper;
 import android.inputmethodservice.InputMethodService;
 import android.util.Log;
 import android.view.View;
+import android.view.inputmethod.ExtractedText;
+import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
 
 import java.util.ArrayList;
@@ -258,6 +260,101 @@ public final class MatrixTextHelper {
             }
         } catch (Throwable t) {
             Log.e(TAG, "replaceActiveWordInTextField failed", t);
+        }
+    }
+
+    public static boolean isCursorAtEnd(View view) {
+        if (view == null) return true;
+        InputConnection ic = getInputConnection(view);
+        if (ic == null) return true;
+        try {
+            CharSequence sel = ic.getSelectedText(0);
+            if (sel != null && sel.length() > 0) {
+                return false;
+            }
+            CharSequence after = ic.getTextAfterCursor(1, 0);
+            return after == null || after.length() == 0;
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    public static boolean selectHistoryWordInTextField(View view, MatrixSentenceBuffer buffer, int historyColIndex, String word) {
+        if (view == null || buffer == null || word == null) return false;
+        try {
+            InputConnection ic = getInputConnection(view);
+            if (ic == null) return false;
+
+            CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
+            CharSequence csSel = ic.getSelectedText(0);
+            CharSequence csAfter = ic.getTextAfterCursor(2000, 0);
+
+            String before = csBefore != null ? csBefore.toString() : "";
+            String sel = csSel != null ? csSel.toString() : "";
+            String after = csAfter != null ? csAfter.toString() : "";
+
+            String text = before + sel + after;
+            if (text.isEmpty()) return false;
+
+            List<MatrixSentenceBuffer.WordEntry> entries = buffer.getEntries();
+            int[] pos = findHistoryWordPosition(text, entries, historyColIndex, word);
+
+            if (pos != null && pos[0] >= 0 && pos[1] <= text.length() && pos[0] < pos[1]) {
+                int docOffset = 0;
+                try {
+                    ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+                    if (et != null && et.selectionStart >= 0) {
+                        docOffset = et.selectionStart - before.length();
+                    }
+                } catch (Throwable ignored) {
+                }
+
+                int selStart = Math.max(0, docOffset + pos[0]);
+                int selEnd = Math.max(0, docOffset + pos[1]);
+
+                ic.setSelection(selStart, selEnd);
+                Log.i(TAG, "selectHistoryWordInTextField: selected '" + word + "' at [" + selStart + ", " + selEnd + "]");
+                return true;
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "selectHistoryWordInTextField failed", t);
+        }
+        return false;
+    }
+
+    public static void jumpToEndOfTextField(View view) {
+        if (view == null) return;
+        try {
+            InputConnection ic = getInputConnection(view);
+            if (ic == null) return;
+
+            ic.finishComposingText();
+
+            int textLength = -1;
+            try {
+                ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+                if (et != null && et.text != null) {
+                    textLength = et.text.length();
+                }
+            } catch (Throwable ignored) {
+            }
+
+            if (textLength < 0) {
+                CharSequence before = ic.getTextBeforeCursor(5000, 0);
+                CharSequence sel = ic.getSelectedText(0);
+                CharSequence after = ic.getTextAfterCursor(5000, 0);
+                int bLen = before != null ? before.length() : 0;
+                int sLen = sel != null ? sel.length() : 0;
+                int aLen = after != null ? after.length() : 0;
+                textLength = bLen + sLen + aLen;
+            }
+
+            if (textLength >= 0) {
+                ic.setSelection(textLength, textLength);
+                Log.i(TAG, "jumpToEndOfTextField: moved cursor to end offset " + textLength);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "jumpToEndOfTextField error", t);
         }
     }
 

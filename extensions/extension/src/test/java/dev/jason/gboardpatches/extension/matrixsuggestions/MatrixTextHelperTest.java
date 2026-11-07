@@ -100,4 +100,57 @@ public final class MatrixTextHelperTest {
         Assert.assertEquals(16, pos2[0]);
         Assert.assertEquals(23, pos2[1]);
     }
+
+    @Test
+    public void findHistoryWordPositionInRealSentence() {
+        String text = "Hallo wie geht es dir";
+        MatrixSentenceBuffer buffer = new MatrixSentenceBuffer();
+        buffer.addWord("Hallo", Collections.singletonList("Hallo"), 0);
+        buffer.addWord("wie", Collections.singletonList("wie"), 0);
+        buffer.addWord("geht", Collections.singletonList("geht"), 0);
+        buffer.addWord("es", Collections.singletonList("es"), 0);
+        buffer.addWord("dir", Collections.singletonList("dir"), 0);
+
+        List<MatrixSentenceBuffer.WordEntry> entries = buffer.getEntries();
+
+        // Check each word's exact position
+        int[] posHallo = MatrixTextHelper.findHistoryWordPosition(text, entries, 0, "Hallo");
+        Assert.assertNotNull(posHallo);
+        Assert.assertEquals("Hallo", text.substring(posHallo[0], posHallo[1]));
+
+        int[] posWie = MatrixTextHelper.findHistoryWordPosition(text, entries, 1, "wie");
+        Assert.assertNotNull(posWie);
+        Assert.assertEquals("wie", text.substring(posWie[0], posWie[1]));
+
+        int[] posGeht = MatrixTextHelper.findHistoryWordPosition(text, entries, 2, "geht");
+        Assert.assertNotNull(posGeht);
+        Assert.assertEquals("geht", text.substring(posGeht[0], posGeht[1]));
+
+        int[] posEs = MatrixTextHelper.findHistoryWordPosition(text, entries, 3, "es");
+        Assert.assertNotNull(posEs);
+        Assert.assertEquals("es", text.substring(posEs[0], posEs[1]));
+
+        int[] posDir = MatrixTextHelper.findHistoryWordPosition(text, entries, 4, "dir");
+        Assert.assertNotNull(posDir);
+        Assert.assertEquals("dir", text.substring(posDir[0], posDir[1]));
+    }
+
+    @Test
+    public void findLastWordBoundaryTests() {
+        String text = "Das ist ein Test und noch ein Test";
+        int[] pos = MatrixTextHelper.findLastWordBoundary(text, "Test");
+        Assert.assertNotNull(pos);
+        Assert.assertEquals(30, pos[0]);
+        Assert.assertEquals(34, pos[1]);
+        Assert.assertEquals("Test", text.substring(pos[0], pos[1]));
+
+        int[] posFirst = MatrixTextHelper.findLastWordBoundary(text, "Das");
+        Assert.assertNotNull(posFirst);
+        Assert.assertEquals(0, posFirst[0]);
+        Assert.assertEquals(3, posFirst[1]);
+
+        Assert.assertNull(MatrixTextHelper.findLastWordBoundary(text, "NichtVorhanden"));
+        Assert.assertNull(MatrixTextHelper.findLastWordBoundary(null, "Test"));
+        Assert.assertNull(MatrixTextHelper.findLastWordBoundary(text, null));
+    }
 }

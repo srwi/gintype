@@ -3,11 +3,14 @@ package dev.jason.gboardpatches.extension.matrixsuggestions;
 import android.content.Context;
 import android.os.SystemClock;
 import android.util.Log;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -67,6 +70,10 @@ public final class GboardMatrixSuggestionsRuntime {
     private static volatile long lastSelfReplaceTimestamp = 0;
     private static volatile String lastSelfReplacedWord = null;
 
+    private static View currentVoiceButton = null;
+    private static JumpToEndArrowView currentJumpToEndArrow = null;
+    private static Runnable pendingJumpRunnable = null;
+
     private GboardMatrixSuggestionsRuntime() {
     }
 
@@ -110,9 +117,14 @@ public final class GboardMatrixSuggestionsRuntime {
                     Log.i(TAG, "onCandidatesUpdated: Undo is active. Dismissing matrix bar and restoring native Undo UI.");
                     SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
+                    hideJumpToEndArrow();
                     barView.setVisibility(View.GONE);
                     MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     return;
+                }
+
+                if (barView.getSelectedHistoryIndex() < 0 && MatrixTextHelper.isCursorAtEnd(holderView)) {
+                    hideJumpToEndArrow();
                 }
 
                 String currentWord = MatrixTextHelper.getActiveWord(holderView, items);
@@ -123,19 +135,25 @@ public final class GboardMatrixSuggestionsRuntime {
                     activeOriginalSuggestions = null;
                     if (MatrixTextHelper.isSentenceEnded(holderView) || MatrixTextHelper.isInputEmpty(holderView)) {
                         SENTENCE_BUFFER.clear();
+                        hideJumpToEndArrow();
                         barView.setVisibility(View.GONE);
                         MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     } else {
                         MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
                         if (!SENTENCE_BUFFER.isEmpty()) {
-                            barView.updateHistoryOnly(SENTENCE_BUFFER.getEntries(), (histColIdx, oldWord, newWord) -> {
-                                MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                            });
+                            barView.updateHistoryOnly(
+                                    SENTENCE_BUFFER.getEntries(),
+                                    (histColIdx, oldWord, newWord) -> {
+                                        MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
+                                    },
+                                    createHistoryWordClickCallback(holderView, barView)
+                            );
                             barView.setVisibility(View.VISIBLE);
                             MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
                             MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                             barView.bringToFront();
                         } else {
+                            hideJumpToEndArrow();
                             barView.setVisibility(View.GONE);
                             MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                         }
@@ -229,6 +247,9 @@ public final class GboardMatrixSuggestionsRuntime {
                         centerIndex,
                         // onCommit: Tapping active word center pill commits with trailing space
                         (selectedIndex, word) -> {
+                            if (MatrixTextHelper.isCursorAtEnd(holderView)) {
+                                hideJumpToEndArrow();
+                            }
                             CandidateItem chosen = (selectedIndex >= 0 && selectedIndex < finalItems.size())
                                     ? finalItems.get(selectedIndex)
                                     : new CandidateItem(word, selectedIndex, false, false, false, "", null, null);
@@ -236,6 +257,9 @@ public final class GboardMatrixSuggestionsRuntime {
                         },
                         // onActiveSwap: Flick UP/DOWN or tap Top/Bottom swaps active word WITHOUT space
                         (selectedIndex, newWord) -> {
+                            if (MatrixTextHelper.isCursorAtEnd(holderView)) {
+                                hideJumpToEndArrow();
+                            }
                             lastSelfReplaceTimestamp = SystemClock.uptimeMillis();
                             lastSelfReplacedWord = newWord;
                             MatrixTextHelper.replaceActiveWordInTextField(holderView, newWord);
@@ -244,7 +268,8 @@ public final class GboardMatrixSuggestionsRuntime {
                         // onHistoryReplace: Flick or tap on a history column swaps that past word in sentence
                         (histColIdx, oldWord, newWord) -> {
                             MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                        }
+                        },
+                        createHistoryWordClickCallback(holderView, barView)
                 );
                 barView.setVisibility(View.VISIBLE);
                 MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
@@ -292,14 +317,20 @@ public final class GboardMatrixSuggestionsRuntime {
                     Log.i(TAG, "onCandidatesCleared: Undo is active. Dismissing matrix bar and restoring native Undo UI.");
                     SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
+                    hideJumpToEndArrow();
                     barView.setVisibility(View.GONE);
                     MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     return;
                 }
 
+                if (barView.getSelectedHistoryIndex() < 0 && MatrixTextHelper.isCursorAtEnd(holderView)) {
+                    hideJumpToEndArrow();
+                }
+
                 if (MatrixTextHelper.isSentenceEnded(holderView) || MatrixTextHelper.isInputEmpty(holderView)) {
                     SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
+                    hideJumpToEndArrow();
                     barView.setVisibility(View.GONE);
                     MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     return;
@@ -315,16 +346,23 @@ public final class GboardMatrixSuggestionsRuntime {
                             words,
                             0,
                             (selectedIndex, word) -> {
+                                if (MatrixTextHelper.isCursorAtEnd(holderView)) {
+                                    hideJumpToEndArrow();
+                                }
                                 commitCandidate(holderView, new CandidateItem(word, -1, true, true, false, "CLEARED_ACTIVE", null, null), Collections.emptyList());
                             },
                             (selectedIndex, newWord) -> {
+                                if (MatrixTextHelper.isCursorAtEnd(holderView)) {
+                                    hideJumpToEndArrow();
+                                }
                                 lastSelfReplaceTimestamp = SystemClock.uptimeMillis();
                                 lastSelfReplacedWord = newWord;
                                 MatrixTextHelper.replaceActiveWordInTextField(holderView, newWord);
                             },
                             (histColIdx, oldWord, newWord) -> {
                                 MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                            }
+                            },
+                            createHistoryWordClickCallback(holderView, barView)
                     );
                     barView.setVisibility(View.VISIBLE);
                     MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
@@ -335,14 +373,19 @@ public final class GboardMatrixSuggestionsRuntime {
 
                 MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
                 if (!SENTENCE_BUFFER.isEmpty()) {
-                    barView.updateHistoryOnly(SENTENCE_BUFFER.getEntries(), (histColIdx, oldWord, newWord) -> {
-                        MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                    });
+                    barView.updateHistoryOnly(
+                            SENTENCE_BUFFER.getEntries(),
+                            (histColIdx, oldWord, newWord) -> {
+                                MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
+                            },
+                            createHistoryWordClickCallback(holderView, barView)
+                    );
                     barView.setVisibility(View.VISIBLE);
                     MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
                     MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                     barView.bringToFront();
                 } else {
+                    hideJumpToEndArrow();
                     barView.setVisibility(View.GONE);
                     MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                 }
@@ -572,6 +615,131 @@ public final class GboardMatrixSuggestionsRuntime {
             if (w != null && !w.isEmpty()) {
                 WORD_ALTERNATIVES_CACHE.put(w.toLowerCase(), copy);
             }
+        }
+    }
+
+    private static MatrixSuggestionBarView.OnHistoryWordClickCallback createHistoryWordClickCallback(
+            ViewGroup holderView, MatrixSuggestionBarView barView) {
+        return (histColIdx, word) -> {
+            boolean selected = MatrixTextHelper.selectHistoryWordInTextField(holderView, SENTENCE_BUFFER, histColIdx, word);
+            if (selected) {
+                showJumpToEndArrow(holderView, () -> {
+                    MatrixTextHelper.jumpToEndOfTextField(holderView);
+                    barView.clearHistorySelection();
+                    hideJumpToEndArrow();
+                    barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
+                });
+            }
+        };
+    }
+
+    private static ViewGroup.LayoutParams copyLayoutParams(View sourceView) {
+        ViewGroup.LayoutParams srcLp = sourceView.getLayoutParams();
+        if (srcLp == null) {
+            return new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        }
+        try {
+            Constructor<?> ctor = srcLp.getClass().getConstructor(srcLp.getClass());
+            ctor.setAccessible(true);
+            return (ViewGroup.LayoutParams) ctor.newInstance(srcLp);
+        } catch (Throwable t1) {
+            try {
+                if (srcLp instanceof ViewGroup.MarginLayoutParams mlp) {
+                    Constructor<?> ctor = srcLp.getClass().getConstructor(ViewGroup.MarginLayoutParams.class);
+                    ctor.setAccessible(true);
+                    return (ViewGroup.LayoutParams) ctor.newInstance(mlp);
+                }
+            } catch (Throwable t2) {
+            }
+            try {
+                Constructor<?> ctor = srcLp.getClass().getConstructor(ViewGroup.LayoutParams.class);
+                ctor.setAccessible(true);
+                return (ViewGroup.LayoutParams) ctor.newInstance(srcLp);
+            } catch (Throwable t3) {
+                return new ViewGroup.LayoutParams(srcLp.width, srcLp.height);
+            }
+        }
+    }
+
+    private static void showJumpToEndArrow(ViewGroup holderView, Runnable onJump) {
+        pendingJumpRunnable = onJump;
+        if (currentJumpToEndArrow != null && currentJumpToEndArrow.getParent() != null) {
+            currentJumpToEndArrow.updateIconColor();
+            currentJumpToEndArrow.setVisibility(View.VISIBLE);
+            currentJumpToEndArrow.bringToFront();
+            return;
+        }
+
+        ViewGroup headerContainer = MatrixGboardReflector.findHeaderContainer(holderView);
+        View voiceBtn = null;
+        if (headerContainer != null) {
+            voiceBtn = MatrixGboardReflector.findVoiceButton(headerContainer);
+        }
+        if (voiceBtn == null) {
+            ViewGroup holderParent = (ViewGroup) holderView.getParent();
+            if (holderParent != null) {
+                voiceBtn = MatrixGboardReflector.findVoiceButton(holderParent);
+            }
+        }
+
+        Context context = holderView.getContext();
+        if (currentJumpToEndArrow == null) {
+            currentJumpToEndArrow = new JumpToEndArrowView(context);
+        }
+        currentJumpToEndArrow.updateIconColor();
+        currentJumpToEndArrow.setOnJumpClickListener(() -> {
+            if (pendingJumpRunnable != null) {
+                pendingJumpRunnable.run();
+            }
+        });
+
+        if (voiceBtn != null && voiceBtn.getParent() instanceof ViewGroup voiceParent) {
+            currentVoiceButton = voiceBtn;
+            voiceBtn.setVisibility(View.INVISIBLE);
+            ViewGroup.LayoutParams lp = copyLayoutParams(voiceBtn);
+            if (currentJumpToEndArrow.getParent() != null) {
+                ((ViewGroup) currentJumpToEndArrow.getParent()).removeView(currentJumpToEndArrow);
+            }
+            voiceParent.addView(currentJumpToEndArrow, lp);
+        } else {
+            ViewGroup fallbackTarget = headerContainer != null ? headerContainer : (ViewGroup) holderView.getParent();
+            if (fallbackTarget != null) {
+                if (currentJumpToEndArrow.getParent() != null) {
+                    ((ViewGroup) currentJumpToEndArrow.getParent()).removeView(currentJumpToEndArrow);
+                }
+                int width = (int) TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, 44f, context.getResources().getDisplayMetrics());
+                ViewGroup.LayoutParams lp;
+                if (fallbackTarget instanceof FrameLayout) {
+                    lp = new FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END | Gravity.CENTER_VERTICAL);
+                } else {
+                    lp = new ViewGroup.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT);
+                }
+                fallbackTarget.addView(currentJumpToEndArrow, lp);
+            }
+        }
+
+        currentJumpToEndArrow.setVisibility(View.VISIBLE);
+        currentJumpToEndArrow.bringToFront();
+    }
+
+    public static void hideJumpToEndArrow() {
+        try {
+            if (currentVoiceButton != null) {
+                currentVoiceButton.setVisibility(View.VISIBLE);
+                currentVoiceButton = null;
+            }
+            if (currentJumpToEndArrow != null) {
+                currentJumpToEndArrow.setVisibility(View.GONE);
+                ViewGroup p = (ViewGroup) currentJumpToEndArrow.getParent();
+                if (p != null) {
+                    p.removeView(currentJumpToEndArrow);
+                }
+                currentJumpToEndArrow = null;
+            }
+            pendingJumpRunnable = null;
+        } catch (Throwable t) {
+            Log.w(TAG, "hideJumpToEndArrow error: " + t.getMessage());
         }
     }
 
