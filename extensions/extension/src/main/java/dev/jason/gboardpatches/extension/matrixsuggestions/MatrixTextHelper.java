@@ -71,17 +71,25 @@ public final class MatrixTextHelper {
     }
 
     public static String getActiveWord(View view, List<GboardMatrixSuggestionsRuntime.CandidateItem> items) {
+        return getActiveWord(view, items, true);
+    }
+
+    public static String getActiveWord(View view, List<GboardMatrixSuggestionsRuntime.CandidateItem> items, boolean allowTrailingSpace) {
         InputConnection ic = getInputConnection(view);
         if (ic == null) return null;
         try {
             CharSequence cs = ic.getTextBeforeCursor(100, 0);
-            return getActiveWord(cs, items);
+            return getActiveWord(cs, items, allowTrailingSpace);
         } catch (Throwable ignored) {
             return null;
         }
     }
 
     public static String getActiveWord(CharSequence cs, List<GboardMatrixSuggestionsRuntime.CandidateItem> items) {
+        return getActiveWord(cs, items, true);
+    }
+
+    public static String getActiveWord(CharSequence cs, List<GboardMatrixSuggestionsRuntime.CandidateItem> items, boolean allowTrailingSpace) {
         if (cs == null || cs.length() == 0) return null;
         String s = cs.toString();
         int len = s.length();
@@ -89,6 +97,9 @@ public final class MatrixTextHelper {
 
         int end = len;
         if (Character.isWhitespace(s.charAt(len - 1))) {
+            if (!allowTrailingSpace) {
+                return null;
+            }
             // If there are multiple trailing whitespaces, user pressed multiple spaces -> no active word.
             if (len >= 2 && Character.isWhitespace(s.charAt(len - 2))) {
                 return null;

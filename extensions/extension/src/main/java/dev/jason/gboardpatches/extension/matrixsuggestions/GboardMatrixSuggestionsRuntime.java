@@ -94,6 +94,16 @@ public final class GboardMatrixSuggestionsRuntime {
                 // Extract slot candidates directly from holderView slots
                 List<CandidateItem> items = MatrixGboardReflector.extractSlotCandidatesFromHolder(holderView, candidateListObj);
 
+                // Check if Gboard is in Undo state (e.g. after swipe-to-delete or revert auto-correct)
+                if (MatrixGboardReflector.isUndoActive(holderView, items)) {
+                    Log.i(TAG, "onCandidatesUpdated: Undo is active. Dismissing matrix bar and restoring native Undo UI.");
+                    SENTENCE_BUFFER.clear();
+                    activeOriginalSuggestions = null;
+                    barView.setVisibility(View.GONE);
+                    MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                    return;
+                }
+
                 String currentWord = MatrixTextHelper.getActiveWord(holderView, items);
                 Log.i(TAG, "onCandidatesUpdated: resolved " + items.size() + " candidates, currentWord='" + currentWord + "': " + items);
 
@@ -253,6 +263,16 @@ public final class GboardMatrixSuggestionsRuntime {
                     return;
                 }
 
+                // Check if Gboard is in Undo state
+                if (MatrixGboardReflector.isUndoActive(holderView, Collections.emptyList())) {
+                    Log.i(TAG, "onCandidatesCleared: Undo is active. Dismissing matrix bar and restoring native Undo UI.");
+                    SENTENCE_BUFFER.clear();
+                    activeOriginalSuggestions = null;
+                    barView.setVisibility(View.GONE);
+                    MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                    return;
+                }
+
                 if (MatrixTextHelper.isSentenceEnded(holderView) || MatrixTextHelper.isInputEmpty(holderView)) {
                     SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
@@ -261,8 +281,8 @@ public final class GboardMatrixSuggestionsRuntime {
                     return;
                 }
 
-                // If an active word is present (e.g. unknown swiped word like 'toggles' whose candidates were cleared)
-                String activeWord = MatrixTextHelper.getActiveWord(holderView, Collections.emptyList());
+                // If an active word is present (allowTrailingSpace = false: if candidates are cleared after space, no active word!)
+                String activeWord = MatrixTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
                 if (activeWord != null && !activeWord.isEmpty()) {
                     List<String> words = Collections.singletonList(activeWord);
                     MatrixTextHelper.syncSentenceBufferFromText(holderView, activeWord, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
@@ -342,9 +362,15 @@ public final class GboardMatrixSuggestionsRuntime {
         ACTIVE_BARS.put(attachTarget, bar);
 
         final MatrixSuggestionBarView finalBar = bar;
-        // Keep quick toggles suppressed and MatrixBar at front whenever MatrixBar is visible!
+        // Keep quick toggles suppressed and MatrixBar at front whenever MatrixBar is visible,
+        // UNLESS Gboard surfaces an Undo view!
         attachTarget.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (finalBar.getVisibility() == View.VISIBLE) {
+                if (MatrixGboardReflector.isUndoViewActive(attachTarget)) {
+                    finalBar.setVisibility(View.GONE);
+                    MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                    return;
+                }
                 MatrixGboardReflector.suppressQuickToggles(attachTarget, true);
                 if (attachTarget.getChildCount() > 0 && attachTarget.getChildAt(attachTarget.getChildCount() - 1) != finalBar) {
                     finalBar.bringToFront();
@@ -355,7 +381,8 @@ public final class GboardMatrixSuggestionsRuntime {
         // Watch for holderView visibility / layout changes
         holderView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (v.getVisibility() != View.VISIBLE || (right - left <= 0)) {
-                if (MatrixTextHelper.isSentenceEnded(v) || MatrixTextHelper.isInputEmpty(v)) {
+                if (MatrixGboardReflector.isUndoViewActive(attachTarget)
+                        || MatrixTextHelper.isSentenceEnded(v) || MatrixTextHelper.isInputEmpty(v)) {
                     if (finalBar.getVisibility() != View.GONE) {
                         finalBar.setVisibility(View.GONE);
                         MatrixGboardReflector.suppressQuickToggles(attachTarget, false);

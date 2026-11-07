@@ -62,6 +62,12 @@ public final class MatrixTextHelperTest {
                 "toggles", 0, true, true, false, "GLIDE", null, null);
         List<GboardMatrixSuggestionsRuntime.CandidateItem> glideItems = Collections.singletonList(alt1);
         Assert.assertEquals("toggles", MatrixTextHelper.getActiveWord("toggles ", glideItems));
+
+        // 6. When candidates are cleared (allowTrailingSpace = false, e.g. after swipe-delete or manual space):
+        // Trailing space means word was committed, not currently composing
+        Assert.assertNull(MatrixTextHelper.getActiveWord("toggles ", Collections.emptyList(), false));
+        Assert.assertNull(MatrixTextHelper.getActiveWord("Hallo Welt ", Collections.emptyList(), false));
+        Assert.assertEquals("toggles", MatrixTextHelper.getActiveWord("toggles", Collections.emptyList(), false));
     }
 
     @Test

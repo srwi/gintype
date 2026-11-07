@@ -155,35 +155,194 @@ public final class MatrixGboardReflector {
     }
 
     /**
+     * Checks if a candidate item represents an Undo or Delete recovery candidate.
+     */
+    public static boolean isUndoCandidate(GboardMatrixSuggestionsRuntime.CandidateItem ci) {
+        if (ci == null) return false;
+        String type = ci.candidateType != null ? ci.candidateType.toUpperCase() : "";
+        if (type.contains("UNDO") || type.contains("DELETE") || type.contains("RESTORE") || type.contains("REVERT")) {
+            return true;
+        }
+        if (ci.text != null) {
+            String t = ci.text.trim();
+            if (t.equalsIgnoreCase("Undo") || t.equalsIgnoreCase("Rückgängig")
+                    || t.equalsIgnoreCase("Deshacer") || t.equalsIgnoreCase("Annuler")
+                    || t.equalsIgnoreCase("Annulla") || t.equalsIgnoreCase("Desfazer")
+                    || t.equalsIgnoreCase("Отменить") || t.equals("復原") || t.equals("撤销") || t.equals("元に戻す")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns true if any candidate in items is an Undo / recovery candidate.
+     */
+    public static boolean hasUndoCandidate(List<GboardMatrixSuggestionsRuntime.CandidateItem> items) {
+        if (items == null || items.isEmpty()) return false;
+        for (GboardMatrixSuggestionsRuntime.CandidateItem ci : items) {
+            if (isUndoCandidate(ci)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Scans the view hierarchy to determine if an Undo button, Undo chip, or Undo banner
+     * is actively visible (e.g. after swipe-delete/glide-delete).
+     */
+    public static boolean isUndoViewActive(View root) {
+        if (root == null) return false;
+        try {
+            if (findUndoViewInHierarchy(root)) {
+                return true;
+            }
+            if (root instanceof ViewGroup vg) {
+                ViewGroup softKeyboard = findSoftKeyboardView(vg);
+                if (softKeyboard != null && softKeyboard != root && findUndoViewInHierarchy(softKeyboard)) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static boolean findUndoViewInHierarchy(View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return false;
+        try {
+            CharSequence cd = view.getContentDescription();
+            if (cd != null) {
+                String s = cd.toString().toLowerCase();
+                if (s.contains("undo") || s.contains("rückgängig") || s.contains("deshacer")
+                        || s.contains("annuler") || s.contains("annulla") || s.contains("desfazer")
+                        || s.contains("отменить") || s.contains("復原") || s.contains("撤销") || s.contains("元に戻す")) {
+                    return true;
+                }
+            }
+            Object tag = view.getTag();
+            if (tag instanceof String t) {
+                String s = t.toLowerCase();
+                if (s.contains("undo")) {
+                    return true;
+                }
+            }
+            int id = view.getId();
+            if (id != View.NO_ID && id != 0) {
+                try {
+                    String resName = view.getResources().getResourceEntryName(id);
+                    if (resName != null && resName.toLowerCase().contains("undo")) {
+                        return true;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            String className = view.getClass().getName().toLowerCase();
+            if (className.contains("undo") && !className.contains("undoredoaccesspoint")) {
+                return true;
+            }
+            if (view instanceof ViewGroup vg) {
+                for (int i = 0; i < vg.getChildCount(); i++) {
+                    if (findUndoViewInHierarchy(vg.getChildAt(i))) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    /**
+     * Comprehensive check for Undo state: either by candidate types or active view presence.
+     */
+    public static boolean isUndoActive(ViewGroup holderView, List<GboardMatrixSuggestionsRuntime.CandidateItem> items) {
+        if (hasUndoCandidate(items)) return true;
+        return isUndoViewActive(holderView);
+    }
+
+    /**
      * Suppresses Gboard's native quick toggle and access point views while MatrixBar is active.
+     * When restoring (suppress = false), respects Gboard's mutual exclusivity and never
+     * forces the native CandidatesHolderView to draw over an active Undo/AccessPoints bar.
      */
     public static void suppressQuickToggles(ViewGroup attachTarget, boolean suppress) {
         if (attachTarget == null) return;
         try {
-            float alpha = suppress ? 0.0f : 1.0f;
-            int vis = suppress ? View.INVISIBLE : View.VISIBLE;
-
-            // 1. Siblings inside attachTarget (e.g. native LatinFixedCountCandidatesHolderView & AccessPointsBar)
-            for (int i = 0; i < attachTarget.getChildCount(); i++) {
-                View child = attachTarget.getChildAt(i);
-                if (child instanceof MatrixSuggestionBarView) {
-                    continue;
+            if (suppress) {
+                // Suppress quick toggles and native candidate holder so MatrixBar draws cleanly.
+                for (int i = 0; i < attachTarget.getChildCount(); i++) {
+                    View child = attachTarget.getChildAt(i);
+                    if (child instanceof MatrixSuggestionBarView) {
+                        continue;
+                    }
+                    child.setAlpha(0.0f);
+                    child.setVisibility(View.INVISIBLE);
                 }
-                child.setAlpha(alpha);
-                child.setVisibility(vis);
-            }
 
-            // 2. Siblings of attachTarget in parent header (if candidates and access points are in sibling containers)
-            ViewGroup parent = (ViewGroup) attachTarget.getParent();
-            if (parent != null) {
-                for (int i = 0; i < parent.getChildCount(); i++) {
-                    View sibling = parent.getChildAt(i);
-                    if (sibling != attachTarget && !(sibling instanceof MatrixSuggestionBarView)) {
-                        String name = sibling.getClass().getName();
-                        if (name.contains("AccessPoint") || name.contains("accesspoint")
-                                || name.contains("Header") || name.contains("Strip") || name.contains("Toolbar")) {
-                            sibling.setAlpha(alpha);
-                            sibling.setVisibility(vis);
+                ViewGroup parent = (ViewGroup) attachTarget.getParent();
+                if (parent != null) {
+                    for (int i = 0; i < parent.getChildCount(); i++) {
+                        View sibling = parent.getChildAt(i);
+                        if (sibling != attachTarget && !(sibling instanceof MatrixSuggestionBarView)) {
+                            String name = sibling.getClass().getName();
+                            if (name.contains("AccessPoint") || name.contains("accesspoint")
+                                    || name.contains("Header") || name.contains("Strip") || name.contains("Toolbar")) {
+                                sibling.setAlpha(0.0f);
+                                sibling.setVisibility(View.INVISIBLE);
+                            }
+                        }
+                    }
+                }
+            } else {
+                // When MatrixBar is inactive: restore visibility cleanly WITHOUT forcing conflicting views to overlap!
+                boolean undoActive = isUndoViewActive(attachTarget);
+
+                for (int i = 0; i < attachTarget.getChildCount(); i++) {
+                    View child = attachTarget.getChildAt(i);
+                    if (child instanceof MatrixSuggestionBarView) {
+                        continue;
+                    }
+                    String name = child.getClass().getName();
+                    boolean isHolder = name.contains("CandidatesHolderView") || name.contains("FixedCount");
+                    boolean isAccessPoints = name.contains("AccessPoint") || name.contains("accesspoint");
+
+                    if (undoActive) {
+                        // In Undo mode: Gboard shows Undo in AccessPoints. Candidates holder MUST be GONE so deleted text is never shown!
+                        if (isHolder) {
+                            child.setVisibility(View.GONE);
+                            child.setAlpha(0.0f);
+                        } else {
+                            child.setAlpha(1.0f);
+                            if (child.getVisibility() == View.INVISIBLE) {
+                                child.setVisibility(View.VISIBLE);
+                            }
+                            if (isAccessPoints) {
+                                child.bringToFront();
+                            }
+                        }
+                    } else {
+                        // Normal mode: only restore views that WE made INVISIBLE.
+                        // Do NOT force GONE views to VISIBLE (preserves Gboard's native mutual exclusivity)!
+                        child.setAlpha(1.0f);
+                        if (child.getVisibility() == View.INVISIBLE) {
+                            if (isHolder && hasVisibleAccessPoints(attachTarget)) {
+                                child.setVisibility(View.GONE);
+                            } else {
+                                child.setVisibility(View.VISIBLE);
+                            }
+                        }
+                    }
+                }
+
+                ViewGroup parent = (ViewGroup) attachTarget.getParent();
+                if (parent != null) {
+                    for (int i = 0; i < parent.getChildCount(); i++) {
+                        View sibling = parent.getChildAt(i);
+                        if (sibling != attachTarget && !(sibling instanceof MatrixSuggestionBarView)) {
+                            sibling.setAlpha(1.0f);
+                            if (sibling.getVisibility() == View.INVISIBLE) {
+                                sibling.setVisibility(View.VISIBLE);
+                            }
                         }
                     }
                 }
@@ -191,6 +350,17 @@ public final class MatrixGboardReflector {
         } catch (Throwable t) {
             Log.w(TAG, "suppressQuickToggles error: " + t.getMessage());
         }
+    }
+
+    private static boolean hasVisibleAccessPoints(ViewGroup vg) {
+        if (vg == null) return false;
+        for (int i = 0; i < vg.getChildCount(); i++) {
+            View child = vg.getChildAt(i);
+            if (child.getVisibility() == View.VISIBLE && child.getClass().getName().contains("AccessPoint")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static ViewGroup findSoftKeyboardView(ViewGroup holderView) {
