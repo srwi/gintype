@@ -82,16 +82,27 @@ public class VerticalWordWheelView extends LinearLayout {
         touchSlop = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 12f, getResources().getDisplayMetrics());
 
-        topView = createWordView(context, 10.0f, 0.75f, false);
-        centerView = createWordView(context, 12.5f, 1.0f, true);
-        bottomView = createWordView(context, 10.0f, 0.75f, false);
+        setWeightSum(3.15f);
 
-        addView(topView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        addView(centerView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        addView(bottomView, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        topView = createWordView(context, 10.2f, 0.88f, false);
+        centerView = createWordView(context, 12.5f, 1.0f, true);
+        bottomView = createWordView(context, 10.2f, 0.88f, false);
+
+        LinearLayout.LayoutParams topLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 1.0f);
+        topLp.gravity = Gravity.CENTER_HORIZONTAL;
+
+        LinearLayout.LayoutParams centerLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 1.15f);
+        centerLp.gravity = Gravity.CENTER_HORIZONTAL;
+
+        LinearLayout.LayoutParams bottomLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 1.0f);
+        bottomLp.gravity = Gravity.CENTER_HORIZONTAL;
+
+        addView(topView, topLp);
+        addView(centerView, centerLp);
+        addView(bottomView, bottomLp);
 
         updateColors();
         updateDisplay();
@@ -171,7 +182,6 @@ public class VerticalWordWheelView extends LinearLayout {
         tv.setMaxLines(1);
         tv.setEllipsize(TextUtils.TruncateAt.END);
         tv.setIncludeFontPadding(false);
-        tv.setLineSpacing(0f, 0.88f);
         tv.setGravity(Gravity.CENTER);
         if (bold) {
             tv.setTypeface(Typeface.DEFAULT_BOLD);
@@ -187,18 +197,18 @@ public class VerticalWordWheelView extends LinearLayout {
 
         if (isActiveWord) {
             topView.setTextColor(primaryColor);
-            topView.setAlpha(0.80f);
-            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.0f);
+            topView.setAlpha(0.88f);
+            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
 
             centerView.setTextColor(accentColor);
             centerView.setAlpha(1.0f);
             centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
 
-            // Active pill background: Material You accent rounded pill with tight vertical padding to prevent clipping
+            // Active pill background: Material You accent rounded pill with clean vertical padding
             int fillColor = dark ? 0x2e8ab4f8 : 0x1f1a73e8;
             int strokeColor = dark ? 0x4d8ab4f8 : 0x331a73e8;
-            centerView.setBackground(createPillDrawable(fillColor, strokeColor, 10f));
+            centerView.setBackground(createPillDrawable(fillColor, strokeColor, 9f));
             int padH = (int) TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_DIP, 8f, getResources().getDisplayMetrics());
             int padV = (int) TypedValue.applyDimension(
@@ -206,12 +216,12 @@ public class VerticalWordWheelView extends LinearLayout {
             centerView.setPadding(padH, padV, padH, padV);
 
             bottomView.setTextColor(primaryColor);
-            bottomView.setAlpha(0.80f);
-            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.0f);
+            bottomView.setAlpha(0.88f);
+            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
         } else {
             topView.setTextColor(primaryColor);
-            topView.setAlpha(0.75f);
-            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.8f);
+            topView.setAlpha(0.85f);
+            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
 
             centerView.setTextColor(primaryColor);
             centerView.setAlpha(1.0f);
@@ -219,12 +229,14 @@ public class VerticalWordWheelView extends LinearLayout {
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
             centerView.setBackground(null);
             int padH = (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 5f, getResources().getDisplayMetrics());
-            centerView.setPadding(padH, 0, padH, 0);
+                    TypedValue.COMPLEX_UNIT_DIP, 6f, getResources().getDisplayMetrics());
+            int padV = (int) TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
+            centerView.setPadding(padH, padV, padH, padV);
 
             bottomView.setTextColor(primaryColor);
-            bottomView.setAlpha(0.75f);
-            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.8f);
+            bottomView.setAlpha(0.85f);
+            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
         }
     }
 
@@ -256,6 +268,7 @@ public class VerticalWordWheelView extends LinearLayout {
             topView.setText("");
             topView.setVisibility(View.INVISIBLE);
             centerView.setText(alternatives.get(0));
+            centerView.setVisibility(View.VISIBLE);
             bottomView.setText("");
             bottomView.setVisibility(View.INVISIBLE);
             return;
@@ -266,6 +279,7 @@ public class VerticalWordWheelView extends LinearLayout {
             topView.setText(alternatives.get(other));
             topView.setVisibility(View.VISIBLE);
             centerView.setText(alternatives.get(selectedIndex));
+            centerView.setVisibility(View.VISIBLE);
             bottomView.setText(alternatives.get(other));
             bottomView.setVisibility(View.VISIBLE);
             return;
@@ -279,6 +293,7 @@ public class VerticalWordWheelView extends LinearLayout {
         topView.setVisibility(View.VISIBLE);
 
         centerView.setText(alternatives.get(selectedIndex));
+        centerView.setVisibility(View.VISIBLE);
 
         bottomView.setText(alternatives.get(next));
         bottomView.setVisibility(View.VISIBLE);
@@ -345,7 +360,7 @@ public class VerticalWordWheelView extends LinearLayout {
                     float upY = event.getY();
                     float totalHeight = getHeight();
                     if (totalHeight > 0) {
-                        if (upY < totalHeight * 0.33f && size > 1) {
+                        if (upY < totalHeight * 0.32f && size > 1) {
                             // Tapped top row: swap to top alternative
                             selectedIndex = (selectedIndex - 1 + size) % size;
                             updateDisplay();
@@ -357,7 +372,7 @@ public class VerticalWordWheelView extends LinearLayout {
                             if (changeListener != null && newWord != null) {
                                 changeListener.onWordChanged(selectedIndex, newWord);
                             }
-                        } else if (upY > totalHeight * 0.67f && size > 1) {
+                        } else if (upY > totalHeight * 0.68f && size > 1) {
                             // Tapped bottom row: swap to bottom alternative
                             selectedIndex = (selectedIndex + 1) % size;
                             updateDisplay();

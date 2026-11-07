@@ -1,6 +1,7 @@
 package dev.jason.gboardpatches.extension.matrixsuggestions;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -78,6 +79,11 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
         int divMargin = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
+        int divMarginV = (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
+        boolean dark = (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        int dividerColor = dark ? Color.argb(45, 255, 255, 255) : Color.argb(35, 0, 0, 0);
 
         // 1. Add historical sentence columns (from older to newer, left of current word)
         if (history != null && !history.isEmpty()) {
@@ -105,10 +111,10 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
 
                 // Vertical separator line
                 View divider = new View(getContext());
-                divider.setBackgroundColor(Color.argb(45, 128, 128, 128));
+                divider.setBackgroundColor(dividerColor);
                 LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
                         divWidth, ViewGroup.LayoutParams.MATCH_PARENT);
-                divParams.setMargins(divMargin, 6, divMargin, 6);
+                divParams.setMargins(divMargin, divMarginV, divMargin, divMarginV);
                 contentLayout.addView(divider, divParams);
             }
         }
@@ -154,6 +160,11 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
         int divMargin = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
+        int divMarginV = (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
+        boolean dark = (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        int dividerColor = dark ? Color.argb(45, 255, 255, 255) : Color.argb(35, 0, 0, 0);
 
         for (int i = 0; i < history.size(); i++) {
             final int historyColIndex = i;
@@ -178,10 +189,10 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
 
             if (i < history.size() - 1) {
                 View divider = new View(getContext());
-                divider.setBackgroundColor(Color.argb(45, 128, 128, 128));
+                divider.setBackgroundColor(dividerColor);
                 LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
                         divWidth, ViewGroup.LayoutParams.MATCH_PARENT);
-                divParams.setMargins(divMargin, 6, divMargin, 6);
+                divParams.setMargins(divMargin, divMarginV, divMargin, divMarginV);
                 contentLayout.addView(divider, divParams);
             }
         }
