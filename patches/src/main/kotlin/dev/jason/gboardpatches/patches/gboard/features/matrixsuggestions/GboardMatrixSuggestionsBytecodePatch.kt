@@ -6,6 +6,7 @@ import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
 import dev.jason.gboardpatches.patches.gboard.shared.findMutableMethodOrThrow
 import dev.jason.gboardpatches.patches.gboard.shared.gboardPatchesExtensionCarrierPatch
 import dev.jason.gboardpatches.patches.gboard.shared.isMethodReference
+import dev.jason.gboardpatches.patches.gboard.shared.mutableClass
 import dev.jason.gboardpatches.patches.gboard.shared.runtimeabi.RuntimeAbiCatalog
 import dev.jason.gboardpatches.patches.gboard.shared.runtimeabi.RuntimeCallEmitter
 import dev.jason.gboardpatches.patches.gboard.shared.runtimeabi.RuntimeCallId
@@ -18,22 +19,34 @@ internal val gboardMatrixSuggestionsBytecodePatch = bytecodePatch(
     dependsOn(gboardPatchesExtensionCarrierPatch)
 
     execute {
-        findMutableMethodOrThrow(
-            classType = LATIN_FIXED_COUNT_CANDIDATES_HOLDER_VIEW_CLASS,
-            name = APPEND_CANDIDATES_METHOD_NAME,
-            returnType = APPEND_CANDIDATES_RETURN_TYPE,
-            parameterTypes = listOf(
-                "Ljava/util/List;",
-                "Ljava/util/ArrayList;",
-            ),
-        ).applyMatrixSuggestionsAppendDelegate()
+        val holderClass = mutableClass(LATIN_FIXED_COUNT_CANDIDATES_HOLDER_VIEW_CLASS)
 
-        findMutableMethodOrThrow(
-            classType = LATIN_FIXED_COUNT_CANDIDATES_HOLDER_VIEW_CLASS,
-            name = CLEAR_CANDIDATES_METHOD_NAME,
-            returnType = CLEAR_CANDIDATES_RETURN_TYPE,
-            parameterTypes = emptyList(),
-        ).applyMatrixSuggestionsClearDelegate()
+        // Resilient append-candidates lookup: match by name 'D' or parameter signature (List, ArrayList) -> void
+        val appendMethod = holderClass.methods.firstOrNull {
+            it.name == APPEND_CANDIDATES_METHOD_NAME &&
+                it.returnType == APPEND_CANDIDATES_RETURN_TYPE &&
+                it.parameterTypes == listOf("Ljava/util/List;", "Ljava/util/ArrayList;")
+        } ?: holderClass.methods.firstOrNull {
+            it.returnType == APPEND_CANDIDATES_RETURN_TYPE &&
+                it.parameterTypes == listOf("Ljava/util/List;", "Ljava/util/ArrayList;")
+        } ?: error("Could not find append candidates method in $LATIN_FIXED_COUNT_CANDIDATES_HOLDER_VIEW_CLASS")
+
+        appendMethod.applyMatrixSuggestionsAppendDelegate()
+
+        // Resilient clear-candidates lookup: match by name 'l' or clear signature () -> void
+        val clearMethod = holderClass.methods.firstOrNull {
+            it.name == CLEAR_CANDIDATES_METHOD_NAME &&
+                it.returnType == CLEAR_CANDIDATES_RETURN_TYPE &&
+                it.parameterTypes.isEmpty()
+        } ?: holderClass.methods.firstOrNull {
+            it.returnType == CLEAR_CANDIDATES_RETURN_TYPE &&
+                it.parameterTypes.isEmpty() &&
+                !it.name.startsWith("<") &&
+                it.name != "onDetachedFromWindow" &&
+                it.name != "onAttachedToWindow"
+        } ?: error("Could not find clear candidates method in $LATIN_FIXED_COUNT_CANDIDATES_HOLDER_VIEW_CLASS")
+
+        clearMethod.applyMatrixSuggestionsClearDelegate()
     }
 }
 
