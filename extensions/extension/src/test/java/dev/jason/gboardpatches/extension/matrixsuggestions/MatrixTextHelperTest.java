@@ -207,4 +207,335 @@ public final class MatrixTextHelperTest {
         Assert.assertNull(MatrixTextHelper.findLastWordBoundary(null, "Test"));
         Assert.assertNull(MatrixTextHelper.findLastWordBoundary(text, null));
     }
+
+    @Test
+    public void contextualBoundaryCharTests() {
+        // Decimals and thousands separators between digits are NOT boundaries
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("3.14", 1));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("3,14", 1));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("1.500", 1));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("100,000", 3));
+
+        // Dot or comma after a word or before space IS a boundary
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("Hallo.", 5));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("Hallo,", 5));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("Hallo. Welt", 5));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("Hallo, Welt", 5));
+
+        // Contractions: apostrophe between letters is NOT a boundary
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("geht's", 4));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("don't", 3));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("it's", 2));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("c'est", 1));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("geht’s", 4)); // typographic apostrophe \u2019
+
+        // Compound words: hyphen between letters/digits is NOT a boundary
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("E-Mail", 1));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("Wi-Fi", 2));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("Covid-19", 5));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("und/oder", 3));
+        Assert.assertFalse(MatrixTextHelper.isBoundaryChar("my_var", 2));
+
+        // Standalone hyphen / slash with spaces IS a boundary
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("Hallo - Welt", 6));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("a / b", 2));
+
+        // Brackets, quotes, operators, currency, emojis are boundaries
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("(Hallo)", 0));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("(Hallo)", 6));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("[Wichtig]", 0));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("„Genial“", 0));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("50€", 2));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("$100", 0));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("1+2=3", 1));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("1+2=3", 3));
+        Assert.assertTrue(MatrixTextHelper.isBoundaryChar("Super!😊", 5));
+    }
+
+    @Test
+    public void tokenPartsParsingAllCases() {
+        // 1. Plain words
+        MatrixTextHelper.TokenParts p1 = MatrixTextHelper.parseTokenParts("Hallo");
+        Assert.assertEquals("", p1.prefix);
+        Assert.assertEquals("Hallo", p1.word);
+        Assert.assertEquals("", p1.suffix);
+        Assert.assertTrue(p1.hasWord());
+
+        // 2. Trailing punctuation
+        MatrixTextHelper.TokenParts p2 = MatrixTextHelper.parseTokenParts("Hallo,");
+        Assert.assertEquals("", p2.prefix);
+        Assert.assertEquals("Hallo", p2.word);
+        Assert.assertEquals(",", p2.suffix);
+
+        MatrixTextHelper.TokenParts p3 = MatrixTextHelper.parseTokenParts("dir.");
+        Assert.assertEquals("", p3.prefix);
+        Assert.assertEquals("dir", p3.word);
+        Assert.assertEquals(".", p3.suffix);
+
+        MatrixTextHelper.TokenParts p4 = MatrixTextHelper.parseTokenParts("toll!?!...");
+        Assert.assertEquals("", p4.prefix);
+        Assert.assertEquals("toll", p4.word);
+        Assert.assertEquals("!?!...", p4.suffix);
+
+        // 3. Brackets & Parentheses
+        MatrixTextHelper.TokenParts p5 = MatrixTextHelper.parseTokenParts("(Hallo)");
+        Assert.assertEquals("(", p5.prefix);
+        Assert.assertEquals("Hallo", p5.word);
+        Assert.assertEquals(")", p5.suffix);
+
+        MatrixTextHelper.TokenParts p6 = MatrixTextHelper.parseTokenParts("[Wichtig]");
+        Assert.assertEquals("[", p6.prefix);
+        Assert.assertEquals("Wichtig", p6.word);
+        Assert.assertEquals("]", p6.suffix);
+
+        MatrixTextHelper.TokenParts p7 = MatrixTextHelper.parseTokenParts("{Config}");
+        Assert.assertEquals("{", p7.prefix);
+        Assert.assertEquals("Config", p7.word);
+        Assert.assertEquals("}", p7.suffix);
+
+        MatrixTextHelper.TokenParts p8 = MatrixTextHelper.parseTokenParts("<Tag>");
+        Assert.assertEquals("<", p8.prefix);
+        Assert.assertEquals("Tag", p8.word);
+        Assert.assertEquals(">", p8.suffix);
+
+        // 4. Quotation marks
+        MatrixTextHelper.TokenParts p9 = MatrixTextHelper.parseTokenParts("„Genial!“");
+        Assert.assertEquals("„", p9.prefix);
+        Assert.assertEquals("Genial", p9.word);
+        Assert.assertEquals("!“", p9.suffix);
+
+        MatrixTextHelper.TokenParts p10 = MatrixTextHelper.parseTokenParts("\"Zitat\"");
+        Assert.assertEquals("\"", p10.prefix);
+        Assert.assertEquals("Zitat", p10.word);
+        Assert.assertEquals("\"", p10.suffix);
+
+        MatrixTextHelper.TokenParts p11 = MatrixTextHelper.parseTokenParts("«Französisch»");
+        Assert.assertEquals("«", p11.prefix);
+        Assert.assertEquals("Französisch", p11.word);
+        Assert.assertEquals("»", p11.suffix);
+
+        // 5. Contractions & Internal hyphens & Decimals
+        MatrixTextHelper.TokenParts p12 = MatrixTextHelper.parseTokenParts("geht's");
+        Assert.assertEquals("", p12.prefix);
+        Assert.assertEquals("geht's", p12.word);
+        Assert.assertEquals("", p12.suffix);
+
+        MatrixTextHelper.TokenParts p13 = MatrixTextHelper.parseTokenParts("geht's?!");
+        Assert.assertEquals("", p13.prefix);
+        Assert.assertEquals("geht's", p13.word);
+        Assert.assertEquals("?!", p13.suffix);
+
+        MatrixTextHelper.TokenParts p14 = MatrixTextHelper.parseTokenParts("E-Mail");
+        Assert.assertEquals("", p14.prefix);
+        Assert.assertEquals("E-Mail", p14.word);
+        Assert.assertEquals("", p14.suffix);
+
+        MatrixTextHelper.TokenParts p15 = MatrixTextHelper.parseTokenParts("3,14");
+        Assert.assertEquals("", p15.prefix);
+        Assert.assertEquals("3,14", p15.word);
+        Assert.assertEquals("", p15.suffix);
+
+        MatrixTextHelper.TokenParts p16 = MatrixTextHelper.parseTokenParts("1.500");
+        Assert.assertEquals("", p16.prefix);
+        Assert.assertEquals("1.500", p16.word);
+        Assert.assertEquals("", p16.suffix);
+
+        // 6. Currency, Percentages, Hashtags, Mentions
+        MatrixTextHelper.TokenParts p17 = MatrixTextHelper.parseTokenParts("$100");
+        Assert.assertEquals("$", p17.prefix);
+        Assert.assertEquals("100", p17.word);
+        Assert.assertEquals("", p17.suffix);
+
+        MatrixTextHelper.TokenParts p18 = MatrixTextHelper.parseTokenParts("50€");
+        Assert.assertEquals("", p18.prefix);
+        Assert.assertEquals("50", p18.word);
+        Assert.assertEquals("€", p18.suffix);
+
+        MatrixTextHelper.TokenParts p19 = MatrixTextHelper.parseTokenParts("100%");
+        Assert.assertEquals("", p19.prefix);
+        Assert.assertEquals("100", p19.word);
+        Assert.assertEquals("%", p19.suffix);
+
+        MatrixTextHelper.TokenParts p20 = MatrixTextHelper.parseTokenParts("#Gboard");
+        Assert.assertEquals("#", p20.prefix);
+        Assert.assertEquals("Gboard", p20.word);
+        Assert.assertEquals("", p20.suffix);
+
+        MatrixTextHelper.TokenParts p21 = MatrixTextHelper.parseTokenParts("@user");
+        Assert.assertEquals("@", p21.prefix);
+        Assert.assertEquals("user", p21.word);
+        Assert.assertEquals("", p21.suffix);
+
+        // 7. Emojis
+        MatrixTextHelper.TokenParts p22 = MatrixTextHelper.parseTokenParts("Super!😊");
+        Assert.assertEquals("", p22.prefix);
+        Assert.assertEquals("Super", p22.word);
+        Assert.assertEquals("!😊", p22.suffix);
+
+        // 8. Standalone symbols (no word)
+        MatrixTextHelper.TokenParts p23 = MatrixTextHelper.parseTokenParts("😊");
+        Assert.assertFalse(p23.hasWord());
+
+        MatrixTextHelper.TokenParts p24 = MatrixTextHelper.parseTokenParts("+");
+        Assert.assertFalse(p24.hasWord());
+
+        MatrixTextHelper.TokenParts p25 = MatrixTextHelper.parseTokenParts("...");
+        Assert.assertFalse(p25.hasWord());
+    }
+
+    @Test
+    public void sentenceTokenizationTests() {
+        // Sentence with mixed brackets, quotes, currency, and emojis
+        String s = "(Hallo) das ist ein \"Zitat\" mit $100 und 50€ Super!😊";
+        List<MatrixTextHelper.TokenParts> tokens = MatrixTextHelper.tokenizeSentence(s);
+
+        Assert.assertEquals(10, tokens.size());
+        Assert.assertEquals("Hallo", tokens.get(0).word);
+        Assert.assertEquals("(", tokens.get(0).prefix);
+        Assert.assertEquals(")", tokens.get(0).suffix);
+
+        Assert.assertEquals("das", tokens.get(1).word);
+        Assert.assertEquals("ist", tokens.get(2).word);
+        Assert.assertEquals("ein", tokens.get(3).word);
+
+        Assert.assertEquals("Zitat", tokens.get(4).word);
+        Assert.assertEquals("\"", tokens.get(4).prefix);
+        Assert.assertEquals("\"", tokens.get(4).suffix);
+
+        Assert.assertEquals("mit", tokens.get(5).word);
+
+        Assert.assertEquals("100", tokens.get(6).word);
+        Assert.assertEquals("$", tokens.get(6).prefix);
+
+        Assert.assertEquals("und", tokens.get(7).word);
+
+        Assert.assertEquals("50", tokens.get(8).word);
+        Assert.assertEquals("€", tokens.get(8).suffix);
+
+        Assert.assertEquals("Super", tokens.get(9).word);
+        Assert.assertEquals("!😊", tokens.get(9).suffix);
+
+        // Math operators test
+        String math = "1 + 2 = 3";
+        List<MatrixTextHelper.TokenParts> mathTokens = MatrixTextHelper.tokenizeSentence(math);
+        Assert.assertEquals(5, mathTokens.size());
+        Assert.assertTrue(mathTokens.get(0).hasWord()); // "1"
+        Assert.assertFalse(mathTokens.get(1).hasWord()); // "+"
+        Assert.assertTrue(mathTokens.get(2).hasWord()); // "2"
+        Assert.assertFalse(mathTokens.get(3).hasWord()); // "="
+        Assert.assertTrue(mathTokens.get(4).hasWord()); // "3"
+
+        // Adjacent brackets without space: "(Hallo)(Welt)"
+        List<MatrixTextHelper.TokenParts> adj = MatrixTextHelper.tokenizeSentence("(Hallo)(Welt)");
+        Assert.assertEquals(2, adj.size());
+        Assert.assertEquals("Hallo", adj.get(0).word);
+        Assert.assertEquals("(", adj.get(0).prefix);
+        Assert.assertEquals(")", adj.get(0).suffix);
+        Assert.assertEquals("Welt", adj.get(1).word);
+        Assert.assertEquals("(", adj.get(1).prefix);
+        Assert.assertEquals(")", adj.get(1).suffix);
+    }
+
+    @Test
+    public void findHistoryWordPositionInComplexSentences() {
+        // 1. In brackets: "(Hallo) wie geht es dir" -> Target Col 0: "(Hallo)"
+        String text1 = "(Hallo) wie geht es dir";
+        MatrixSentenceBuffer buf1 = new MatrixSentenceBuffer();
+        buf1.addWord("(Hallo)", Collections.singletonList("(Hallo)"), 0);
+        buf1.addWord("wie", Collections.singletonList("wie"), 0);
+        buf1.addWord("geht", Collections.singletonList("geht"), 0);
+        buf1.addWord("es", Collections.singletonList("es"), 0);
+        buf1.addWord("dir", Collections.singletonList("dir"), 0);
+
+        int[] posHallo = MatrixTextHelper.findHistoryWordPosition(text1, buf1.getEntries(), 0, "(Hallo)");
+        Assert.assertNotNull(posHallo);
+        Assert.assertEquals(1, posHallo[0]);
+        Assert.assertEquals(6, posHallo[1]);
+        Assert.assertEquals("Hallo", text1.substring(posHallo[0], posHallo[1]));
+
+        // 2. In quotes: "Das ist „Genial!“ wirklich" -> Target Col 2: "„Genial!“"
+        String text2 = "Das ist „Genial!“ wirklich";
+        MatrixSentenceBuffer buf2 = new MatrixSentenceBuffer();
+        buf2.addWord("Das", Collections.singletonList("Das"), 0);
+        buf2.addWord("ist", Collections.singletonList("ist"), 0);
+        buf2.addWord("„Genial!“", Collections.singletonList("„Genial!“"), 0);
+        buf2.addWord("wirklich", Collections.singletonList("wirklich"), 0);
+
+        int[] posGenial = MatrixTextHelper.findHistoryWordPosition(text2, buf2.getEntries(), 2, "„Genial!“");
+        Assert.assertNotNull(posGenial);
+        Assert.assertEquals("Genial", text2.substring(posGenial[0], posGenial[1]));
+
+        // 3. With decimals and currency: "Kostet $100 oder 3,14€ bar"
+        String text3 = "Kostet $100 oder 3,14€ bar";
+        MatrixSentenceBuffer buf3 = new MatrixSentenceBuffer();
+        buf3.addWord("Kostet", Collections.singletonList("Kostet"), 0);
+        buf3.addWord("$100", Collections.singletonList("$100"), 0);
+        buf3.addWord("oder", Collections.singletonList("oder"), 0);
+        buf3.addWord("3,14€", Collections.singletonList("3,14€"), 0);
+        buf3.addWord("bar", Collections.singletonList("bar"), 0);
+
+        int[] pos100 = MatrixTextHelper.findHistoryWordPosition(text3, buf3.getEntries(), 1, "$100");
+        Assert.assertNotNull(pos100);
+        Assert.assertEquals("100", text3.substring(pos100[0], pos100[1]));
+
+        int[] posPi = MatrixTextHelper.findHistoryWordPosition(text3, buf3.getEntries(), 3, "3,14€");
+        Assert.assertNotNull(posPi);
+        Assert.assertEquals("3,14", text3.substring(posPi[0], posPi[1]));
+
+        // 4. With contractions and hyphens: "Wie geht's per E-Mail"
+        String text4 = "Wie geht's per E-Mail";
+        MatrixSentenceBuffer buf4 = new MatrixSentenceBuffer();
+        buf4.addWord("Wie", Collections.singletonList("Wie"), 0);
+        buf4.addWord("geht's", Collections.singletonList("geht's"), 0);
+        buf4.addWord("per", Collections.singletonList("per"), 0);
+        buf4.addWord("E-Mail", Collections.singletonList("E-Mail"), 0);
+
+        int[] posGehts = MatrixTextHelper.findHistoryWordPosition(text4, buf4.getEntries(), 1, "geht's");
+        Assert.assertNotNull(posGehts);
+        Assert.assertEquals("geht's", text4.substring(posGehts[0], posGehts[1]));
+
+        int[] posEmail = MatrixTextHelper.findHistoryWordPosition(text4, buf4.getEntries(), 3, "E-Mail");
+        Assert.assertNotNull(posEmail);
+        Assert.assertEquals("E-Mail", text4.substring(posEmail[0], posEmail[1]));
+
+        // 5. With attached emoji: "Das ist Super!😊 danke"
+        String text5 = "Das ist Super!😊 danke";
+        MatrixSentenceBuffer buf5 = new MatrixSentenceBuffer();
+        buf5.addWord("Das", Collections.singletonList("Das"), 0);
+        buf5.addWord("ist", Collections.singletonList("ist"), 0);
+        buf5.addWord("Super!😊", Collections.singletonList("Super!😊"), 0);
+        buf5.addWord("danke", Collections.singletonList("danke"), 0);
+
+        int[] posSuper = MatrixTextHelper.findHistoryWordPosition(text5, buf5.getEntries(), 2, "Super!😊");
+        Assert.assertNotNull(posSuper);
+        Assert.assertEquals("Super", text5.substring(posSuper[0], posSuper[1]));
+
+        // 6. Sentence with standalone math operators: "1 + 2 = 3"
+        // Buffer only stores the real words ("1", "2", "3")
+        String text6 = "1 + 2 = 3";
+        MatrixSentenceBuffer buf6 = new MatrixSentenceBuffer();
+        buf6.addWord("1", Collections.singletonList("1"), 0);
+        buf6.addWord("2", Collections.singletonList("2"), 0);
+        buf6.addWord("3", Collections.singletonList("3"), 0);
+
+        int[] pos2 = MatrixTextHelper.findHistoryWordPosition(text6, buf6.getEntries(), 1, "2");
+        Assert.assertNotNull(pos2);
+        Assert.assertEquals("2", text6.substring(pos2[0], pos2[1]));
+    }
+
+    @Test
+    public void activeWordResolutionWithSymbols() {
+        // Active typing inside parentheses
+        Assert.assertEquals("Hallo", MatrixTextHelper.getActiveWord("(Hallo", Collections.emptyList()));
+
+        // Active typing with currency
+        Assert.assertEquals("100", MatrixTextHelper.getActiveWord("$100", Collections.emptyList()));
+
+        // Active typing compound words
+        Assert.assertEquals("E-Mail", MatrixTextHelper.getActiveWord("E-Mail", Collections.emptyList()));
+        Assert.assertEquals("geht's", MatrixTextHelper.getActiveWord("geht's", Collections.emptyList()));
+
+        // Active typing decimal
+        Assert.assertEquals("3,14", MatrixTextHelper.getActiveWord("3,14", Collections.emptyList()));
+    }
 }

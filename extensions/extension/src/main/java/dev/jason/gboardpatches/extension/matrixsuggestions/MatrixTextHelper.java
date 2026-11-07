@@ -24,10 +24,178 @@ public final class MatrixTextHelper {
 
     private MatrixTextHelper() {}
 
+    public static final class TokenParts {
+        public final String prefix;
+        public final String word;
+        public final String suffix;
+        public final String fullToken;
+
+        public TokenParts(String prefix, String word, String suffix, String fullToken) {
+            this.prefix = prefix != null ? prefix : "";
+            this.word = word != null ? word : "";
+            this.suffix = suffix != null ? suffix : "";
+            this.fullToken = fullToken != null ? fullToken : "";
+        }
+
+        public boolean hasWord() {
+            return !word.isEmpty();
+        }
+
+        @Override
+        public String toString() {
+            return "TokenParts{prefix='" + prefix + "', word='" + word + "', suffix='" + suffix + "', fullToken='" + fullToken + "'}";
+        }
+    }
+
     public static boolean isBoundaryChar(char c) {
-        return Character.isWhitespace(c) || c == '.' || c == ',' || c == '!' || c == '?'
-                || c == ';' || c == ':' || c == '"' || c == '\'' || c == '-' || c == '/'
-                || c == '(' || c == ')';
+        if (Character.isWhitespace(c)) return true;
+        if (Character.isLetterOrDigit(c)) return false;
+        int type = Character.getType(c);
+        if (type == Character.NON_SPACING_MARK || type == Character.COMBINING_SPACING_MARK) {
+            return false;
+        }
+        return true;
+    }
+
+    public static boolean isBoundaryChar(CharSequence text, int index) {
+        if (text == null || index < 0 || index >= text.length()) return true;
+        char c = text.charAt(index);
+        if (Character.isWhitespace(c)) return true;
+
+        // Contextual exceptions for internal connectors within words or numbers:
+        if (index > 0 && index + 1 < text.length()) {
+            char prev = text.charAt(index - 1);
+            char next = text.charAt(index + 1);
+
+            // 1. Decimal or thousands separator between digits: "3,14", "1.500"
+            if ((c == '.' || c == ',') && Character.isDigit(prev) && Character.isDigit(next)) {
+                return false;
+            }
+
+            // 2. Contraction apostrophe between letters: "geht's", "don't", "c'est", "geht’s"
+            if ((c == '\'' || c == '’' || c == '`') && Character.isLetter(prev) && Character.isLetter(next)) {
+                return false;
+            }
+
+            // 3. Hyphen, underscore, or slash in compound words: "E-Mail", "Wi-Fi", "Covid-19", "und/oder"
+            if ((c == '-' || c == '_' || c == '/') && Character.isLetterOrDigit(prev) && Character.isLetterOrDigit(next)) {
+                return false;
+            }
+        }
+
+        return isBoundaryChar(c);
+    }
+
+    public static boolean isLeadingSymbol(char c) {
+        return c == '(' || c == '[' || c == '{' || c == '<'
+                || c == '"' || c == '\'' || c == '„' || c == '“' || c == '‘' || c == '«'
+                || c == '$' || c == '€' || c == '£' || c == '¥' || c == '₹' || c == '₽' || c == '₩'
+                || c == '@' || c == '#' || c == '¿' || c == '¡';
+    }
+
+    public static boolean isTrailingSymbol(char c) {
+        return c == '.' || c == ',' || c == '!' || c == '?' || c == ';' || c == ':' || c == '…'
+                || c == ')' || c == ']' || c == '}' || c == '>'
+                || c == '"' || c == '\'' || c == '”' || c == '’' || c == '»'
+                || c == '%' || c == '‰' || c == '°'
+                || c == '€' || c == '$' || c == '£';
+    }
+
+    public static boolean isTrailingPunctuationOnly(String s) {
+        if (s == null || s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!isTrailingSymbol(c)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public static TokenParts parseTokenParts(String token) {
+        if (token == null || token.isEmpty()) {
+            return new TokenParts("", "", "", "");
+        }
+        int len = token.length();
+        int start = -1;
+        for (int i = 0; i < len; i++) {
+            if (!isBoundaryChar(token, i)) {
+                start = i;
+                break;
+            }
+        }
+        if (start == -1) {
+            return new TokenParts(token, "", "", token);
+        }
+
+        int end = -1;
+        for (int i = len - 1; i >= start; i--) {
+            if (!isBoundaryChar(token, i)) {
+                end = i + 1;
+                break;
+            }
+        }
+
+        String prefix = token.substring(0, start);
+        String word = token.substring(start, end);
+        String suffix = token.substring(end);
+        return new TokenParts(prefix, word, suffix, token);
+    }
+
+    public static List<TokenParts> splitChunkIntoTokenParts(String chunk) {
+        List<TokenParts> list = new ArrayList<>();
+        if (chunk == null || chunk.isEmpty()) return list;
+
+        int len = chunk.length();
+        int i = 0;
+        while (i < len) {
+            int prefixStart = i;
+            while (i < len && isBoundaryChar(chunk, i)) {
+                i++;
+            }
+            if (i < len) {
+                int wordStart = i;
+                while (i < len && !isBoundaryChar(chunk, i)) {
+                    i++;
+                }
+                int wordEnd = i;
+                int suffixStart = i;
+                while (i < len && isBoundaryChar(chunk, i)) {
+                    if (i + 1 < len && !isBoundaryChar(chunk, i + 1)) {
+                        char c = chunk.charAt(i);
+                        if (isLeadingSymbol(c)) {
+                            break;
+                        }
+                    }
+                    i++;
+                }
+                int suffixEnd = i;
+                String prefix = chunk.substring(prefixStart, wordStart);
+                String word = chunk.substring(wordStart, wordEnd);
+                String suffix = chunk.substring(suffixStart, suffixEnd);
+                list.add(new TokenParts(prefix, word, suffix, prefix + word + suffix));
+            } else {
+                if (prefixStart < len) {
+                    String symbols = chunk.substring(prefixStart);
+                    list.add(new TokenParts(symbols, "", "", symbols));
+                }
+            }
+        }
+        return list;
+    }
+
+    public static List<TokenParts> tokenizeSentence(String sentence) {
+        List<TokenParts> tokens = new ArrayList<>();
+        if (sentence == null || sentence.isEmpty()) {
+            return tokens;
+        }
+        String[] chunks = sentence.split("\\s+");
+        for (String chunk : chunks) {
+            String tr = chunk.trim();
+            if (tr.isEmpty()) continue;
+            tokens.addAll(splitChunkIntoTokenParts(tr));
+        }
+        return tokens;
     }
 
     public static boolean isInputEmpty(View view) {
@@ -122,7 +290,7 @@ public final class MatrixTextHelper {
         }
 
         int start = end - 1;
-        while (start >= 0 && !isBoundaryChar(s.charAt(start))) {
+        while (start >= 0 && !isBoundaryChar(s, start)) {
             start--;
         }
         if (start < end - 1) {
@@ -143,25 +311,25 @@ public final class MatrixTextHelper {
     }
 
     public static boolean isPunctuationChar(char c) {
-        return c == '.' || c == ',' || c == '!' || c == '?' || c == ';' || c == ':' || c == '-' || c == '…' || c == '\"' || c == '\'';
+        return isBoundaryChar(c);
     }
 
     public static String stripTrailingPunctuation(String word) {
         if (word == null || word.isEmpty()) return "";
-        int end = word.length();
-        while (end > 0 && isPunctuationChar(word.charAt(end - 1))) {
-            end--;
-        }
-        return word.substring(0, end);
+        TokenParts parts = parseTokenParts(word);
+        return parts.prefix + parts.word;
     }
 
     public static String getTrailingPunctuation(String word) {
         if (word == null || word.isEmpty()) return "";
-        int end = word.length();
-        while (end > 0 && isPunctuationChar(word.charAt(end - 1))) {
-            end--;
-        }
-        return word.substring(end);
+        TokenParts parts = parseTokenParts(word);
+        return parts.suffix;
+    }
+
+    public static String getCoreWord(String word) {
+        if (word == null || word.isEmpty()) return "";
+        TokenParts parts = parseTokenParts(word);
+        return parts.hasWord() ? parts.word : word;
     }
 
     public static void syncSentenceBufferFromText(
@@ -195,41 +363,37 @@ public final class MatrixTextHelper {
                 return;
             }
 
-            List<String> rawTokens = new ArrayList<>();
-            for (String t : currentSentence.split("\\s+")) {
-                String tr = t.trim();
-                if (!tr.isEmpty()) {
-                    rawTokens.add(tr);
+            List<TokenParts> allTokens = tokenizeSentence(currentSentence);
+            List<TokenParts> validTokens = new ArrayList<>();
+
+            for (TokenParts parts : allTokens) {
+                if (parts.hasWord()) {
+                    validTokens.add(parts);
+                } else if (!validTokens.isEmpty() && isTrailingPunctuationOnly(parts.prefix)) {
+                    // Pure trailing punctuation mark typed after space (e.g. "Hallo .", "Hallo ,", "Hallo !")
+                    int lastIdx = validTokens.size() - 1;
+                    TokenParts prev = validTokens.get(lastIdx);
+                    String combinedSuffix = prev.suffix + parts.prefix;
+                    validTokens.set(lastIdx, new TokenParts(prev.prefix, prev.word, combinedSuffix, prev.prefix + prev.word + combinedSuffix));
                 }
             }
 
-            List<String> wordsWithPunct = new ArrayList<>();
-            for (String token : rawTokens) {
-                String base = stripTrailingPunctuation(token);
-                String punct = getTrailingPunctuation(token);
-                if (!base.isEmpty()) {
-                    wordsWithPunct.add(token);
-                } else if (!punct.isEmpty() && !wordsWithPunct.isEmpty()) {
-                    int lastIdx = wordsWithPunct.size() - 1;
-                    wordsWithPunct.set(lastIdx, wordsWithPunct.get(lastIdx) + punct);
-                }
-            }
-
-            if (wordsWithPunct.isEmpty()) {
+            if (validTokens.isEmpty()) {
                 buffer.clear();
                 return;
             }
 
-            int historyWordCount = wordsWithPunct.size() - 1;
+            int historyWordCount = validTokens.size() - 1;
             if (currentWord == null || currentWord.isEmpty()) {
-                historyWordCount = wordsWithPunct.size();
+                historyWordCount = validTokens.size();
             }
 
             buffer.clear();
             for (int i = 0; i < historyWordCount; i++) {
-                String token = wordsWithPunct.get(i);
-                String baseWord = stripTrailingPunctuation(token);
-                String punct = getTrailingPunctuation(token);
+                TokenParts parts = validTokens.get(i);
+                String baseWord = parts.word;
+                String prefix = parts.prefix;
+                String suffix = parts.suffix;
 
                 List<String> rawAlts = alternativesCache != null ? alternativesCache.get(baseWord.toLowerCase()) : null;
                 List<String> formattedAlts = new ArrayList<>();
@@ -238,16 +402,16 @@ public final class MatrixTextHelper {
                 if (rawAlts != null && !rawAlts.isEmpty()) {
                     for (int a = 0; a < rawAlts.size(); a++) {
                         String rawAlt = rawAlts.get(a);
-                        formattedAlts.add(rawAlt + punct);
+                        formattedAlts.add(prefix + rawAlt + suffix);
                         if (rawAlt.equalsIgnoreCase(baseWord)) {
                             selIdx = a;
                         }
                     }
                 } else {
-                    formattedAlts.add(token);
+                    formattedAlts.add(parts.fullToken);
                 }
 
-                buffer.addWord(token, formattedAlts, selIdx);
+                buffer.addWord(parts.fullToken, formattedAlts, selIdx);
             }
         } catch (Throwable t) {
             Log.w(TAG, "syncSentenceBufferFromText error: " + t.getMessage());
@@ -279,7 +443,7 @@ public final class MatrixTextHelper {
             }
 
             int start = end;
-            while (start > 0 && !isBoundaryChar(text.charAt(start - 1))) {
+            while (start > 0 && !isBoundaryChar(text, start - 1)) {
                 start--;
             }
 
@@ -411,7 +575,8 @@ public final class MatrixTextHelper {
             int[] pos = findHistoryWordPosition(text, entries, historyColIndex, oldWord);
 
             if (pos != null && pos[0] >= 0 && pos[1] <= text.length() && pos[0] < pos[1]) {
-                String cleanNewWord = stripTrailingPunctuation(newWord);
+                TokenParts newParts = parseTokenParts(newWord);
+                String cleanNewWord = newParts.hasWord() ? newParts.word : newWord;
                 String textAfter = text.substring(pos[1]);
                 int deleteCount = text.length() - pos[0];
                 ic.beginBatchEdit();
@@ -432,10 +597,8 @@ public final class MatrixTextHelper {
             return null;
         }
 
-        String baseOldWord = stripTrailingPunctuation(oldWord);
-        if (baseOldWord.isEmpty()) {
-            baseOldWord = oldWord;
-        }
+        TokenParts oldParts = parseTokenParts(oldWord);
+        String baseOldWord = oldParts.hasWord() ? oldParts.word : oldWord;
 
         int wordsAfter = (history != null && targetColIndex >= 0 && targetColIndex < history.size())
                 ? (history.size() - 1 - targetColIndex)
@@ -445,13 +608,13 @@ public final class MatrixTextHelper {
         int wordsSkipped = 0;
 
         while (end > 0) {
-            while (end > 0 && isBoundaryChar(text.charAt(end - 1))) {
+            while (end > 0 && isBoundaryChar(text, end - 1)) {
                 end--;
             }
             if (end <= 0) break;
 
             int start = end;
-            while (start > 0 && !isBoundaryChar(text.charAt(start - 1))) {
+            while (start > 0 && !isBoundaryChar(text, start - 1)) {
                 start--;
             }
 
@@ -477,13 +640,15 @@ public final class MatrixTextHelper {
         if (text == null || word == null || text.isEmpty() || word.isEmpty()) {
             return null;
         }
-        int wLen = word.length();
+        TokenParts parts = parseTokenParts(word);
+        String target = parts.hasWord() ? parts.word : word;
+        int wLen = target.length();
         int tLen = text.length();
 
         for (int i = tLen - wLen; i >= 0; i--) {
-            if (text.regionMatches(true, i, word, 0, wLen)) {
-                boolean beforeOk = (i == 0) || isBoundaryChar(text.charAt(i - 1));
-                boolean afterOk = (i + wLen == tLen) || isBoundaryChar(text.charAt(i + wLen));
+            if (text.regionMatches(true, i, target, 0, wLen)) {
+                boolean beforeOk = (i == 0) || isBoundaryChar(text, i - 1);
+                boolean afterOk = (i + wLen == tLen) || isBoundaryChar(text, i + wLen);
                 if (beforeOk && afterOk) {
                     return new int[]{i, i + wLen};
                 }

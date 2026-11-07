@@ -573,8 +573,7 @@ public final class GboardMatrixSuggestionsRuntime {
             String trimmed = text.trim();
             int lastBoundary = -1;
             for (int i = trimmed.length() - 1; i >= 0; i--) {
-                char c = trimmed.charAt(i);
-                if (MatrixTextHelper.isBoundaryChar(c)) {
+                if (MatrixTextHelper.isBoundaryChar(trimmed, i)) {
                     lastBoundary = i;
                     break;
                 }
