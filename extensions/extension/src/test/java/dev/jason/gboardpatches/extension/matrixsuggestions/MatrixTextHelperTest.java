@@ -1,5 +1,15 @@
 package dev.jason.gboardpatches.extension.matrixsuggestions;
 
+import android.os.Bundle;
+import android.os.Handler;
+import android.view.KeyEvent;
+import android.view.inputmethod.CompletionInfo;
+import android.view.inputmethod.CorrectionInfo;
+import android.view.inputmethod.ExtractedText;
+import android.view.inputmethod.ExtractedTextRequest;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputContentInfo;
+
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -537,5 +547,351 @@ public final class MatrixTextHelperTest {
 
         // Active typing decimal
         Assert.assertEquals("3,14", MatrixTextHelper.getActiveWord("3,14", Collections.emptyList()));
+    }
+
+    @Test
+    public void replaceHistoryWordNormalCursorAtEnd() {
+        // Normal case: user was typing at the end of the text field
+        String text = "Hallo wie geht es dir";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "wie", "geht", "es", "dir");
+        TestInputConnection ic = new TestInputConnection(text, 21, 21);
+
+        boolean ok = MatrixTextHelper.replaceHistoryWord(ic, buffer, 1, "wie", "warum");
+        Assert.assertTrue(ok);
+        Assert.assertEquals("Hallo warum geht es dir", ic.getText());
+        // Cursor restored to end of text field so user can continue typing
+        Assert.assertEquals(23, ic.getSelectionStart());
+        Assert.assertEquals(23, ic.getSelectionEnd());
+    }
+
+    @Test
+    public void replaceHistoryWordTargetWordIsSelected() {
+        // Untypical case: user tapped on history word in topbar -> word is currently selected in text field
+        String text = "Hallo wie geht es dir";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "wie", "geht", "es", "dir");
+        // "wie" is at [6, 9]
+        TestInputConnection ic = new TestInputConnection(text, 6, 9);
+
+        boolean ok = MatrixTextHelper.replaceHistoryWord(ic, buffer, 1, "wie", "warum");
+        Assert.assertTrue(ok);
+        Assert.assertEquals("Hallo warum geht es dir", ic.getText());
+        // Target word was selected -> new word stays selected so user can flick again or retype
+        Assert.assertEquals(6, ic.getSelectionStart());
+        Assert.assertEquals(11, ic.getSelectionEnd());
+        Assert.assertEquals("warum", ic.getSelectedText(0));
+    }
+
+    @Test
+    public void replaceHistoryWordCursorAtStart() {
+        // Untypical case: cursor placed at index 0 (very beginning of text field)
+        String text = "Hallo wie geht es dir";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "wie", "geht", "es", "dir");
+        TestInputConnection ic = new TestInputConnection(text, 0, 0);
+
+        boolean ok = MatrixTextHelper.replaceHistoryWord(ic, buffer, 4, "dir", "euch");
+        Assert.assertTrue(ok);
+        Assert.assertEquals("Hallo wie geht es euch", ic.getText());
+    }
+
+    @Test
+    public void replaceHistoryWordCursorInMiddle() {
+        // Untypical case: cursor placed in the middle of sentence (between "geht" and " es dir")
+        String text = "Hallo wie geht es dir";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "wie", "geht", "es", "dir");
+        // Offset 14 is right after "geht"
+        TestInputConnection ic = new TestInputConnection(text, 14, 14);
+
+        boolean ok = MatrixTextHelper.replaceHistoryWord(ic, buffer, 0, "Hallo", "Guten Tag");
+        Assert.assertTrue(ok);
+        Assert.assertEquals("Guten Tag wie geht es dir", ic.getText());
+    }
+
+    @Test
+    public void replaceHistoryWordCursorInsideTargetWord() {
+        // Untypical case: cursor placed inside the word to be replaced (e.g. "w|ie" at offset 7)
+        String text = "Hallo wie geht es dir";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "wie", "geht", "es", "dir");
+        TestInputConnection ic = new TestInputConnection(text, 7, 7);
+
+        boolean ok = MatrixTextHelper.replaceHistoryWord(ic, buffer, 1, "wie", "warum");
+        Assert.assertTrue(ok);
+        Assert.assertEquals("Hallo warum geht es dir", ic.getText());
+    }
+
+    @Test
+    public void replaceHistoryWordWithDuplicatesAndUntypicalCursor() {
+        // Untypical case: sentence with duplicate words, cursor placed after the second instance
+        String text = "gut ist gut und bleibt gut";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("gut", "ist", "gut", "und", "bleibt", "gut");
+        TestInputConnection ic = new TestInputConnection(text, 11, 11);
+
+        // Replace first "gut" (Col 0) with "toll"
+        boolean ok1 = MatrixTextHelper.replaceHistoryWord(ic, buffer, 0, "gut", "toll");
+        Assert.assertTrue(ok1);
+        Assert.assertEquals("toll ist gut und bleibt gut", ic.getText());
+
+        // Replace middle "gut" (Col 2) with "super"
+        boolean ok2 = MatrixTextHelper.replaceHistoryWord(ic, buffer, 2, "gut", "super");
+        Assert.assertTrue(ok2);
+        Assert.assertEquals("toll ist super und bleibt gut", ic.getText());
+
+        // Replace last "gut" (Col 5) with "prima"
+        boolean ok3 = MatrixTextHelper.replaceHistoryWord(ic, buffer, 5, "gut", "prima");
+        Assert.assertTrue(ok3);
+        Assert.assertEquals("toll ist super und bleibt prima", ic.getText());
+    }
+
+    @Test
+    public void replaceHistoryWordWithBracketsAndUntypicalCursor() {
+        // Untypical case: word in parentheses, cursor inside parentheses "(H|allo)"
+        String text = "(Hallo) wie geht es dir";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("(Hallo)", "wie", "geht", "es", "dir");
+        TestInputConnection ic = new TestInputConnection(text, 2, 2);
+
+        boolean ok = MatrixTextHelper.replaceHistoryWord(ic, buffer, 0, "(Hallo)", "(Hi)");
+        Assert.assertTrue(ok);
+        // Parentheses are preserved!
+        Assert.assertEquals("(Hi) wie geht es dir", ic.getText());
+    }
+
+    @Test
+    public void replaceHistoryWordWithQuotesAndUntypicalCursor() {
+        // Untypical case: German quotes with trailing exclamation mark, cursor at 0
+        String text = "Das ist „Genial!“ wirklich";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Das", "ist", "„Genial!“", "wirklich");
+        TestInputConnection ic = new TestInputConnection(text, 0, 0);
+
+        boolean ok = MatrixTextHelper.replaceHistoryWord(ic, buffer, 2, "„Genial!“", "„Klasse!“");
+        Assert.assertTrue(ok);
+        Assert.assertEquals("Das ist „Klasse!“ wirklich", ic.getText());
+    }
+
+    @Test
+    public void replaceActiveWordWithUntypicalCursorAndSelection() {
+        // Untypical case 1: Active word is currently selected in text field
+        String text1 = "Hallo Welt";
+        TestInputConnection ic1 = new TestInputConnection(text1, 6, 10); // "Welt" selected
+        boolean ok1 = MatrixTextHelper.replaceActiveWordInTextField(ic1, "Erde");
+        Assert.assertTrue(ok1);
+        Assert.assertEquals("Hallo Erde", ic1.getText());
+
+        // Untypical case 2: Cursor placed directly at end
+        String text2 = "Hallo Welt";
+        TestInputConnection ic2 = new TestInputConnection(text2, 10, 10);
+        boolean ok2 = MatrixTextHelper.replaceActiveWordInTextField(ic2, "Erde");
+        Assert.assertTrue(ok2);
+        Assert.assertEquals("Hallo Erde", ic2.getText());
+    }
+
+    @Test
+    public void selectHistoryWordAndJumpToEndWithUntypicalCursor() {
+        String text = "Hallo wie geht es dir";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "wie", "geht", "es", "dir");
+        TestInputConnection ic = new TestInputConnection(text, 0, 0);
+
+        // Select Col 1 ("wie") from start of field
+        boolean selOk = MatrixTextHelper.selectHistoryWordInTextField(ic, buffer, 1, "wie");
+        Assert.assertTrue(selOk);
+        Assert.assertEquals(6, ic.getSelectionStart());
+        Assert.assertEquals(9, ic.getSelectionEnd());
+        Assert.assertEquals("wie", ic.getSelectedText(0));
+
+        // Jump to end
+        MatrixTextHelper.jumpToEndOfTextField(ic);
+        Assert.assertEquals(21, ic.getSelectionStart());
+        Assert.assertEquals(21, ic.getSelectionEnd());
+    }
+
+    private static MatrixSentenceBuffer createSentenceBuffer(String... words) {
+        MatrixSentenceBuffer buf = new MatrixSentenceBuffer();
+        for (String w : words) {
+            buf.addWord(w, Collections.singletonList(w), 0);
+        }
+        return buf;
+    }
+
+    /**
+     * Test implementation of InputConnection to simulate any cursor position,
+     * selection, and document editing in pure unit tests.
+     */
+    private static class TestInputConnection implements InputConnection {
+        private final StringBuilder text;
+        private int selStart;
+        private int selEnd;
+
+        public TestInputConnection(String initialText, int selStart, int selEnd) {
+            this.text = new StringBuilder(initialText != null ? initialText : "");
+            this.selStart = Math.max(0, Math.min(this.text.length(), selStart));
+            this.selEnd = Math.max(0, Math.min(this.text.length(), selEnd));
+        }
+
+        public String getText() {
+            return text.toString();
+        }
+
+        public int getSelectionStart() {
+            return selStart;
+        }
+
+        public int getSelectionEnd() {
+            return selEnd;
+        }
+
+        @Override
+        public CharSequence getTextBeforeCursor(int n, int flags) {
+            int start = Math.max(0, selStart - n);
+            return text.substring(start, selStart);
+        }
+
+        @Override
+        public CharSequence getTextAfterCursor(int n, int flags) {
+            int end = Math.min(text.length(), selEnd + n);
+            return text.substring(selEnd, end);
+        }
+
+        @Override
+        public CharSequence getSelectedText(int flags) {
+            if (selStart == selEnd) return null;
+            int s = Math.min(selStart, selEnd);
+            int e = Math.max(selStart, selEnd);
+            return text.substring(s, e);
+        }
+
+        @Override
+        public int getCursorCapsMode(int reqModes) {
+            return 0;
+        }
+
+        @Override
+        public ExtractedText getExtractedText(ExtractedTextRequest request, int flags) {
+            ExtractedText et = new ExtractedText();
+            et.text = text.toString();
+            et.selectionStart = selStart;
+            et.selectionEnd = selEnd;
+            et.startOffset = 0;
+            return et;
+        }
+
+        @Override
+        public boolean deleteSurroundingText(int beforeLength, int afterLength) {
+            if (beforeLength > 0) {
+                int delStart = Math.max(0, selStart - beforeLength);
+                this.text.delete(delStart, selStart);
+                this.selStart = delStart;
+                this.selEnd = delStart;
+            }
+            if (afterLength > 0) {
+                int delEnd = Math.min(text.length(), selEnd + afterLength);
+                this.text.delete(selEnd, delEnd);
+            }
+            return true;
+        }
+
+        @Override
+        public boolean deleteSurroundingTextInCodePoints(int beforeLength, int afterLength) {
+            return deleteSurroundingText(beforeLength, afterLength);
+        }
+
+        @Override
+        public boolean setComposingText(CharSequence text, int newCursorPosition) {
+            return commitText(text, newCursorPosition);
+        }
+
+        @Override
+        public boolean setComposingRegion(int start, int end) {
+            return true;
+        }
+
+        @Override
+        public boolean finishComposingText() {
+            return true;
+        }
+
+        @Override
+        public boolean commitText(CharSequence text, int newCursorPosition) {
+            int s = Math.min(selStart, selEnd);
+            int e = Math.max(selStart, selEnd);
+            this.text.replace(s, e, text.toString());
+            int newCursor = s + text.length();
+            this.selStart = newCursor;
+            this.selEnd = newCursor;
+            return true;
+        }
+
+        @Override
+        public boolean commitCompletion(CompletionInfo text) {
+            return false;
+        }
+
+        @Override
+        public boolean commitCorrection(CorrectionInfo correctionInfo) {
+            return false;
+        }
+
+        @Override
+        public boolean setSelection(int start, int end) {
+            this.selStart = Math.max(0, Math.min(text.length(), start));
+            this.selEnd = Math.max(0, Math.min(text.length(), end));
+            return true;
+        }
+
+        @Override
+        public boolean performEditorAction(int editorAction) {
+            return false;
+        }
+
+        @Override
+        public boolean performContextMenuAction(int id) {
+            return false;
+        }
+
+        @Override
+        public boolean beginBatchEdit() {
+            return true;
+        }
+
+        @Override
+        public boolean endBatchEdit() {
+            return true;
+        }
+
+        @Override
+        public boolean sendKeyEvent(KeyEvent event) {
+            return false;
+        }
+
+        @Override
+        public boolean clearMetaKeyStates(int states) {
+            return false;
+        }
+
+        @Override
+        public boolean reportFullscreenMode(boolean enabled) {
+            return false;
+        }
+
+        @Override
+        public boolean performPrivateCommand(String action, Bundle data) {
+            return false;
+        }
+
+        @Override
+        public boolean requestCursorUpdates(int cursorUpdateMode) {
+            return false;
+        }
+
+        @Override
+        public Handler getHandler() {
+            return null;
+        }
+
+        @Override
+        public void closeConnection() {
+        }
+
+        @Override
+        public boolean commitContent(InputContentInfo inputContentInfo, int flags, Bundle opts) {
+            return false;
+        }
     }
 }

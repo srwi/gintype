@@ -24,6 +24,27 @@ public final class MatrixTextHelper {
 
     private MatrixTextHelper() {}
 
+    private static void logI(String tag, String msg) {
+        try {
+            Log.i(tag, msg);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void logW(String tag, String msg) {
+        try {
+            Log.w(tag, msg);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void logE(String tag, String msg, Throwable t) {
+        try {
+            Log.e(tag, msg, t);
+        } catch (Throwable ignored) {
+        }
+    }
+
     public static final class TokenParts {
         public final String prefix;
         public final String word;
@@ -414,22 +435,32 @@ public final class MatrixTextHelper {
                 buffer.addWord(parts.fullToken, formattedAlts, selIdx);
             }
         } catch (Throwable t) {
-            Log.w(TAG, "syncSentenceBufferFromText error: " + t.getMessage());
+            logW(TAG, "syncSentenceBufferFromText error: " + t.getMessage());
         }
     }
 
-    public static void replaceActiveWordInTextField(View view, String newWord) {
-        if (newWord == null || newWord.isEmpty()) return;
-        try {
-            InputConnection ic = getInputConnection(view);
-            if (ic == null) return;
+    public static boolean replaceActiveWordInTextField(View view, String newWord) {
+        InputConnection ic = getInputConnection(view);
+        return replaceActiveWordInTextField(ic, newWord);
+    }
 
+    public static boolean replaceActiveWordInTextField(InputConnection ic, String newWord) {
+        if (ic == null || newWord == null || newWord.isEmpty()) return false;
+        try {
             ic.finishComposingText();
+
+            CharSequence csSel = ic.getSelectedText(0);
+            String sel = csSel != null ? csSel.toString() : "";
+            if (!sel.isEmpty()) {
+                ic.commitText(newWord, 1);
+                logI(TAG, "replaceActiveWordInTextField: replaced selection '" + sel + "' with '" + newWord + "'");
+                return true;
+            }
 
             CharSequence cs = ic.getTextBeforeCursor(200, 0);
             if (cs == null || cs.length() == 0) {
                 ic.commitText(newWord, 1);
-                return;
+                return true;
             }
 
             String text = cs.toString();
@@ -439,7 +470,7 @@ public final class MatrixTextHelper {
             }
             if (end <= 0) {
                 ic.commitText(newWord, 1);
-                return;
+                return true;
             }
 
             int start = end;
@@ -449,7 +480,7 @@ public final class MatrixTextHelper {
 
             String oldWord = text.substring(start, end);
             if (oldWord.equals(newWord)) {
-                return;
+                return true;
             }
 
             int deleteLen = text.length() - start;
@@ -458,11 +489,13 @@ public final class MatrixTextHelper {
                 ic.deleteSurroundingText(deleteLen, 0);
                 ic.commitText(newWord, 1);
                 ic.endBatchEdit();
-                Log.i(TAG, "replaceActiveWordInTextField: cleanly replaced '" + oldWord + "' with '" + newWord + "' (no space)");
+                logI(TAG, "replaceActiveWordInTextField: cleanly replaced '" + oldWord + "' with '" + newWord + "' (no space)");
+                return true;
             }
         } catch (Throwable t) {
-            Log.e(TAG, "replaceActiveWordInTextField failed", t);
+            logE(TAG, "replaceActiveWordInTextField failed", t);
         }
+        return false;
     }
 
     public static boolean isCursorAtEnd(View view) {
@@ -482,11 +515,13 @@ public final class MatrixTextHelper {
     }
 
     public static boolean selectHistoryWordInTextField(View view, MatrixSentenceBuffer buffer, int historyColIndex, String word) {
-        if (view == null || buffer == null || word == null) return false;
-        try {
-            InputConnection ic = getInputConnection(view);
-            if (ic == null) return false;
+        InputConnection ic = getInputConnection(view);
+        return selectHistoryWordInTextField(ic, buffer, historyColIndex, word);
+    }
 
+    public static boolean selectHistoryWordInTextField(InputConnection ic, MatrixSentenceBuffer buffer, int historyColIndex, String word) {
+        if (ic == null || buffer == null || word == null) return false;
+        try {
             CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
             CharSequence csSel = ic.getSelectedText(0);
             CharSequence csAfter = ic.getTextAfterCursor(2000, 0);
@@ -515,21 +550,23 @@ public final class MatrixTextHelper {
                 int selEnd = Math.max(0, docOffset + pos[1]);
 
                 ic.setSelection(selStart, selEnd);
-                Log.i(TAG, "selectHistoryWordInTextField: selected '" + word + "' at [" + selStart + ", " + selEnd + "]");
+                logI(TAG, "selectHistoryWordInTextField: selected '" + word + "' at [" + selStart + ", " + selEnd + "]");
                 return true;
             }
         } catch (Throwable t) {
-            Log.e(TAG, "selectHistoryWordInTextField failed", t);
+            logE(TAG, "selectHistoryWordInTextField failed", t);
         }
         return false;
     }
 
     public static void jumpToEndOfTextField(View view) {
-        if (view == null) return;
-        try {
-            InputConnection ic = getInputConnection(view);
-            if (ic == null) return;
+        InputConnection ic = getInputConnection(view);
+        jumpToEndOfTextField(ic);
+    }
 
+    public static void jumpToEndOfTextField(InputConnection ic) {
+        if (ic == null) return;
+        try {
             ic.finishComposingText();
 
             int textLength = -1;
@@ -553,43 +590,77 @@ public final class MatrixTextHelper {
 
             if (textLength >= 0) {
                 ic.setSelection(textLength, textLength);
-                Log.i(TAG, "jumpToEndOfTextField: moved cursor to end offset " + textLength);
+                logI(TAG, "jumpToEndOfTextField: moved cursor to end offset " + textLength);
             }
         } catch (Throwable t) {
-            Log.e(TAG, "jumpToEndOfTextField error", t);
+            logE(TAG, "jumpToEndOfTextField error", t);
         }
     }
 
-    public static void replaceHistoryWord(View anchorView, MatrixSentenceBuffer buffer, int historyColIndex, String oldWord, String newWord) {
-        try {
-            InputConnection ic = getInputConnection(anchorView);
-            if (ic == null) return;
+    public static boolean replaceHistoryWord(View anchorView, MatrixSentenceBuffer buffer, int historyColIndex, String oldWord, String newWord) {
+        InputConnection ic = getInputConnection(anchorView);
+        return replaceHistoryWord(ic, buffer, historyColIndex, oldWord, newWord);
+    }
 
+    public static boolean replaceHistoryWord(InputConnection ic, MatrixSentenceBuffer buffer, int historyColIndex, String oldWord, String newWord) {
+        if (ic == null || buffer == null || oldWord == null || newWord == null) return false;
+        try {
             ic.finishComposingText();
 
-            CharSequence textBefore = ic.getTextBeforeCursor(2000, 0);
-            if (textBefore == null) return;
+            CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
+            CharSequence csSel = ic.getSelectedText(0);
+            CharSequence csAfter = ic.getTextAfterCursor(2000, 0);
 
-            String text = textBefore.toString();
+            String before = csBefore != null ? csBefore.toString() : "";
+            String sel = csSel != null ? csSel.toString() : "";
+            String after = csAfter != null ? csAfter.toString() : "";
+
+            String fullText = before + sel + after;
+            if (fullText.isEmpty()) return false;
+
             List<MatrixSentenceBuffer.WordEntry> entries = buffer.getEntries();
-            int[] pos = findHistoryWordPosition(text, entries, historyColIndex, oldWord);
+            int[] pos = findHistoryWordPosition(fullText, entries, historyColIndex, oldWord);
 
-            if (pos != null && pos[0] >= 0 && pos[1] <= text.length() && pos[0] < pos[1]) {
+            if (pos != null && pos[0] >= 0 && pos[1] <= fullText.length() && pos[0] < pos[1]) {
                 TokenParts newParts = parseTokenParts(newWord);
                 String cleanNewWord = newParts.hasWord() ? newParts.word : newWord;
-                String textAfter = text.substring(pos[1]);
-                int deleteCount = text.length() - pos[0];
+
+                int docOffset = 0;
+                try {
+                    ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+                    if (et != null && et.selectionStart >= 0) {
+                        docOffset = et.selectionStart - before.length();
+                    }
+                } catch (Throwable ignored) {
+                }
+
+                int selStart = Math.max(0, docOffset + pos[0]);
+                int selEnd = Math.max(0, docOffset + pos[1]);
+
+                boolean wasCursorAtEnd = (after.isEmpty() && sel.isEmpty());
+                boolean wasTargetSelected = (!sel.isEmpty() && before.length() == pos[0] && (before.length() + sel.length()) == pos[1]);
+
                 ic.beginBatchEdit();
-                ic.deleteSurroundingText(deleteCount, 0);
-                ic.commitText(cleanNewWord + textAfter, 1);
+                ic.setSelection(selStart, selEnd);
+                ic.commitText(cleanNewWord, 1);
+
+                if (wasCursorAtEnd) {
+                    int newDocLen = Math.max(0, docOffset + fullText.length() - (pos[1] - pos[0]) + cleanNewWord.length());
+                    ic.setSelection(newDocLen, newDocLen);
+                } else if (wasTargetSelected) {
+                    ic.setSelection(selStart, selStart + cleanNewWord.length());
+                }
                 ic.endBatchEdit();
-                Log.i(TAG, "replaceHistoryWord: replaced '" + oldWord + "' with '" + cleanNewWord + "' at [" + pos[0] + ", " + pos[1] + "]");
+
+                logI(TAG, "replaceHistoryWord: cleanly replaced '" + oldWord + "' with '" + cleanNewWord + "' at [" + selStart + ", " + selEnd + "]");
+                return true;
             } else {
-                Log.w(TAG, "replaceHistoryWord: could not find boundary position for '" + oldWord + "' (col=" + historyColIndex + ")");
+                logW(TAG, "replaceHistoryWord: could not find boundary position for '" + oldWord + "' (col=" + historyColIndex + ")");
             }
         } catch (Throwable t) {
-            Log.e(TAG, "replaceHistoryWord failed", t);
+            logE(TAG, "replaceHistoryWord failed", t);
         }
+        return false;
     }
 
     public static int[] findHistoryWordPosition(String text, List<MatrixSentenceBuffer.WordEntry> history, int targetColIndex, String oldWord) {
