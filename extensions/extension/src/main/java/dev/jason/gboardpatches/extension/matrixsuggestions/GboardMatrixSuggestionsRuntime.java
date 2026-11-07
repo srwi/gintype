@@ -365,12 +365,14 @@ public final class GboardMatrixSuggestionsRuntime {
         // Keep quick toggles suppressed and MatrixBar at front whenever MatrixBar is visible,
         // UNLESS Gboard surfaces an Undo view!
         attachTarget.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (finalBar.getVisibility() == View.VISIBLE) {
-                if (MatrixGboardReflector.isUndoViewActive(attachTarget)) {
+            if (MatrixGboardReflector.isUndoViewActive(attachTarget)) {
+                if (finalBar.getVisibility() != View.GONE) {
                     finalBar.setVisibility(View.GONE);
-                    MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
-                    return;
                 }
+                MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                return;
+            }
+            if (finalBar.getVisibility() == View.VISIBLE) {
                 MatrixGboardReflector.suppressQuickToggles(attachTarget, true);
                 if (attachTarget.getChildCount() > 0 && attachTarget.getChildAt(attachTarget.getChildCount() - 1) != finalBar) {
                     finalBar.bringToFront();
@@ -380,9 +382,15 @@ public final class GboardMatrixSuggestionsRuntime {
 
         // Watch for holderView visibility / layout changes
         holderView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (MatrixGboardReflector.isUndoViewActive(attachTarget)) {
+                if (finalBar.getVisibility() != View.GONE) {
+                    finalBar.setVisibility(View.GONE);
+                }
+                MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                return;
+            }
             if (v.getVisibility() != View.VISIBLE || (right - left <= 0)) {
-                if (MatrixGboardReflector.isUndoViewActive(attachTarget)
-                        || MatrixTextHelper.isSentenceEnded(v) || MatrixTextHelper.isInputEmpty(v)) {
+                if (MatrixTextHelper.isSentenceEnded(v) || MatrixTextHelper.isInputEmpty(v)) {
                     if (finalBar.getVisibility() != View.GONE) {
                         finalBar.setVisibility(View.GONE);
                         MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
