@@ -17,6 +17,8 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * Encapsulates Gboard internal reflection for candidate extraction,
@@ -457,18 +459,83 @@ public final class MatrixGboardReflector {
         return null;
     }
 
+    private static final Map<View, Integer> ORIGINAL_HEADER_HEIGHTS = new WeakHashMap<>();
+    private static final float EXPANDED_HEADER_HEIGHT_DP = 54f;
+
+    public static View findHeaderRootView(View view) {
+        if (view == null) return null;
+        View cur = view;
+        View headerRoot = null;
+        while (cur != null) {
+            String name = cur.getClass().getName();
+            if (name.contains("ConstraintHeaderView") || name.contains("HeaderView") || name.contains("header")) {
+                headerRoot = cur;
+                break;
+            }
+            if (cur.getParent() instanceof View parentView) {
+                String parentName = parentView.getClass().getName();
+                if (parentName.contains("SoftKeyboardView") || parentName.contains("KeyboardViewHolder")
+                        || parentName.contains("InputView") || parentName.contains("MainKeyboardView")) {
+                    headerRoot = cur;
+                    break;
+                }
+                cur = parentView;
+            } else {
+                break;
+            }
+        }
+        return headerRoot != null ? headerRoot : (view.getParent() instanceof View ? (View) view.getParent() : view);
+    }
+
+    public static void adjustHeaderHeight(ViewGroup attachTarget, boolean expand) {
+        if (attachTarget == null) return;
+        try {
+            View headerRoot = findHeaderRootView(attachTarget);
+            if (headerRoot == null) return;
+
+            ViewGroup.LayoutParams lp = headerRoot.getLayoutParams();
+            if (lp == null) return;
+
+            if (expand) {
+                if (!ORIGINAL_HEADER_HEIGHTS.containsKey(headerRoot)) {
+                    int curHeight = lp.height > 0 ? lp.height : headerRoot.getHeight();
+                    ORIGINAL_HEADER_HEIGHTS.put(headerRoot, curHeight);
+                }
+
+                int targetHeightPx = (int) TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_DIP, EXPANDED_HEADER_HEIGHT_DP,
+                        headerRoot.getResources().getDisplayMetrics());
+
+                if (lp.height != targetHeightPx) {
+                    lp.height = targetHeightPx;
+                    headerRoot.setLayoutParams(lp);
+                    headerRoot.requestLayout();
+                }
+            } else {
+                Integer orig = ORIGINAL_HEADER_HEIGHTS.get(headerRoot);
+                if (orig != null && orig > 0 && lp.height != orig) {
+                    lp.height = orig;
+                    headerRoot.setLayoutParams(lp);
+                    headerRoot.requestLayout();
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "adjustHeaderHeight error: " + t.getMessage());
+        }
+    }
+
     /**
      * Manages header views visibility cleanly without tampering with parent ConstraintLayout.
      * When showMatrixBar is true:
+     *   - header height is expanded to 54dp for optimal 3-row touch comfort
      *   - holderView is set to INVISIBLE (preserves layout measurement while hiding native text and touch)
      *   - attachTarget is brought to front with its opaque MatrixBar covering siblings
      *   - sibling quick toggles inside attachTarget's direct container are set to GONE
      * When showMatrixBar is false:
+     *   - header height is restored to its original value
      *   - if Undo is active: holderView is GONE (hides deleted text under Undo button)
      *   - if Undo is NOT active: holderView is restored to VISIBLE
      *   - sibling quick toggles in container are restored to VISIBLE
-     * Crucially, we NEVER touch views in the top-level ConstraintLayout (parent's parent),
-     * allowing Gboard to natively manage full topbar width without right-shift or layout distortion.
      */
     public static void updateHeaderViewsVisibility(ViewGroup attachTarget, ViewGroup holderView, boolean showMatrixBar) {
         if (attachTarget == null) return;
@@ -481,6 +548,7 @@ public final class MatrixGboardReflector {
             }
 
             if (showMatrixBar) {
+                adjustHeaderHeight(attachTarget, true);
                 if (holderView != null) {
                     holderView.setAlpha(0.0f);
                     holderView.setVisibility(View.INVISIBLE);
@@ -503,6 +571,7 @@ public final class MatrixGboardReflector {
                     }
                 }
             } else {
+                adjustHeaderHeight(attachTarget, false);
                 boolean undoActive = isUndoViewActive(attachTarget);
                 if (holderView != null) {
                     if (undoActive) {
