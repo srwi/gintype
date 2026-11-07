@@ -82,18 +82,18 @@ public class VerticalWordWheelView extends LinearLayout {
         touchSlop = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 12f, getResources().getDisplayMetrics());
 
-        setWeightSum(3.25f);
+        setWeightSum(3.15f);
 
-        topView = createWordView(context, 11.0f, 0.88f, false);
-        centerView = createWordView(context, 13.5f, 1.0f, true);
-        bottomView = createWordView(context, 11.0f, 0.88f, false);
+        topView = createWordView(context, 10.2f, 0.88f, false);
+        centerView = createWordView(context, 12.5f, 1.0f, true);
+        bottomView = createWordView(context, 10.2f, 0.88f, false);
 
         LinearLayout.LayoutParams topLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, 0, 1.0f);
         topLp.gravity = Gravity.CENTER_HORIZONTAL;
 
         LinearLayout.LayoutParams centerLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 1.25f);
+                ViewGroup.LayoutParams.WRAP_CONTENT, 0, 1.15f);
         centerLp.gravity = Gravity.CENTER_HORIZONTAL;
 
         LinearLayout.LayoutParams bottomLp = new LinearLayout.LayoutParams(
@@ -198,45 +198,45 @@ public class VerticalWordWheelView extends LinearLayout {
         if (isActiveWord) {
             topView.setTextColor(primaryColor);
             topView.setAlpha(0.88f);
-            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.0f);
+            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
 
             centerView.setTextColor(accentColor);
             centerView.setAlpha(1.0f);
-            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.5f);
+            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
 
             // Active pill background: Material You accent rounded pill with clean vertical padding
             int fillColor = dark ? 0x2e8ab4f8 : 0x1f1a73e8;
             int strokeColor = dark ? 0x4d8ab4f8 : 0x331a73e8;
-            centerView.setBackground(createPillDrawable(fillColor, strokeColor, 10f));
+            centerView.setBackground(createPillDrawable(fillColor, strokeColor, 9f));
             int padH = (int) TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_DIP, 8f, getResources().getDisplayMetrics());
             int padV = (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 2f, getResources().getDisplayMetrics());
+                    TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
             centerView.setPadding(padH, padV, padH, padV);
 
             bottomView.setTextColor(primaryColor);
             bottomView.setAlpha(0.88f);
-            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.0f);
+            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
         } else {
             topView.setTextColor(primaryColor);
             topView.setAlpha(0.85f);
-            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.0f);
+            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
 
             centerView.setTextColor(primaryColor);
             centerView.setAlpha(1.0f);
-            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13.0f);
+            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.0f);
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
             centerView.setBackground(null);
             int padH = (int) TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_DIP, 6f, getResources().getDisplayMetrics());
             int padV = (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 2f, getResources().getDisplayMetrics());
+                    TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
             centerView.setPadding(padH, padV, padH, padV);
 
             bottomView.setTextColor(primaryColor);
             bottomView.setAlpha(0.85f);
-            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.0f);
+            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
         }
     }
 
