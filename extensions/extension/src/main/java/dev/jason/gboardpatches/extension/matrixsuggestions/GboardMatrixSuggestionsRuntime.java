@@ -100,7 +100,7 @@ public final class GboardMatrixSuggestionsRuntime {
                     SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
                     barView.setVisibility(View.GONE);
-                    MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     return;
                 }
 
@@ -113,7 +113,7 @@ public final class GboardMatrixSuggestionsRuntime {
                     if (MatrixTextHelper.isSentenceEnded(holderView) || MatrixTextHelper.isInputEmpty(holderView)) {
                         SENTENCE_BUFFER.clear();
                         barView.setVisibility(View.GONE);
-                        MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                        MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     } else {
                         MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
                         if (!SENTENCE_BUFFER.isEmpty()) {
@@ -121,11 +121,12 @@ public final class GboardMatrixSuggestionsRuntime {
                                 MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                             });
                             barView.setVisibility(View.VISIBLE);
-                            MatrixGboardReflector.suppressQuickToggles(attachTarget, true);
+                            MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
+                            MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                             barView.bringToFront();
                         } else {
                             barView.setVisibility(View.GONE);
-                            MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                            MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                         }
                     }
                     return;
@@ -235,7 +236,8 @@ public final class GboardMatrixSuggestionsRuntime {
                         }
                 );
                 barView.setVisibility(View.VISIBLE);
-                MatrixGboardReflector.suppressQuickToggles(attachTarget, true);
+                MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
+                MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                 barView.bringToFront();
             } catch (Throwable t) {
                 Log.e(TAG, "Failed to update matrix suggestions", t);
@@ -269,7 +271,7 @@ public final class GboardMatrixSuggestionsRuntime {
                     SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
                     barView.setVisibility(View.GONE);
-                    MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     return;
                 }
 
@@ -277,7 +279,7 @@ public final class GboardMatrixSuggestionsRuntime {
                     SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
                     barView.setVisibility(View.GONE);
-                    MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     return;
                 }
 
@@ -303,7 +305,8 @@ public final class GboardMatrixSuggestionsRuntime {
                             }
                     );
                     barView.setVisibility(View.VISIBLE);
-                    MatrixGboardReflector.suppressQuickToggles(attachTarget, true);
+                    MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                     barView.bringToFront();
                     return;
                 }
@@ -314,11 +317,12 @@ public final class GboardMatrixSuggestionsRuntime {
                         MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                     });
                     barView.setVisibility(View.VISIBLE);
-                    MatrixGboardReflector.suppressQuickToggles(attachTarget, true);
+                    MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                     barView.bringToFront();
                 } else {
                     barView.setVisibility(View.GONE);
-                    MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                 }
             } catch (Throwable t) {
                 Log.e(TAG, "Failed to clear matrix suggestions", t);
@@ -348,6 +352,7 @@ public final class GboardMatrixSuggestionsRuntime {
         Context context = attachTarget.getContext();
         bar = new MatrixSuggestionBarView(context);
         bar.setTag(MATRIX_BAR_TAG);
+        MatrixGboardReflector.applyKeyboardBackground(bar, holderView);
 
         ViewGroup.LayoutParams lp;
         if (attachTarget instanceof FrameLayout) {
@@ -369,11 +374,11 @@ public final class GboardMatrixSuggestionsRuntime {
                 if (finalBar.getVisibility() != View.GONE) {
                     finalBar.setVisibility(View.GONE);
                 }
-                MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                 return;
             }
             if (finalBar.getVisibility() == View.VISIBLE) {
-                MatrixGboardReflector.suppressQuickToggles(attachTarget, true);
+                MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                 if (attachTarget.getChildCount() > 0 && attachTarget.getChildAt(attachTarget.getChildCount() - 1) != finalBar) {
                     finalBar.bringToFront();
                 }
@@ -386,14 +391,14 @@ public final class GboardMatrixSuggestionsRuntime {
                 if (finalBar.getVisibility() != View.GONE) {
                     finalBar.setVisibility(View.GONE);
                 }
-                MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                 return;
             }
             if (v.getVisibility() != View.VISIBLE || (right - left <= 0)) {
                 if (MatrixTextHelper.isSentenceEnded(v) || MatrixTextHelper.isInputEmpty(v)) {
                     if (finalBar.getVisibility() != View.GONE) {
                         finalBar.setVisibility(View.GONE);
-                        MatrixGboardReflector.suppressQuickToggles(attachTarget, false);
+                        MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     }
                 }
             }

@@ -2,8 +2,12 @@ package dev.jason.gboardpatches.extension.matrixsuggestions;
 
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.res.Configuration;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputConnection;
@@ -291,22 +295,111 @@ public final class MatrixGboardReflector {
     }
 
     /**
-     * Suppresses Gboard's native quick toggle and access point views while MatrixBar is active.
-     * In Undo mode (after swipe-to-delete), isolates the Undo button and ensures all other
-     * quick toggles and the CandidatesHolderView are hidden!
+     * Applies an opaque background to MatrixSuggestionBarView matching the keyboard surface.
+     * Prevents any underlying views or text from bleeding or showing through.
      */
-    public static void suppressQuickToggles(ViewGroup attachTarget, boolean suppress) {
+    public static void applyKeyboardBackground(View barView, ViewGroup holderView) {
+        if (barView == null) return;
+        try {
+            // 1. Try to copy background from holderView or attachTarget
+            if (holderView != null) {
+                if (holderView.getBackground() != null) {
+                    barView.setBackground(holderView.getBackground().getConstantState().newDrawable().mutate());
+                    return;
+                }
+                View parent = (View) holderView.getParent();
+                if (parent != null && parent.getBackground() != null) {
+                    barView.setBackground(parent.getBackground().getConstantState().newDrawable().mutate());
+                    return;
+                }
+            }
+
+            // 2. Try SoftKeyboardView
+            ViewGroup softKeyboard = findSoftKeyboardView(holderView);
+            if (softKeyboard != null && softKeyboard.getBackground() != null) {
+                Drawable bg = softKeyboard.getBackground();
+                if (bg instanceof ColorDrawable cd) {
+                    barView.setBackgroundColor(cd.getColor());
+                    return;
+                }
+                barView.setBackground(bg.getConstantState().newDrawable().mutate());
+                return;
+            }
+
+            // 3. Resolve theme surface color
+            Context context = barView.getContext();
+            TypedValue tv = new TypedValue();
+            if (context.getTheme().resolveAttribute(android.R.attr.colorBackground, tv, true)) {
+                if (tv.type >= TypedValue.TYPE_FIRST_COLOR_INT && tv.type <= TypedValue.TYPE_LAST_COLOR_INT && tv.data != 0) {
+                    barView.setBackgroundColor(tv.data);
+                    return;
+                }
+            }
+
+            // 4. Default adaptive surface colors (Google dark grey / light grey)
+            boolean isDark = (barView.getContext().getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+            barView.setBackgroundColor(isDark ? 0xFF202124 : 0xFFF8F9FA);
+        } catch (Throwable t) {
+            Log.w(TAG, "applyKeyboardBackground error: " + t.getMessage());
+            barView.setBackgroundColor(0xFF202124);
+        }
+    }
+
+    /**
+     * Manages header views visibility cleanly without tampering with parent ConstraintLayout.
+     * When showMatrixBar is true:
+     *   - holderView is set to INVISIBLE (preserves layout measurement while hiding native text and touch)
+     *   - attachTarget is brought to front with its opaque MatrixBar covering siblings
+     *   - sibling quick toggles inside attachTarget's direct container are set to GONE
+     * When showMatrixBar is false:
+     *   - if Undo is active: holderView is GONE (hides deleted text under Undo button)
+     *   - if Undo is NOT active: holderView is restored to VISIBLE
+     *   - sibling quick toggles in container are restored to VISIBLE
+     * Crucially, we NEVER touch views in the top-level ConstraintLayout (parent's parent),
+     * allowing Gboard to natively manage full topbar width without right-shift or layout distortion.
+     */
+    public static void updateHeaderViewsVisibility(ViewGroup attachTarget, ViewGroup holderView, boolean showMatrixBar) {
         if (attachTarget == null) return;
         try {
-            if (suppress) {
-                // Suppress quick toggles and native candidate holder so MatrixBar draws cleanly.
-                for (int i = 0; i < attachTarget.getChildCount(); i++) {
-                    View child = attachTarget.getChildAt(i);
-                    if (child instanceof MatrixSuggestionBarView) {
-                        continue;
+            // Ensure attachTarget fills full available width in container
+            ViewGroup.LayoutParams lpTarget = attachTarget.getLayoutParams();
+            if (lpTarget != null && lpTarget.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+                lpTarget.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                attachTarget.setLayoutParams(lpTarget);
+            }
+
+            if (showMatrixBar) {
+                if (holderView != null) {
+                    holderView.setAlpha(0.0f);
+                    holderView.setVisibility(View.INVISIBLE);
+                }
+
+                ViewGroup parent = (ViewGroup) attachTarget.getParent();
+                if (parent != null) {
+                    if (parent.getChildCount() > 0 && parent.getChildAt(parent.getChildCount() - 1) != attachTarget) {
+                        attachTarget.bringToFront();
                     }
-                    child.setAlpha(0.0f);
-                    child.setVisibility(View.INVISIBLE);
+                    for (int i = 0; i < parent.getChildCount(); i++) {
+                        View sibling = parent.getChildAt(i);
+                        if (sibling != attachTarget && !(sibling instanceof MatrixSuggestionBarView)) {
+                            String name = sibling.getClass().getName();
+                            if (name.contains("AccessPoint") || name.contains("accesspoint")
+                                    || name.contains("Header") || name.contains("Strip") || name.contains("Toolbar")) {
+                                sibling.setVisibility(View.GONE);
+                            }
+                        }
+                    }
+                }
+            } else {
+                boolean undoActive = isUndoViewActive(attachTarget);
+                if (holderView != null) {
+                    if (undoActive) {
+                        holderView.setAlpha(0.0f);
+                        holderView.setVisibility(View.GONE);
+                    } else {
+                        holderView.setAlpha(1.0f);
+                        holderView.setVisibility(View.VISIBLE);
+                    }
                 }
 
                 ViewGroup parent = (ViewGroup) attachTarget.getParent();
@@ -317,56 +410,8 @@ public final class MatrixGboardReflector {
                             String name = sibling.getClass().getName();
                             if (name.contains("AccessPoint") || name.contains("accesspoint")
                                     || name.contains("Header") || name.contains("Strip") || name.contains("Toolbar")) {
-                                sibling.setAlpha(0.0f);
-                                sibling.setVisibility(View.INVISIBLE);
-                            }
-                        }
-                    }
-                }
-            } else {
-                boolean undoActive = isUndoViewActive(attachTarget);
-
-                if (undoActive) {
-                    // In Undo mode: ONLY the Undo button must be visible!
-                    // Quick toggles (non-undo items) and CandidatesHolderView must be hidden!
-                    isolateUndoView(attachTarget);
-                    ViewGroup parent = (ViewGroup) attachTarget.getParent();
-                    if (parent != null) {
-                        for (int i = 0; i < parent.getChildCount(); i++) {
-                            View sibling = parent.getChildAt(i);
-                            if (sibling != attachTarget && !(sibling instanceof MatrixSuggestionBarView)) {
-                                isolateUndoView(sibling);
-                            }
-                        }
-                    }
-                } else {
-                    // Normal mode: only restore views that WE made INVISIBLE.
-                    // Do NOT force GONE views to VISIBLE (preserves Gboard's native mutual exclusivity)!
-                    for (int i = 0; i < attachTarget.getChildCount(); i++) {
-                        View child = attachTarget.getChildAt(i);
-                        if (child instanceof MatrixSuggestionBarView) {
-                            continue;
-                        }
-                        String name = child.getClass().getName();
-                        boolean isHolder = name.contains("CandidatesHolderView") || name.contains("FixedCount");
-
-                        child.setAlpha(1.0f);
-                        if (child.getVisibility() == View.INVISIBLE) {
-                            if (isHolder && hasVisibleAccessPoints(attachTarget)) {
-                                child.setVisibility(View.GONE);
-                            } else {
-                                child.setVisibility(View.VISIBLE);
-                            }
-                        }
-                    }
-
-                    ViewGroup parent = (ViewGroup) attachTarget.getParent();
-                    if (parent != null) {
-                        for (int i = 0; i < parent.getChildCount(); i++) {
-                            View sibling = parent.getChildAt(i);
-                            if (sibling != attachTarget && !(sibling instanceof MatrixSuggestionBarView)) {
                                 sibling.setAlpha(1.0f);
-                                if (sibling.getVisibility() == View.INVISIBLE) {
+                                if (sibling.getVisibility() == View.GONE) {
                                     sibling.setVisibility(View.VISIBLE);
                                 }
                             }
@@ -375,64 +420,25 @@ public final class MatrixGboardReflector {
                 }
             }
         } catch (Throwable t) {
-            Log.w(TAG, "suppressQuickToggles error: " + t.getMessage());
+            Log.w(TAG, "updateHeaderViewsVisibility error: " + t.getMessage());
         }
     }
 
     /**
-     * Isolates the Undo view by making it visible while hiding all non-undo sibling views / toggles.
+     * Convenience delegate for updateHeaderViewsVisibility.
      */
-    public static void isolateUndoView(View root) {
-        if (root == null || root instanceof MatrixSuggestionBarView) return;
-        try {
-            String name = root.getClass().getName();
-            boolean isHolder = name.contains("CandidatesHolderView") || name.contains("FixedCount");
-            if (isHolder) {
-                root.setVisibility(View.GONE);
-                root.setAlpha(0.0f);
-                return;
-            }
-
-            if (!containsUndoView(root)) {
-                // Non-undo quick toggle / accessory view -> hide it!
-                root.setAlpha(0.0f);
-                root.setVisibility(View.INVISIBLE);
-            } else {
-                // View contains or is the Undo button
-                root.setAlpha(1.0f);
-                root.setVisibility(View.VISIBLE);
-                root.bringToFront();
-
-                // If it is a container with multiple children (e.g. AccessPointsBar containing Undo + other toggles)
-                if (root instanceof ViewGroup vg) {
-                    for (int i = 0; i < vg.getChildCount(); i++) {
-                        View child = vg.getChildAt(i);
-                        if (child instanceof MatrixSuggestionBarView) continue;
-                        if (!containsUndoView(child)) {
-                            child.setAlpha(0.0f);
-                            child.setVisibility(View.INVISIBLE);
-                        } else {
-                            child.setAlpha(1.0f);
-                            child.setVisibility(View.VISIBLE);
-                            child.bringToFront();
-                        }
-                    }
+    public static void suppressQuickToggles(ViewGroup attachTarget, boolean suppress) {
+        ViewGroup holder = null;
+        if (attachTarget != null) {
+            for (int i = 0; i < attachTarget.getChildCount(); i++) {
+                View child = attachTarget.getChildAt(i);
+                if (child.getClass().getName().contains("CandidatesHolderView") || child.getClass().getName().contains("FixedCount")) {
+                    holder = (ViewGroup) child;
+                    break;
                 }
             }
-        } catch (Throwable t) {
-            Log.w(TAG, "isolateUndoView error: " + t.getMessage());
         }
-    }
-
-    private static boolean hasVisibleAccessPoints(ViewGroup vg) {
-        if (vg == null) return false;
-        for (int i = 0; i < vg.getChildCount(); i++) {
-            View child = vg.getChildAt(i);
-            if (child.getVisibility() == View.VISIBLE && child.getClass().getName().contains("AccessPoint")) {
-                return true;
-            }
-        }
-        return false;
+        updateHeaderViewsVisibility(attachTarget, holder, suppress);
     }
 
     public static ViewGroup findSoftKeyboardView(ViewGroup holderView) {
