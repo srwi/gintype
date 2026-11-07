@@ -374,6 +374,18 @@
       "options": []
     },
     {
+      "name": "Matrix Word Suggestions",
+      "description": "Vertikale Wortvorschläge mit Up/Down-Swipe und 2D-Satzverlauf.\nVertical word suggestions with up/down swipe and 2D sentence matrix.",
+      "use": true,
+      "dependencies": [],
+      "compatiblePackages": {
+        "com.google.android.inputmethod.latin": [
+          "18.5.4.993608717-release-arm64-v8a"
+        ]
+      },
+      "options": []
+    },
+    {
       "name": "Package Rename",
       "description": "將套件名稱改成 dev.jason.com.google.android.inputmethod.latin，並可自訂 App 名稱，以便共存安裝\nRename the package to dev.jason.com.google.android.inputmethod.latin and allow a custom app name so it can be installed alongside the official Gboard.",
       "use": true,

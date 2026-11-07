@@ -158,6 +158,8 @@ internal enum class RuntimeCallId(internal val encodedAbi: String) {
     ZHUYIN_TRADITIONAL_SIMPLIFIED_TOGGLE_RUNTIME_MAYBE_TOGGLE("Ldev/jason/gboardpatches/extension/zhuyintoggle/GboardZhuyinTraditionalSimplifiedToggleRuntime;->maybeToggle(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z"),
     ZHUYIN_TRADITIONAL_SIMPLIFIED_TOGGLE_RUNTIME_PATCH_INCOMING_SOFT_KEY_METADATA("Ldev/jason/gboardpatches/extension/zhuyintoggle/GboardZhuyinTraditionalSimplifiedToggleRuntime;->patchIncomingSoftKeyMetadata(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"),
     ZHUYIN_TRADITIONAL_SIMPLIFIED_TOGGLE_RUNTIME_PATCH_POPUP_ACTION("Ldev/jason/gboardpatches/extension/zhuyintoggle/GboardZhuyinTraditionalSimplifiedToggleRuntime;->patchPopupAction(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"),
+    MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_UPDATED("Ldev/jason/gboardpatches/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onCandidatesUpdated(Ljava/lang/Object;Ljava/lang/Object;)V"),
+    MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED("Ldev/jason/gboardpatches/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onCandidatesCleared(Ljava/lang/Object;)V"),
 }
 
 internal data class RuntimeAbi(

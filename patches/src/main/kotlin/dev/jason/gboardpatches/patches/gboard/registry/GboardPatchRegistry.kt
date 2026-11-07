@@ -86,6 +86,8 @@ import dev.jason.gboardpatches.patches.gboard.features.symbolfooter.gboardSymbol
 import dev.jason.gboardpatches.patches.gboard.features.symbolfooter.gboardSymbolFooterOrderFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.swipedismiss.gboardSwipeDismissBytecodePatch
 import dev.jason.gboardpatches.patches.gboard.features.swipedismiss.gboardSwipeDismissFeatureMarkerPatch
+import dev.jason.gboardpatches.patches.gboard.features.matrixsuggestions.gboardMatrixSuggestionsBytecodePatch
+import dev.jason.gboardpatches.patches.gboard.features.matrixsuggestions.gboardMatrixSuggestionsFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.toprowswipe.gboardTopRowSwipeFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.writingtools.gboardAiWritingToolsFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.writingtools.gboardAiWritingToolsFlagValuePatch
@@ -291,6 +293,23 @@ val gboardSwipeDismissPatch = gboardPublicResourcePatch(
         gboardPatchesSettingsPatch,
         gboardSwipeDismissFeatureMarkerPatch,
         gboardSwipeDismissBytecodePatch,
+    )
+}
+
+@Suppress("unused")
+val gboardMatrixSuggestionsPatch = gboardPublicResourcePatch(
+    featureId = "matrix_word_suggestions",
+    name = "Matrix Word Suggestions",
+    description = "Vertikale Wortvorschläge mit Up/Down-Swipe und 2D-Satzverlauf.\n" +
+        "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
+    default = true,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(
+        gboardPatchesSettingsPatch,
+        gboardMatrixSuggestionsFeatureMarkerPatch,
+        gboardMatrixSuggestionsBytecodePatch,
     )
 }
 
@@ -882,6 +901,7 @@ object GboardPublishedPatchCatalog {
         gboardEditingAccessPointsPatch,
         gboardSimpleCalculatorPatch,
         gboardSwipeDismissPatch,
+        gboardMatrixSuggestionsPatch,
         gboardAdvancedVoiceTypingPatch,
         gboardBluetoothMicrophonePatch,
         gboardEmojiSizePatch,
