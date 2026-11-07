@@ -3060,6 +3060,26 @@
         <translation locale="en">Type an arithmetic expression in any text field. Its result appears in Gboard’s suggestion row and can replace the expression with one tap.</translation>
         <translation locale="zh-Hant">直接在任何文字欄輸入算式，答案會出現在 Gboard 推薦列；點一下即可用答案取代算式。</translation>
     </string>
+    <string name="gboard_patches_matrix_suggestions_title">
+        <translation locale="en">Matrix Word Suggestions</translation>
+        <translation locale="zh-Hant">Matrix 2D 詞彙建議</translation>
+    </string>
+    <string name="gboard_patches_matrix_suggestions_summary">
+        <translation locale="en">Displays 2D vertical word suggestions with flick navigation and sentence history in the top bar.</translation>
+        <translation locale="zh-Hant">在頂部工具列顯示具備垂直滑動切換與句子歷史記錄的 2D 詞彙建議。</translation>
+    </string>
+    <string name="gboard_patches_matrix_suggestions_enable_title">
+        <translation locale="en">Enable Matrix Word Suggestions</translation>
+        <translation locale="zh-Hant">啟用 Matrix 2D 詞彙建議</translation>
+    </string>
+    <string name="gboard_patches_matrix_suggestions_enable_summary">
+        <translation locale="en">Replaces the standard horizontal suggestions with vertical word wheels and sentence history.</translation>
+        <translation locale="zh-Hant">將標準橫向建議列替換為具備垂直滑動切換與句子歷史記錄的 2D 詞彙建議。</translation>
+    </string>
+    <string name="gboard_patches_matrix_suggestions_section">
+        <translation locale="en">Suggestions &amp; History</translation>
+        <translation locale="zh-Hant">建議與歷史記錄</translation>
+    </string>
     <string name="gboard_patches_calculator_enable_title">
         <translation locale="en">Enable Simple Calculator</translation>
         <translation locale="zh-Hant">啟用簡易計算機</translation>

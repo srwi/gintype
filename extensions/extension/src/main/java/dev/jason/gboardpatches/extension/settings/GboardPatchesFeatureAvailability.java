@@ -87,6 +87,8 @@ public final class GboardPatchesFeatureAvailability {
             "dev.jason.gboardpatches.feature.frosted_glass";
     public static final String FEATURE_SWIPE_DISMISS =
             "dev.jason.gboardpatches.feature.swipe_dismiss";
+    public static final String FEATURE_MATRIX_SUGGESTIONS =
+            "dev.jason.gboardpatches.feature.matrix_suggestions";
 
     public static final String FEATURE_LANGUAGE_MODELS = "dev.jason.gboardpatches.feature.language_models";
 

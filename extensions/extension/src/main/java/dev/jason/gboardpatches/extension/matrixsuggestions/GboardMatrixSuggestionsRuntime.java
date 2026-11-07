@@ -84,6 +84,17 @@ public final class GboardMatrixSuggestionsRuntime {
         // Run after LatinFixedCountCandidatesHolderView populates slot views
         holderView.post(() -> {
             try {
+                if (!GboardMatrixSuggestionsSettings.readEnabled(holderView.getContext())) {
+                    ViewGroup parent = (ViewGroup) holderView.getParent();
+                    ViewGroup attachTarget = parent != null ? parent : holderView;
+                    MatrixSuggestionBarView existing = ACTIVE_BARS.get(attachTarget);
+                    if (existing != null && existing.getVisibility() != View.GONE) {
+                        existing.setVisibility(View.GONE);
+                        MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+                    }
+                    return;
+                }
+
                 MatrixSuggestionBarView barView = getOrCreateBarView(holderView);
                 if (barView == null) {
                     return;
@@ -258,6 +269,17 @@ public final class GboardMatrixSuggestionsRuntime {
         Log.i(TAG, "onCandidatesCleared");
         holderView.post(() -> {
             try {
+                if (!GboardMatrixSuggestionsSettings.readEnabled(holderView.getContext())) {
+                    ViewGroup parent = (ViewGroup) holderView.getParent();
+                    ViewGroup attachTarget = parent != null ? parent : holderView;
+                    MatrixSuggestionBarView existing = ACTIVE_BARS.get(attachTarget);
+                    if (existing != null && existing.getVisibility() != View.GONE) {
+                        existing.setVisibility(View.GONE);
+                        MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+                    }
+                    return;
+                }
+
                 ViewGroup parent = (ViewGroup) holderView.getParent();
                 ViewGroup attachTarget = parent != null ? parent : holderView;
                 MatrixSuggestionBarView barView = getOrCreateBarView(holderView);

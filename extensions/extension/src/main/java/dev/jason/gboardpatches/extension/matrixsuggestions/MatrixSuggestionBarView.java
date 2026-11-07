@@ -88,7 +88,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 VerticalWordWheelView historyWheel = new VerticalWordWheelView(getContext());
                 historyWheel.setAlternatives(entry.alternatives, entry.selectedIndex);
                 historyWheel.setIsActiveWord(false);
-                historyWheel.setAlpha(0.80f);
+                historyWheel.setAlpha(1.0f);
 
                 // History wheels are interactive: flicking or tapping them swaps that word in the sentence!
                 historyWheel.setOnWordActionListener((newIndex, newWord) -> {
@@ -162,7 +162,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
             VerticalWordWheelView historyWheel = new VerticalWordWheelView(getContext());
             historyWheel.setAlternatives(entry.alternatives, entry.selectedIndex);
             historyWheel.setIsActiveWord(false);
-            historyWheel.setAlpha(0.85f);
+            historyWheel.setAlpha(1.0f);
 
             historyWheel.setOnWordActionListener((newIndex, newWord) -> {
                 String oldWord = entry.getSelectedWord();

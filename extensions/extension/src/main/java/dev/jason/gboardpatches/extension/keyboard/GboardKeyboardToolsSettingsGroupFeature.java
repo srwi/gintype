@@ -12,6 +12,7 @@ import dev.jason.gboardpatches.extension.calculator.GboardCalculatorSettingsFeat
 import dev.jason.gboardpatches.extension.cursortrackpad.GboardCursorTrackpadSettingsFeature;
 import dev.jason.gboardpatches.extension.longpressquickactions.GboardLongPressQuickActionsSettingsFeature;
 import dev.jason.gboardpatches.extension.manualincognito.GboardManualIncognitoSettingsFeature;
+import dev.jason.gboardpatches.extension.matrixsuggestions.GboardMatrixSuggestionsSettingsFeature;
 import dev.jason.gboardpatches.extension.ocr.GboardOcrSettingsFeature;
 import dev.jason.gboardpatches.extension.quickinsert.GboardQuickInsertSettingsFeature;
 import dev.jason.gboardpatches.extension.settings.GboardFeatureGroup;
@@ -50,7 +51,8 @@ public final class GboardKeyboardToolsSettingsGroupFeature
                         new GboardFloatingWebSearchSettingsFeature(context),
                         new GboardCalculatorSettingsFeature(context),
                         new GboardSwipeDismissSettingsFeature(context),
-                        new GboardKeypressHapticsSettingsFeature(context)));
+                        new GboardKeypressHapticsSettingsFeature(context),
+                        new GboardMatrixSuggestionsSettingsFeature(context)));
     }
 
     @Override

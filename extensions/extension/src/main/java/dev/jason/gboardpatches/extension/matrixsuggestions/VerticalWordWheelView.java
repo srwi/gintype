@@ -82,9 +82,9 @@ public class VerticalWordWheelView extends LinearLayout {
         touchSlop = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 12f, getResources().getDisplayMetrics());
 
-        topView = createWordView(context, 9.5f, 0.55f, false);
+        topView = createWordView(context, 10.0f, 0.75f, false);
         centerView = createWordView(context, 12.5f, 1.0f, true);
-        bottomView = createWordView(context, 9.5f, 0.55f, false);
+        bottomView = createWordView(context, 10.0f, 0.75f, false);
 
         addView(topView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -187,8 +187,8 @@ public class VerticalWordWheelView extends LinearLayout {
 
         if (isActiveWord) {
             topView.setTextColor(primaryColor);
-            topView.setAlpha(0.65f);
-            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+            topView.setAlpha(0.80f);
+            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.0f);
 
             centerView.setTextColor(accentColor);
             centerView.setAlpha(1.0f);
@@ -206,15 +206,15 @@ public class VerticalWordWheelView extends LinearLayout {
             centerView.setPadding(padH, padV, padH, padV);
 
             bottomView.setTextColor(primaryColor);
-            bottomView.setAlpha(0.65f);
-            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+            bottomView.setAlpha(0.80f);
+            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.0f);
         } else {
             topView.setTextColor(primaryColor);
-            topView.setAlpha(0.40f);
-            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.0f);
+            topView.setAlpha(0.75f);
+            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.8f);
 
             centerView.setTextColor(primaryColor);
-            centerView.setAlpha(0.92f);
+            centerView.setAlpha(1.0f);
             centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.0f);
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
             centerView.setBackground(null);
@@ -223,8 +223,8 @@ public class VerticalWordWheelView extends LinearLayout {
             centerView.setPadding(padH, 0, padH, 0);
 
             bottomView.setTextColor(primaryColor);
-            bottomView.setAlpha(0.40f);
-            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.0f);
+            bottomView.setAlpha(0.75f);
+            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.8f);
         }
     }
 
