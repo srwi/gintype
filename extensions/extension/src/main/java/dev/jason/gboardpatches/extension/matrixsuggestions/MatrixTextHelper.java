@@ -69,7 +69,7 @@ public final class MatrixTextHelper {
         }
         if (idx < 0) return false;
         char last = s.charAt(idx);
-        return (last == '.' || last == '!' || last == '?' || last == '\n' || last == '\r');
+        return (last == '\n' || last == '\r');
     }
 
     public static String getActiveWord(View view, List<GboardMatrixSuggestionsRuntime.CandidateItem> items) {
@@ -142,6 +142,28 @@ public final class MatrixTextHelper {
         return true;
     }
 
+    public static boolean isPunctuationChar(char c) {
+        return c == '.' || c == ',' || c == '!' || c == '?' || c == ';' || c == ':' || c == '-' || c == '…' || c == '\"' || c == '\'';
+    }
+
+    public static String stripTrailingPunctuation(String word) {
+        if (word == null || word.isEmpty()) return "";
+        int end = word.length();
+        while (end > 0 && isPunctuationChar(word.charAt(end - 1))) {
+            end--;
+        }
+        return word.substring(0, end);
+    }
+
+    public static String getTrailingPunctuation(String word) {
+        if (word == null || word.isEmpty()) return "";
+        int end = word.length();
+        while (end > 0 && isPunctuationChar(word.charAt(end - 1))) {
+            end--;
+        }
+        return word.substring(end);
+    }
+
     public static void syncSentenceBufferFromText(
             View view,
             String currentWord,
@@ -162,11 +184,9 @@ public final class MatrixTextHelper {
             int sentStart = 0;
             for (int i = text.length() - 1; i >= 0; i--) {
                 char c = text.charAt(i);
-                if (c == '\n' || c == '.' || c == '!' || c == '?') {
-                    if (i < text.length() - 1) {
-                        sentStart = i + 1;
-                        break;
-                    }
+                if (c == '\n' || c == '\r') {
+                    sentStart = i + 1;
+                    break;
                 }
             }
             String currentSentence = text.substring(sentStart).trim();
@@ -175,41 +195,59 @@ public final class MatrixTextHelper {
                 return;
             }
 
-            String[] rawWords = currentSentence.split("[\\s,\\;\\:\\-\\(\\)\"/]+");
-            List<String> sentenceWords = new ArrayList<>();
-            for (String w : rawWords) {
-                String tw = w.trim();
-                if (!tw.isEmpty()) {
-                    sentenceWords.add(tw);
+            List<String> rawTokens = new ArrayList<>();
+            for (String t : currentSentence.split("\\s+")) {
+                String tr = t.trim();
+                if (!tr.isEmpty()) {
+                    rawTokens.add(tr);
                 }
             }
 
-            if (sentenceWords.isEmpty()) {
+            List<String> wordsWithPunct = new ArrayList<>();
+            for (String token : rawTokens) {
+                String base = stripTrailingPunctuation(token);
+                String punct = getTrailingPunctuation(token);
+                if (!base.isEmpty()) {
+                    wordsWithPunct.add(token);
+                } else if (!punct.isEmpty() && !wordsWithPunct.isEmpty()) {
+                    int lastIdx = wordsWithPunct.size() - 1;
+                    wordsWithPunct.set(lastIdx, wordsWithPunct.get(lastIdx) + punct);
+                }
+            }
+
+            if (wordsWithPunct.isEmpty()) {
                 buffer.clear();
                 return;
             }
 
-            int historyWordCount = sentenceWords.size() - 1;
+            int historyWordCount = wordsWithPunct.size() - 1;
             if (currentWord == null || currentWord.isEmpty()) {
-                historyWordCount = sentenceWords.size();
+                historyWordCount = wordsWithPunct.size();
             }
 
             buffer.clear();
             for (int i = 0; i < historyWordCount; i++) {
-                String w = sentenceWords.get(i);
-                List<String> alts = alternativesCache != null ? alternativesCache.get(w.toLowerCase()) : null;
+                String token = wordsWithPunct.get(i);
+                String baseWord = stripTrailingPunctuation(token);
+                String punct = getTrailingPunctuation(token);
+
+                List<String> rawAlts = alternativesCache != null ? alternativesCache.get(baseWord.toLowerCase()) : null;
+                List<String> formattedAlts = new ArrayList<>();
                 int selIdx = 0;
-                if (alts != null && !alts.isEmpty()) {
-                    for (int a = 0; a < alts.size(); a++) {
-                        if (alts.get(a).equalsIgnoreCase(w)) {
+
+                if (rawAlts != null && !rawAlts.isEmpty()) {
+                    for (int a = 0; a < rawAlts.size(); a++) {
+                        String rawAlt = rawAlts.get(a);
+                        formattedAlts.add(rawAlt + punct);
+                        if (rawAlt.equalsIgnoreCase(baseWord)) {
                             selIdx = a;
-                            break;
                         }
                     }
                 } else {
-                    alts = Collections.singletonList(w);
+                    formattedAlts.add(token);
                 }
-                buffer.addWord(w, alts, selIdx);
+
+                buffer.addWord(token, formattedAlts, selIdx);
             }
         } catch (Throwable t) {
             Log.w(TAG, "syncSentenceBufferFromText error: " + t.getMessage());
@@ -373,13 +411,14 @@ public final class MatrixTextHelper {
             int[] pos = findHistoryWordPosition(text, entries, historyColIndex, oldWord);
 
             if (pos != null && pos[0] >= 0 && pos[1] <= text.length() && pos[0] < pos[1]) {
+                String cleanNewWord = stripTrailingPunctuation(newWord);
                 String textAfter = text.substring(pos[1]);
                 int deleteCount = text.length() - pos[0];
                 ic.beginBatchEdit();
                 ic.deleteSurroundingText(deleteCount, 0);
-                ic.commitText(newWord + textAfter, 1);
+                ic.commitText(cleanNewWord + textAfter, 1);
                 ic.endBatchEdit();
-                Log.i(TAG, "replaceHistoryWord: replaced '" + oldWord + "' with '" + newWord + "' at [" + pos[0] + ", " + pos[1] + "]");
+                Log.i(TAG, "replaceHistoryWord: replaced '" + oldWord + "' with '" + cleanNewWord + "' at [" + pos[0] + ", " + pos[1] + "]");
             } else {
                 Log.w(TAG, "replaceHistoryWord: could not find boundary position for '" + oldWord + "' (col=" + historyColIndex + ")");
             }
@@ -391,6 +430,11 @@ public final class MatrixTextHelper {
     public static int[] findHistoryWordPosition(String text, List<MatrixSentenceBuffer.WordEntry> history, int targetColIndex, String oldWord) {
         if (text == null || oldWord == null || text.isEmpty() || oldWord.isEmpty()) {
             return null;
+        }
+
+        String baseOldWord = stripTrailingPunctuation(oldWord);
+        if (baseOldWord.isEmpty()) {
+            baseOldWord = oldWord;
         }
 
         int wordsAfter = (history != null && targetColIndex >= 0 && targetColIndex < history.size())
@@ -414,7 +458,7 @@ public final class MatrixTextHelper {
             String currentWord = text.substring(start, end);
 
             if (wordsSkipped == wordsAfter) {
-                if (currentWord.equalsIgnoreCase(oldWord)) {
+                if (currentWord.equalsIgnoreCase(baseOldWord) || currentWord.equalsIgnoreCase(oldWord)) {
                     return new int[]{start, end};
                 }
             } else if (wordsSkipped < wordsAfter) {
@@ -426,7 +470,7 @@ public final class MatrixTextHelper {
             end = start;
         }
 
-        return findLastWordBoundary(text, oldWord);
+        return findLastWordBoundary(text, baseOldWord);
     }
 
     public static int[] findLastWordBoundary(String text, String word) {

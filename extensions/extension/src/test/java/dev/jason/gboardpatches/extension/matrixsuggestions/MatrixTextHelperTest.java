@@ -24,15 +24,42 @@ public final class MatrixTextHelperTest {
 
     @Test
     public void sentenceEndDetection() {
-        Assert.assertTrue(MatrixTextHelper.isSentenceEnded("Hallo."));
-        Assert.assertTrue(MatrixTextHelper.isSentenceEnded("Hallo. "));
-        Assert.assertTrue(MatrixTextHelper.isSentenceEnded("Hallo!"));
-        Assert.assertTrue(MatrixTextHelper.isSentenceEnded("Hallo?  "));
-        Assert.assertTrue(MatrixTextHelper.isSentenceEnded("Hallo\n"));
+        // Dot, exclamation, and question marks do NOT end the sentence buffer (kept in topbar per UX requirements)
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded("Hallo."));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded("Hallo. "));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded("Hallo,"));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded("Hallo!"));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded("Hallo?  "));
         Assert.assertFalse(MatrixTextHelper.isSentenceEnded("Hallo"));
         Assert.assertFalse(MatrixTextHelper.isSentenceEnded("Hallo "));
         Assert.assertFalse(MatrixTextHelper.isSentenceEnded(""));
         Assert.assertFalse(MatrixTextHelper.isSentenceEnded((CharSequence) null));
+
+        // Only newline (\n or \r) ends the sentence / paragraph
+        Assert.assertTrue(MatrixTextHelper.isSentenceEnded("Hallo\n"));
+        Assert.assertTrue(MatrixTextHelper.isSentenceEnded("Hallo\r"));
+        Assert.assertTrue(MatrixTextHelper.isSentenceEnded("Hallo\n   "));
+    }
+
+    @Test
+    public void punctuationSplittingTests() {
+        Assert.assertEquals("Hallo", MatrixTextHelper.stripTrailingPunctuation("Hallo,"));
+        Assert.assertEquals(",", MatrixTextHelper.getTrailingPunctuation("Hallo,"));
+
+        Assert.assertEquals("dir", MatrixTextHelper.stripTrailingPunctuation("dir."));
+        Assert.assertEquals(".", MatrixTextHelper.getTrailingPunctuation("dir."));
+
+        Assert.assertEquals("toll", MatrixTextHelper.stripTrailingPunctuation("toll!"));
+        Assert.assertEquals("!", MatrixTextHelper.getTrailingPunctuation("toll!"));
+
+        Assert.assertEquals("wirklich", MatrixTextHelper.stripTrailingPunctuation("wirklich?!"));
+        Assert.assertEquals("?!", MatrixTextHelper.getTrailingPunctuation("wirklich?!"));
+
+        Assert.assertEquals("wort", MatrixTextHelper.stripTrailingPunctuation("wort..."));
+        Assert.assertEquals("...", MatrixTextHelper.getTrailingPunctuation("wort..."));
+
+        Assert.assertEquals("wort", MatrixTextHelper.stripTrailingPunctuation("wort"));
+        Assert.assertEquals("", MatrixTextHelper.getTrailingPunctuation("wort"));
     }
 
     @Test
@@ -132,6 +159,33 @@ public final class MatrixTextHelperTest {
 
         int[] posDir = MatrixTextHelper.findHistoryWordPosition(text, entries, 4, "dir");
         Assert.assertNotNull(posDir);
+        Assert.assertEquals("dir", text.substring(posDir[0], posDir[1]));
+    }
+
+    @Test
+    public void findHistoryWordPositionWithPunctuation() {
+        String text = "Hallo, wie geht es dir.";
+        MatrixSentenceBuffer buffer = new MatrixSentenceBuffer();
+        buffer.addWord("Hallo,", Collections.singletonList("Hallo,"), 0);
+        buffer.addWord("wie", Collections.singletonList("wie"), 0);
+        buffer.addWord("geht", Collections.singletonList("geht"), 0);
+        buffer.addWord("es", Collections.singletonList("es"), 0);
+        buffer.addWord("dir.", Collections.singletonList("dir."), 0);
+
+        List<MatrixSentenceBuffer.WordEntry> entries = buffer.getEntries();
+
+        // Target Col 0: "Hallo," -> base word "Hallo" at [0, 5]
+        int[] posHallo = MatrixTextHelper.findHistoryWordPosition(text, entries, 0, "Hallo,");
+        Assert.assertNotNull(posHallo);
+        Assert.assertEquals(0, posHallo[0]);
+        Assert.assertEquals(5, posHallo[1]);
+        Assert.assertEquals("Hallo", text.substring(posHallo[0], posHallo[1]));
+
+        // Target Col 4: "dir." -> base word "dir" at [19, 22]
+        int[] posDir = MatrixTextHelper.findHistoryWordPosition(text, entries, 4, "dir.");
+        Assert.assertNotNull(posDir);
+        Assert.assertEquals(19, posDir[0]);
+        Assert.assertEquals(22, posDir[1]);
         Assert.assertEquals("dir", text.substring(posDir[0], posDir[1]));
     }
 
