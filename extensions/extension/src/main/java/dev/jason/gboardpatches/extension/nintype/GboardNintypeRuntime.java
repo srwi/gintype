@@ -525,6 +525,33 @@ public final class GboardNintypeRuntime {
     }
 
     /**
+     * Injected at the start of AbstractGestureMotionEventHandler.B() (reset gesture state).
+     *
+     * @return true to intercept and abort B()'s body when active fingers are down
+     *         (preserving softKeyMap this.d, letterStarted this.u, and trail state),
+     *         false to proceed with stock cleanup when no touches are active.
+     */
+    public static boolean shouldInterceptGestureReset(Object handler) {
+        if (handler == null) return false;
+        try {
+            HandlerSession session = SESSIONS.get(handler);
+            if (session == null) return false;
+
+            boolean hasFingersDown = session.activePointers.size() > 0;
+            if (hasFingersDown) {
+                ensureGestureHandlerOwnsDispatcher(handler);
+                return true;
+            }
+
+            session.resetGestureState();
+            return false;
+        } catch (Throwable t) {
+            Log.w(TAG, "shouldInterceptGestureReset error", t);
+            return false;
+        }
+    }
+
+    /**
      * Injected into AbstractGestureMotionEventHandler.l() (cancel handler).
      * Called when another handler (such as BasicMotionEventHandler on a tap) requests cancellation.
      */
@@ -1222,6 +1249,18 @@ public final class GboardNintypeRuntime {
     private static void ensureGestureHandlerOwnsDispatcher(Object handler) {
         probeHandlerFields(handler);
         try {
+            if (letterStartedField != null) {
+                try {
+                    letterStartedField.setBoolean(handler, true);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (gestureResetField != null) {
+                try {
+                    gestureResetField.setBoolean(handler, false);
+                } catch (Throwable ignored) {
+                }
+            }
             if (hostBridgeField != null) {
                 Object bridge = hostBridgeField.get(handler);
                 if (bridge != null) {

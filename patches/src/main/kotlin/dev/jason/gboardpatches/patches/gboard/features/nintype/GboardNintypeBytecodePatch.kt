@@ -144,10 +144,6 @@ internal val gboardNintypeBytecodePatch = bytecodePatch(
             RuntimeCallId.NINTYPE_RUNTIME_ON_GESTURE_EVENT_ENTRY,
             "v$thisReg, v$eventReg",
         )
-        val onGestureResetInvoke = RuntimeCallEmitter.invoke(
-            RuntimeCallId.NINTYPE_RUNTIME_ON_GESTURE_RESET,
-            "p0",
-        )
 
         // Mutate in descending instruction-index order to preserve earlier indices.
         handleGestureMethod.removeInstruction(dispatchIndex)
@@ -183,9 +179,20 @@ internal val gboardNintypeBytecodePatch = bytecodePatch(
         } ?: throw PatchException(
             "Could not find reset gesture state method B() in $ABSTRACT_GESTURE_HANDLER_CLASS",
         )
-        resetMethod.addInstruction(
+        val shouldInterceptResetInvoke = RuntimeCallEmitter.invoke(
+            RuntimeCallId.NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET,
+            "p0",
+        )
+        resetMethod.addInstructionsWithLabels(
             0,
-            onGestureResetInvoke,
+            """
+                $shouldInterceptResetInvoke
+                move-result v0
+                if-eqz v0, :nintype_skip_reset_early_return
+                return-void
+                :nintype_skip_reset_early_return
+                nop
+            """.trimIndent(),
         )
 
         val cancelMethod = handlerClass.methods.firstOrNull {
