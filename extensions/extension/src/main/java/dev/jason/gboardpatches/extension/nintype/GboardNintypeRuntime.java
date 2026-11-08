@@ -5,6 +5,7 @@ import android.content.ContextWrapper;
 import android.inputmethodservice.InputMethodService;
 import android.util.Log;
 import android.util.SparseArray;
+import android.util.SparseIntArray;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -49,6 +50,7 @@ public final class GboardNintypeRuntime {
         final long startTimeMs;
         final char startKeyChar;
         final boolean startedOnLetter;
+        final int slot; // 0 = LEFT, 1 = RIGHT
         final List<TouchPoint> points = new ArrayList<>(48);
         float lastX;
         float lastY;
@@ -64,7 +66,8 @@ public final class GboardNintypeRuntime {
                 float y,
                 long timeMs,
                 char startKeyChar,
-                boolean startedOnLetter
+                boolean startedOnLetter,
+                int slot
         ) {
             this.pointerId = pointerId;
             this.startX = x;
@@ -76,6 +79,7 @@ public final class GboardNintypeRuntime {
             this.startKeyChar = startKeyChar;
             this.currentKeyChar = startKeyChar;
             this.startedOnLetter = startedOnLetter;
+            this.slot = slot;
             this.points.add(new TouchPoint(x, y, timeMs, pointerId));
         }
 
@@ -116,6 +120,7 @@ public final class GboardNintypeRuntime {
             if (isSwipe(swipeThresholdPx)) {
                 return NintypeInputToken.swipe(
                         pointerId,
+                        slot,
                         new ArrayList<>(points),
                         pathLengthPx,
                         startTimeMs,
@@ -125,6 +130,7 @@ public final class GboardNintypeRuntime {
             if (startedOnLetter && startKeyChar != '\0') {
                 return NintypeInputToken.tap(
                         pointerId,
+                        slot,
                         startKeyChar,
                         startX,
                         startY,
@@ -140,6 +146,8 @@ public final class GboardNintypeRuntime {
         final SparseArray<PointerTrack> activePointers = new SparseArray<>(4);
         final List<NintypeInputToken> completedTokens = new ArrayList<>(4);
         final NintypeGeometry geometry = new NintypeGeometry();
+        final int[] pointerBySlot = new int[] {-1, -1};
+        final SparseIntArray slotByPointer = new SparseIntArray(4);
         boolean geometryReady = false;
         int lastKeyboardWidth = 0;
         int lastKeyboardHeight = 0;
@@ -156,6 +164,9 @@ public final class GboardNintypeRuntime {
         void resetGestureState() {
             activePointers.clear();
             completedTokens.clear();
+            pointerBySlot[0] = -1;
+            pointerBySlot[1] = -1;
+            slotByPointer.clear();
             sawMultiTouch = false;
             nintypeTakeoverActive = false;
             shortSwipeForceStarted = false;
@@ -179,6 +190,7 @@ public final class GboardNintypeRuntime {
     private static volatile Field gestureActiveFlagField;
     private static volatile Field trailManagerField;
     private static volatile Field trailActiveBoolField;
+    private static volatile Field trailSparseArrayField;
     private static volatile Method showOverlayMethod;
     private static volatile Field minSampleDistanceSqField;
     private static volatile Field letterStartedField;
@@ -234,6 +246,10 @@ public final class GboardNintypeRuntime {
                     int pid = event.getPointerId(0);
                     float x = event.getX(0);
                     float y = event.getY(0);
+
+                    for (int i = 0; i < 10; i++) {
+                        clearTrailForPointer(handler, i);
+                    }
 
                     boolean keepPendingChord = false;
                     if (session.pendingChordToken != null
@@ -356,6 +372,8 @@ public final class GboardNintypeRuntime {
                             session.completedTokens.add(token);
                         }
                     }
+                    releasePointerSlot(session, pid);
+                    clearTrailForPointer(handler, pid);
                     if (session.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
                     }
@@ -398,6 +416,9 @@ public final class GboardNintypeRuntime {
                         }
                     }
                     session.activePointers.clear();
+                    for (int i = 0; i < 10; i++) {
+                        clearTrailForPointer(handler, i);
+                    }
 
                     // Check if a recent opposite-hand swipe (e.g. a->s) was followed within 180ms by this tap (e.g. l)
                     if (!session.sawMultiTouch
@@ -435,6 +456,9 @@ public final class GboardNintypeRuntime {
                 case MotionEvent.ACTION_CANCEL: {
                     session.resetGestureState();
                     session.clearPendingChord();
+                    for (int i = 0; i < 10; i++) {
+                        clearTrailForPointer(handler, i);
+                    }
                     break;
                 }
 
@@ -531,14 +555,74 @@ public final class GboardNintypeRuntime {
      *         (preserving softKeyMap this.d, letterStarted this.u, and trail state),
      *         false to proceed with stock cleanup when no touches are active.
      */
+    private static void clearTrailForPointer(Object handler, int pointerId) {
+        probeHandlerFields(handler);
+        try {
+            if (trailManagerField != null) {
+                Object trailMgr = trailManagerField.get(handler);
+                if (trailMgr != null) {
+                    if (trailSparseArrayField == null) {
+                        try {
+                            Field b = trailMgr.getClass().getDeclaredField("b");
+                            b.setAccessible(true);
+                            trailSparseArrayField = b;
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    if (trailSparseArrayField != null) {
+                        Object sparse = trailSparseArrayField.get(trailMgr);
+                        if (sparse instanceof SparseArray) {
+                            SparseArray<?> array = (SparseArray<?>) sparse;
+                            Object list = array.get(pointerId);
+                            if (list instanceof List) {
+                                ((List<?>) list).clear();
+                            }
+                            array.remove(pointerId);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void releasePointerSlot(HandlerSession session, int pointerId) {
+        if (session == null) return;
+        int slot = session.slotByPointer.get(pointerId, -1);
+        if (slot >= 0 && slot < 2 && session.pointerBySlot[slot] == pointerId) {
+            session.pointerBySlot[slot] = -1;
+        }
+        session.slotByPointer.delete(pointerId);
+    }
+
+    private static boolean isMultiTouchLetterSessionActive(HandlerSession session) {
+        if (session == null) return false;
+        if (!session.sawMultiTouch) return false;
+        if (session.activePointers.size() == 0) return false;
+
+        for (int i = 0; i < session.activePointers.size(); i++) {
+            PointerTrack track = session.activePointers.valueAt(i);
+            if (track != null && track.startedOnLetter) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Injected at the start of AbstractGestureMotionEventHandler.B() (reset gesture state).
+     *
+     * @return true to intercept and abort B()'s body when active multi-touch letter fingers are down
+     *         (preserving softKeyMap this.d, letterStarted this.u, and trail state),
+     *         false to proceed with stock cleanup when no touches are active or single-touch special keys are used.
+     */
     public static boolean shouldInterceptGestureReset(Object handler) {
         if (handler == null) return false;
         try {
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return false;
 
-            boolean hasFingersDown = session.activePointers.size() > 0;
-            if (hasFingersDown) {
+            if (isMultiTouchLetterSessionActive(session)) {
                 ensureGestureHandlerOwnsDispatcher(handler);
                 return true;
             }
@@ -559,22 +643,19 @@ public final class GboardNintypeRuntime {
         if (handler == null) return;
         try {
             HandlerSession session = SESSIONS.get(handler);
-            boolean hasActiveGesture = session != null && (
-                    session.activePointers.size() > 0
-                    || !session.completedTokens.isEmpty()
-                    || session.pendingChordToken != null
-                    || session.nintypeTakeoverActive
-            );
-
-            if (hasActiveGesture) {
-                // A multi-touch gesture or tap+swipe chord is in progress (e.g. holding 'i' while tapping 'c').
+            if (isMultiTouchLetterSessionActive(session)) {
+                // A multi-touch gesture is in progress across letter keys (e.g. holding 'i' while tapping 'c').
                 // Do NOT call B() to avoid wiping gesture state, softKeyMap, or active trails!
                 // Clear dispatcher owner so subsequent ACTION_MOVE events continue to reach gesture handler.
                 ensureGestureHandlerOwnsDispatcher(handler);
                 return;
             }
 
-            // Normal cancellation (no active gesture/chord in progress): perform stock reset B()
+            // Normal cancellation (single touch, non-letter key, long-press popup, delete swipe, etc.):
+            // perform stock reset B() and do not interfere with other handlers!
+            if (session != null) {
+                session.resetGestureState();
+            }
             invokeResetB(handler);
         } catch (Throwable t) {
             Log.w(TAG, "onGestureHandlerCancelRequested error", t);
@@ -589,10 +670,22 @@ public final class GboardNintypeRuntime {
             float y,
             long timeMs
     ) {
+        float midX = (session.geometry != null && session.geometry.isValid())
+                ? session.geometry.midlinePx()
+                : 540f;
+        int slot = (x < midX) ? 0 : 1;
+        int other = 1 - slot;
+        int currentOwner = session.pointerBySlot[slot];
+        if (currentOwner != -1 && session.activePointers.indexOfKey(currentOwner) >= 0) {
+            slot = other;
+        }
+        session.slotByPointer.put(pointerId, slot);
+        session.pointerBySlot[slot] = pointerId;
+
         boolean onLetter = session.geometry.isOnLetterArea(x, y);
         KeySpec nearest = session.geometry.nearestLetterKey(x, y);
         char keyChar = nearest != null ? nearest.character : '\0';
-        PointerTrack track = new PointerTrack(pointerId, x, y, timeMs, keyChar, onLetter);
+        PointerTrack track = new PointerTrack(pointerId, x, y, timeMs, keyChar, onLetter, slot);
         session.activePointers.put(pointerId, track);
         return track;
     }

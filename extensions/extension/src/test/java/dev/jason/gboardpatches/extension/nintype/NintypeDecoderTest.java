@@ -150,6 +150,20 @@ public class NintypeDecoderTest {
         assertEquals("sie", results.get(0).word);
     }
 
+    @Test
+    public void decodesAlternatingDualThumbSwipeForSchreiben() {
+        // User scenario: Left thumb swipes s -> c -> r -> e (stream 0)
+        // Right thumb swipes h -> i -> b -> n (stream 1)
+        // Combined word: "schreiben" (switches hands 4 times)
+        NintypeInputToken leftSwipe = buildSwipeToken(0, "scre", 100L, 380L);
+        NintypeInputToken rightSwipe = buildSwipeToken(1, "hibn", 160L, 460L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(leftSwipe, rightSwipe), "wir", 5, null);
+        assertFalse(results.isEmpty());
+        assertEquals("schreiben", results.get(0).word);
+    }
+
     private NintypeInputToken buildSwipeToken(
             int pointerId,
             String keySequence,
@@ -185,6 +199,7 @@ public class NintypeDecoderTest {
             pts.add(new TouchPoint(x, y, t, pointerId));
         }
 
-        return NintypeInputToken.swipe(pointerId, pts, Math.max(60f, pathLen), startTimeMs, endTimeMs);
+        int streamId = (pointerId == 0) ? 0 : 1;
+        return NintypeInputToken.swipe(pointerId, streamId, pts, Math.max(60f, pathLen), startTimeMs, endTimeMs);
     }
 }

@@ -109,6 +109,22 @@ public final class NintypeGeometry {
         return hasDedicatedUmlauts;
     }
 
+    public float midlinePx() {
+        if (!allKeys.isEmpty()) {
+            float minX = Float.MAX_VALUE;
+            float maxX = -Float.MAX_VALUE;
+            for (int i = 0; i < allKeys.size(); i++) {
+                KeySpec k = allKeys.get(i);
+                if (k.centerX < minX) minX = k.centerX;
+                if (k.centerX > maxX) maxX = k.centerX;
+            }
+            if (minX < maxX) {
+                return (minX + maxX) * 0.5f;
+            }
+        }
+        return 540f;
+    }
+
     public KeySpec keySpecByIdx(int charIdx) {
         if (charIdx < 0 || charIdx >= NintypeAlphabet.ALPHABET_SIZE) return null;
         return letterArray[charIdx];

@@ -28,6 +28,7 @@ public final class NintypeInputToken {
 
     public final Kind kind;
     public final int pointerId;
+    public final int streamId; // 0 = LEFT, 1 = RIGHT, -1 = unspecified
     public final long startTimeMs;
     public final long endTimeMs;
     // For TAP:
@@ -41,6 +42,7 @@ public final class NintypeInputToken {
     private NintypeInputToken(
             Kind kind,
             int pointerId,
+            int streamId,
             long startTimeMs,
             long endTimeMs,
             char character,
@@ -51,6 +53,7 @@ public final class NintypeInputToken {
     ) {
         this.kind = kind;
         this.pointerId = pointerId;
+        this.streamId = streamId;
         this.startTimeMs = startTimeMs;
         this.endTimeMs = endTimeMs;
         this.character = character;
@@ -62,6 +65,7 @@ public final class NintypeInputToken {
 
     public static NintypeInputToken tap(
             int pointerId,
+            int streamId,
             char character,
             float x,
             float y,
@@ -69,7 +73,30 @@ public final class NintypeInputToken {
             long endTimeMs
     ) {
         return new NintypeInputToken(
-                Kind.TAP, pointerId, startTimeMs, endTimeMs, character, x, y, null, 0f);
+                Kind.TAP, pointerId, streamId, startTimeMs, endTimeMs, character, x, y, null, 0f);
+    }
+
+    public static NintypeInputToken tap(
+            int pointerId,
+            char character,
+            float x,
+            float y,
+            long startTimeMs,
+            long endTimeMs
+    ) {
+        return tap(pointerId, -1, character, x, y, startTimeMs, endTimeMs);
+    }
+
+    public static NintypeInputToken swipe(
+            int pointerId,
+            int streamId,
+            List<TouchPoint> points,
+            float pathLengthPx,
+            long startTimeMs,
+            long endTimeMs
+    ) {
+        return new NintypeInputToken(
+                Kind.SWIPE, pointerId, streamId, startTimeMs, endTimeMs, '\0', 0f, 0f, points, pathLengthPx);
     }
 
     public static NintypeInputToken swipe(
@@ -79,8 +106,7 @@ public final class NintypeInputToken {
             long startTimeMs,
             long endTimeMs
     ) {
-        return new NintypeInputToken(
-                Kind.SWIPE, pointerId, startTimeMs, endTimeMs, '\0', 0f, 0f, points, pathLengthPx);
+        return swipe(pointerId, -1, points, pathLengthPx, startTimeMs, endTimeMs);
     }
 
     public static final class WordCandidate implements Comparable<WordCandidate> {
