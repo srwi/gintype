@@ -24,7 +24,6 @@ private const val ABSTRACT_GESTURE_HANDLER_CLASS =
 private const val HANDLE_GESTURE_MOTION_EVENT_METHOD_NAME = "g"
 private const val SHOULD_START_GESTURE_METHOD_NAME = "t"
 private const val RESET_GESTURE_STATE_METHOD_NAME = "B"
-private const val CANCEL_GESTURE_HANDLER_METHOD_NAME = "l"
 
 internal val gboardNintypeBytecodePatch = bytecodePatch(
     description = "Hooks Gboard's gesture motion handler to decode Nintype two-finger swipe and tap+swipe gestures.",
@@ -179,37 +178,13 @@ internal val gboardNintypeBytecodePatch = bytecodePatch(
         } ?: throw PatchException(
             "Could not find reset gesture state method B() in $ABSTRACT_GESTURE_HANDLER_CLASS",
         )
-        val shouldInterceptResetInvoke = RuntimeCallEmitter.invoke(
-            RuntimeCallId.NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET,
+        val onGestureResetInvoke = RuntimeCallEmitter.invoke(
+            RuntimeCallId.NINTYPE_RUNTIME_ON_GESTURE_RESET,
             "p0",
         )
-        resetMethod.addInstructionsWithLabels(
+        resetMethod.addInstruction(
             0,
-            """
-                $shouldInterceptResetInvoke
-                move-result v0
-                if-eqz v0, :nintype_skip_reset_early_return
-                return-void
-                :nintype_skip_reset_early_return
-                nop
-            """.trimIndent(),
-        )
-
-        val cancelMethod = handlerClass.methods.firstOrNull {
-            it.name == CANCEL_GESTURE_HANDLER_METHOD_NAME &&
-                it.returnType == "V" &&
-                it.parameterTypes.isEmpty()
-        } ?: throw PatchException(
-            "Could not find cancel gesture method l() in $ABSTRACT_GESTURE_HANDLER_CLASS",
-        )
-        val onGestureCancelInvoke = RuntimeCallEmitter.invoke(
-            RuntimeCallId.NINTYPE_RUNTIME_ON_GESTURE_CANCEL,
-            "p0",
-        )
-        cancelMethod.removeInstruction(0)
-        cancelMethod.addInstruction(
-            0,
-            onGestureCancelInvoke,
+            onGestureResetInvoke,
         )
     }
 }

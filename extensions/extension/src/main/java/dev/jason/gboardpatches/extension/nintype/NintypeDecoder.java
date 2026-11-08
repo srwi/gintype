@@ -527,6 +527,38 @@ public final class NintypeDecoder {
                         }
                     }
                 }
+            } else if (curLeftIdx == leftAnchors.size() - 1 && current.activeFinger != 0 && curLeftIdx >= 0) {
+                // The left finger reached its terminal key and rests there while the right finger moved.
+                // Allow reusing this resting key if the word revisits it (e.g. s-c-r-e + h-i-b-n for "schreiben").
+                Anchor anchor = leftAnchors.get(curLeftIdx);
+                for (int k = 0; k < anchor.cands.size(); k++) {
+                    TravKey cand = anchor.cands.get(k);
+                    int childNode = trie.child(current.node, cand.charIdx);
+                    if (childNode != -1) {
+                        float modeMult = 0.90f;
+                        if (current.word.length() > 0
+                                && current.word.charAt(current.word.length() - 1) == cand.character) {
+                            modeMult *= getDoubleLetterPenalty(cand.character, anchor.pt.dwellRatio);
+                        }
+                        float nextScore = current.heuristicScore * cand.coverageScore * modeMult;
+                        if (nextScore >= PRUNE_CUTOFF) {
+                            pushPath(
+                                    new PredPath(
+                                            childNode,
+                                            current.word + cand.character,
+                                            curLeftIdx,
+                                            curRightIdx,
+                                            0,
+                                            anchor.t,
+                                            current.skipCount,
+                                            1,
+                                            nextScore
+                                    ),
+                                    bucketSameFinger, bucketSwitchFinger, bucketSkip, bucketApos
+                            );
+                        }
+                    }
+                }
             }
 
             // 2. Advance on Right Finger
@@ -565,6 +597,37 @@ public final class NintypeDecoder {
                                         bucketSameFinger, bucketSwitchFinger, bucketSkip, bucketApos
                                 );
                             }
+                        }
+                    }
+                }
+            } else if (curRightIdx == rightAnchors.size() - 1 && current.activeFinger != 1 && curRightIdx >= 0) {
+                // The right finger reached its terminal key and rests there while the left finger moved.
+                Anchor anchor = rightAnchors.get(curRightIdx);
+                for (int k = 0; k < anchor.cands.size(); k++) {
+                    TravKey cand = anchor.cands.get(k);
+                    int childNode = trie.child(current.node, cand.charIdx);
+                    if (childNode != -1) {
+                        float modeMult = 0.90f;
+                        if (current.word.length() > 0
+                                && current.word.charAt(current.word.length() - 1) == cand.character) {
+                            modeMult *= getDoubleLetterPenalty(cand.character, anchor.pt.dwellRatio);
+                        }
+                        float nextScore = current.heuristicScore * cand.coverageScore * modeMult;
+                        if (nextScore >= PRUNE_CUTOFF) {
+                            pushPath(
+                                    new PredPath(
+                                            childNode,
+                                            current.word + cand.character,
+                                            curLeftIdx,
+                                            curRightIdx,
+                                            1,
+                                            anchor.t,
+                                            current.skipCount,
+                                            1,
+                                            nextScore
+                                    ),
+                                    bucketSameFinger, bucketSwitchFinger, bucketSkip, bucketApos
+                            );
                         }
                     }
                 }

@@ -46,32 +46,9 @@ class GboardNintypeSmaliCompilationTest {
     }
 
     @Test
-    fun `verify shouldInterceptGestureReset invoke compiles for method B with 6 registers`() {
-        val shouldInterceptResetRef = RuntimeAbiCatalog.abi(
-            RuntimeCallId.NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET,
-        ).reference
-        val smali = """
-            invoke-static {p0}, $shouldInterceptResetRef
-            move-result v0
-            if-eqz v0, :nintype_skip_reset_early_return
-            return-void
-            :nintype_skip_reset_early_return
-            nop
-        """.trimIndent()
-
-        val instructions = InlineSmaliCompiler.compile(
-            instructions = smali,
-            parameters = "",
-            registers = 6,
-            forStaticMethod = false,
-        )
-        assertEquals(5, instructions.size)
-    }
-
-    @Test
-    fun `verify onGestureHandlerCancelRequested invoke compiles for method l with 1 register`() {
+    fun `verify onGestureReset invoke compiles for method B with 6 registers`() {
         val smali = RuntimeCallEmitter.invoke(
-            RuntimeCallId.NINTYPE_RUNTIME_ON_GESTURE_CANCEL,
+            RuntimeCallId.NINTYPE_RUNTIME_ON_GESTURE_RESET,
             "p0",
         )
         assertTrue(smali.startsWith("invoke-static"))
@@ -79,7 +56,7 @@ class GboardNintypeSmaliCompilationTest {
         val instructions = InlineSmaliCompiler.compile(
             instructions = smali,
             parameters = "",
-            registers = 1,
+            registers = 6,
             forStaticMethod = false,
         )
         assertEquals(1, instructions.size)

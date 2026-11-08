@@ -190,19 +190,80 @@ public final class GboardNintypeRuntime {
     private static volatile Field gestureActiveFlagField;
     private static volatile Field trailManagerField;
     private static volatile Field trailActiveBoolField;
-    private static volatile Field trailSparseArrayField;
-    private static volatile Field trailSentinelField;
-    private static volatile Method showOverlayMethod;
     private static volatile Field minSampleDistanceSqField;
     private static volatile Field letterStartedField;
     private static volatile Field gestureResetField;
     private static volatile Field softKeyMapField;
-    private static volatile Field bridgeDispatcherField;
-    private static volatile Field dispatcherOwnerField;
-    private static volatile Method resetMethodB;
     private static final Set<Class<?>> probedClasses = Collections.synchronizedSet(new HashSet<>());
     private static volatile Context cachedContext = null;
     private static volatile Object cachedSampleKeyView = null;
+    private static volatile boolean crashHandlerInstalled = false;
+
+    static {
+        installCrashHandler();
+    }
+
+    private static void installCrashHandler() {
+        if (crashHandlerInstalled) return;
+        synchronized (GboardNintypeRuntime.class) {
+            if (crashHandlerInstalled) return;
+            crashHandlerInstalled = true;
+            try {
+                final Thread.UncaughtExceptionHandler defaultHandler =
+                        Thread.getDefaultUncaughtExceptionHandler();
+                Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+                    try {
+                        writeCrashToFile(thread, throwable);
+                    } catch (Throwable ignored) {
+                    }
+                    if (defaultHandler != null) {
+                        defaultHandler.uncaughtException(thread, throwable);
+                    }
+                });
+            } catch (Throwable t) {
+                Log.w(TAG, "Failed to install crash handler", t);
+            }
+        }
+    }
+
+    private static void writeCrashToFile(Thread thread, Throwable throwable) {
+        try {
+            java.io.StringWriter sw = new java.io.StringWriter();
+            java.io.PrintWriter pw = new java.io.PrintWriter(sw);
+            pw.println("=== Gboard Nintype Crash Report ===");
+            pw.println("Timestamp: " + new java.util.Date());
+            pw.println("Thread: " + (thread != null ? thread.getName() : "unknown"));
+            if (throwable != null) {
+                pw.println("Exception: " + throwable.getClass().getName());
+                pw.println("Message: " + throwable.getMessage());
+                throwable.printStackTrace(pw);
+            }
+            pw.println("===================================");
+            pw.flush();
+            String report = sw.toString();
+
+            try {
+                java.io.File file = new java.io.File("/sdcard/Download/gboard_crash.txt");
+                java.io.FileWriter fw = new java.io.FileWriter(file, true);
+                fw.write(report);
+                fw.write("\n\n");
+                fw.close();
+            } catch (Throwable ignored) {
+            }
+
+            if (cachedContext != null) {
+                try {
+                    java.io.File file = new java.io.File(cachedContext.getCacheDir(), "gboard_crash.txt");
+                    java.io.FileWriter fw = new java.io.FileWriter(file, true);
+                    fw.write(report);
+                    fw.write("\n\n");
+                    fw.close();
+                } catch (Throwable ignored) {
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
 
     private GboardNintypeRuntime() {}
 
@@ -370,7 +431,6 @@ public final class GboardNintypeRuntime {
                         }
                     }
                     releasePointerSlot(session, pid);
-                    terminateTrailSegmentForPointer(handler, pid);
                     if (session.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
                     }
@@ -530,60 +590,20 @@ public final class GboardNintypeRuntime {
 
     /**
      * Injected at the start of AbstractGestureMotionEventHandler.B() (reset gesture state).
+     * Only resets Nintype session state if all active fingers have been lifted. If fingers are
+     * still touching the keyboard (e.g. holding 'i' while tapping 'c'), the session is preserved.
      */
     public static void onGestureReset(Object handler) {
         if (handler == null) return;
-        HandlerSession session = SESSIONS.get(handler);
-        if (session != null) {
-            session.resetGestureState();
-        }
-    }
-
-    /**
-     * Appends Gboard's native stroke sentinel (this.U.e) to a lifted pointer's trail list.
-     * This separates successive taps without clearing or destroying the list, ensuring that
-     * GestureOverlayView.draw() never encounters an empty list and never crashes with IndexOutOfBoundsException.
-     */
-    private static void terminateTrailSegmentForPointer(Object handler, int pointerId) {
-        probeHandlerFields(handler);
         try {
-            if (trailManagerField != null) {
-                Object trailMgr = trailManagerField.get(handler);
-                if (trailMgr != null) {
-                    if (trailSparseArrayField == null) {
-                        try {
-                            Field b = trailMgr.getClass().getDeclaredField("b");
-                            b.setAccessible(true);
-                            trailSparseArrayField = b;
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                    if (trailSentinelField == null) {
-                        try {
-                            Field e = trailMgr.getClass().getDeclaredField("e");
-                            e.setAccessible(true);
-                            trailSentinelField = e;
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                    if (trailSparseArrayField != null && trailSentinelField != null) {
-                        Object sparse = trailSparseArrayField.get(trailMgr);
-                        Object sentinel = trailSentinelField.get(trailMgr);
-                        if (sparse instanceof SparseArray && sentinel != null) {
-                            SparseArray<?> array = (SparseArray<?>) sparse;
-                            Object list = array.get(pointerId);
-                            if (list instanceof List) {
-                                @SuppressWarnings("unchecked")
-                                List<Object> l = (List<Object>) list;
-                                if (!l.isEmpty() && l.get(l.size() - 1) != sentinel) {
-                                    l.add(sentinel);
-                                }
-                            }
-                        }
-                    }
+            HandlerSession session = SESSIONS.get(handler);
+            if (session != null) {
+                if (session.activePointers.size() == 0) {
+                    session.resetGestureState();
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            Log.w(TAG, "onGestureReset error", t);
         }
     }
 
@@ -594,74 +614,6 @@ public final class GboardNintypeRuntime {
             session.pointerBySlot[slot] = -1;
         }
         session.slotByPointer.delete(pointerId);
-    }
-
-    private static boolean isMultiTouchLetterSessionActive(HandlerSession session) {
-        if (session == null) return false;
-        if (!session.sawMultiTouch) return false;
-        if (session.activePointers.size() == 0) return false;
-
-        for (int i = 0; i < session.activePointers.size(); i++) {
-            PointerTrack track = session.activePointers.valueAt(i);
-            if (track != null && track.startedOnLetter) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Injected at the start of AbstractGestureMotionEventHandler.B() (reset gesture state).
-     *
-     * @return true to intercept and abort B()'s body when active multi-touch letter fingers are down
-     *         (preserving softKeyMap this.d, letterStarted this.u, and trail state),
-     *         false to proceed with stock cleanup when no touches are active or single-touch special keys are used.
-     */
-    public static boolean shouldInterceptGestureReset(Object handler) {
-        if (handler == null) return false;
-        try {
-            HandlerSession session = SESSIONS.get(handler);
-            if (session == null) return false;
-
-            if (isMultiTouchLetterSessionActive(session)) {
-                ensureGestureHandlerOwnsDispatcher(handler);
-                return true;
-            }
-
-            session.resetGestureState();
-            return false;
-        } catch (Throwable t) {
-            Log.w(TAG, "shouldInterceptGestureReset error", t);
-            return false;
-        }
-    }
-
-    /**
-     * Injected into AbstractGestureMotionEventHandler.l() (cancel handler).
-     * Called when another handler (such as BasicMotionEventHandler on a tap) requests cancellation.
-     */
-    public static void onGestureHandlerCancelRequested(Object handler) {
-        if (handler == null) return;
-        try {
-            HandlerSession session = SESSIONS.get(handler);
-            if (isMultiTouchLetterSessionActive(session)) {
-                // A multi-touch gesture is in progress across letter keys (e.g. holding 'i' while tapping 'c').
-                // Do NOT call B() to avoid wiping gesture state, softKeyMap, or active trails!
-                // Clear dispatcher owner so subsequent ACTION_MOVE events continue to reach gesture handler.
-                ensureGestureHandlerOwnsDispatcher(handler);
-                return;
-            }
-
-            // Normal cancellation (single touch, non-letter key, long-press popup, delete swipe, etc.):
-            // perform stock reset B() and do not interfere with other handlers!
-            if (session != null) {
-                session.resetGestureState();
-            }
-            invokeResetB(handler);
-        } catch (Throwable t) {
-            Log.w(TAG, "onGestureHandlerCancelRequested error", t);
-            invokeResetB(handler);
-        }
     }
 
     private static PointerTrack registerPointerDown(
@@ -1274,115 +1226,11 @@ public final class GboardNintypeRuntime {
                             }
                         }
                     }
-                    if ("AbstractGestureMotionEventHandler".equals(cur.getSimpleName())) {
-                        try {
-                            Method oMethod = cur.getDeclaredMethod("o");
-                            oMethod.setAccessible(true);
-                            showOverlayMethod = oMethod;
-                        } catch (Throwable ignored) {
-                        }
-                        try {
-                            Method bMethod = cur.getDeclaredMethod("B");
-                            bMethod.setAccessible(true);
-                            resetMethodB = bMethod;
-                        } catch (Throwable ignored) {
-                        }
-                    }
                     cur = cur.getSuperclass();
                 }
             } catch (Throwable ignored) {
             } finally {
                 probedClasses.add(handlerClass);
-            }
-        }
-    }
-
-    private static void probeDispatcherFields(Object bridge) {
-        if (bridge == null || (bridgeDispatcherField != null && dispatcherOwnerField != null)) return;
-        synchronized (GboardNintypeRuntime.class) {
-            if (bridgeDispatcherField != null && dispatcherOwnerField != null) return;
-            try {
-                Class<?> bridgeClass = bridge.getClass();
-                for (Field f : bridgeClass.getDeclaredFields()) {
-                    f.setAccessible(true);
-                    Class<?> type = f.getType();
-                    if (!type.isPrimitive() && !type.isInterface() && !type.getName().startsWith("java.")) {
-                        for (Field df : type.getDeclaredFields()) {
-                            df.setAccessible(true);
-                            if (df.getType().isInterface() && "k".equals(df.getName())) {
-                                bridgeDispatcherField = f;
-                                dispatcherOwnerField = df;
-                                return;
-                            }
-                        }
-                    }
-                }
-                for (Field f : bridgeClass.getDeclaredFields()) {
-                    f.setAccessible(true);
-                    Class<?> type = f.getType();
-                    if (!type.isPrimitive() && !type.isInterface() && !type.getName().startsWith("java.")) {
-                        Field candidateOwner = null;
-                        boolean hasHandlerArray = false;
-                        for (Field df : type.getDeclaredFields()) {
-                            df.setAccessible(true);
-                            if (df.getType().isArray() && df.getType().getComponentType().isInterface()) {
-                                hasHandlerArray = true;
-                            } else if (df.getType().isInterface()) {
-                                candidateOwner = df;
-                            }
-                        }
-                        if (hasHandlerArray && candidateOwner != null) {
-                            bridgeDispatcherField = f;
-                            dispatcherOwnerField = candidateOwner;
-                            return;
-                        }
-                    }
-                }
-            } catch (Throwable t) {
-                Log.w(TAG, "Failed to probe dispatcher fields", t);
-            }
-        }
-    }
-
-    private static void ensureGestureHandlerOwnsDispatcher(Object handler) {
-        probeHandlerFields(handler);
-        try {
-            if (letterStartedField != null) {
-                try {
-                    letterStartedField.setBoolean(handler, true);
-                } catch (Throwable ignored) {
-                }
-            }
-            if (gestureResetField != null) {
-                try {
-                    gestureResetField.setBoolean(handler, false);
-                } catch (Throwable ignored) {
-                }
-            }
-            if (hostBridgeField != null) {
-                Object bridge = hostBridgeField.get(handler);
-                if (bridge != null) {
-                    probeDispatcherFields(bridge);
-                    if (bridgeDispatcherField != null && dispatcherOwnerField != null) {
-                        Object dispatcher = bridgeDispatcherField.get(bridge);
-                        if (dispatcher != null) {
-                            dispatcherOwnerField.set(dispatcher, null);
-                        }
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "ensureGestureHandlerOwnsDispatcher error", t);
-        }
-    }
-
-    private static void invokeResetB(Object handler) {
-        probeHandlerFields(handler);
-        if (resetMethodB != null && handler != null) {
-            try {
-                resetMethodB.invoke(handler);
-            } catch (Throwable t) {
-                Log.w(TAG, "Failed to invoke B() on handler", t);
             }
         }
     }

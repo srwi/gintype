@@ -38,6 +38,8 @@ public class NintypeDecoderTest {
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "las", 42000, false, "de", false);
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "as", 25000, false, "de", false);
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "sie", 97000, false, "de", false);
+        NintypeDictionaryLoader.insertWordIntoTrie(trie, "Hunde", 70000, true, "de", false);
+        NintypeDictionaryLoader.insertWordIntoTrie(trie, "hunde", 70000, false, "de", false);
 
         bigrams.put("wir", "müssen", 1200);
         bigrams.put("wir", "schreiben", 900);
@@ -158,8 +160,9 @@ public class NintypeDecoderTest {
         NintypeInputToken leftSwipe = buildSwipeToken(0, "scre", 100L, 380L);
         NintypeInputToken rightSwipe = buildSwipeToken(1, "hibn", 160L, 460L);
 
+        // Even with no prior bigram and "Hunde" present in dictionary, "schreiben" must be top candidate!
         List<WordCandidate> results = decoder.decode(
-                Arrays.asList(leftSwipe, rightSwipe), "wir", 5, null);
+                Arrays.asList(leftSwipe, rightSwipe), null, 5, null);
         assertFalse(results.isEmpty());
         assertEquals("schreiben", results.get(0).word);
     }
