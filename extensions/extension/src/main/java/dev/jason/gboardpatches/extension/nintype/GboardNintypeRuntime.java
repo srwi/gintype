@@ -104,7 +104,10 @@ public final class GboardNintypeRuntime {
                     currentKeyChar = nearest.character;
                     if (startKeyChar != '\0' && currentKeyChar != startKeyChar) {
                         float netDisp = (float) Math.hypot(x - startX, y - startY);
-                        if (netDisp >= 14f) {
+                        float minBoundaryDisp = (geometry.isValid())
+                                ? Math.max(26f, geometry.keyWidthPx * 0.32f)
+                                : 26f;
+                        if (netDisp >= minBoundaryDisp) {
                             crossedKeyBoundary = true;
                         }
                     }
@@ -115,7 +118,7 @@ public final class GboardNintypeRuntime {
         boolean isSwipe(float swipeThresholdPx) {
             if (points.size() < 2) return false;
             if (pathLengthPx >= swipeThresholdPx) return true;
-            return startedOnLetter && crossedKeyBoundary && pathLengthPx >= 15f;
+            return startedOnLetter && crossedKeyBoundary && pathLengthPx >= Math.max(20f, swipeThresholdPx * 0.75f);
         }
 
         NintypeInputToken toToken(float swipeThresholdPx) {
@@ -219,8 +222,9 @@ public final class GboardNintypeRuntime {
     private static volatile Field trailManagerField;
     private static volatile Field trailActiveBoolField;
     private static volatile Field trailSparseArrayField;
+    private static volatile Field trailStartIndexArrayField;
     private static volatile Field trailFadingListField;
-    private static volatile Field minSampleDistanceSqField;
+    private static volatile Method recyclePointsMethod;
     private static volatile Field letterStartedField;
     private static volatile Field gestureResetField;
     private static volatile Field softKeyMapField;
@@ -318,14 +322,7 @@ public final class GboardNintypeRuntime {
             }
 
             probeHandlerFields(handler);
-            if (minSampleDistanceSqField != null) {
-                try {
-                    // Clamp min squared distance threshold from stock ~144 px^2 to 4 px^2 (2px)
-                    // so 120Hz frames with 3-8px displacement increment the gesture motion step counter.
-                    minSampleDistanceSqField.setInt(handler, 4);
-                } catch (Throwable ignored) {
-                }
-            }
+            sanitizeTrailIndices(handler);
 
             int actionMasked = event.getActionMasked();
             int actionIndex = event.getActionIndex();
@@ -340,7 +337,7 @@ public final class GboardNintypeRuntime {
                     float y = event.getY(0);
 
                     // Clear any lingering trail segment for this pointer
-                    finishTrailForPointer(handler, pid);
+                    finishTrailForPointer(handler, pid, false);
 
                     // 1. Kinetica eatBefore: retract automatically inserted space if a hugging punctuation is tapped
                     if (session.autospaceInserted) {
@@ -388,7 +385,7 @@ public final class GboardNintypeRuntime {
                     int pid = event.getPointerId(actionIndex);
                     float x = event.getX(actionIndex);
                     float y = event.getY(actionIndex);
-                    finishTrailForPointer(handler, pid);
+                    finishTrailForPointer(handler, pid, false);
                     PointerTrack track = registerPointerDown(session, pid, x, y, eventTime);
                     session.sawMultiTouch = true;
                     if (letterStartedField != null) {
@@ -401,7 +398,7 @@ public final class GboardNintypeRuntime {
                         }
                     }
                     ensureSoftKeyMapPopulated(handler, session, event);
-                    if (hasAnySwipingPointer(session, 10f)) {
+                    if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
                         session.nintypeTakeoverActive = true;
                         ensureTrailRecorderEnabled(handler);
                     }
@@ -436,6 +433,7 @@ public final class GboardNintypeRuntime {
 
                     if (session.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
+                        sanitizeTrailIndices(handler);
                     }
 
                     if ((session.sawMultiTouch || !session.completedTokens.isEmpty()) && letterStartedField != null) {
@@ -448,7 +446,7 @@ public final class GboardNintypeRuntime {
                         }
                     }
 
-                    if (hasAnySwipingPointer(session, 10f)) {
+                    if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
                         session.nintypeTakeoverActive = true;
                         ensureTrailRecorderEnabled(handler);
                     }
@@ -458,6 +456,7 @@ public final class GboardNintypeRuntime {
                 case MotionEvent.ACTION_POINTER_UP: {
                     int pid = event.getPointerId(actionIndex);
                     PointerTrack track = session.activePointers.get(pid);
+                    boolean isSwipe = false;
                     if (track != null) {
                         track.addPoint(
                                 event.getX(actionIndex),
@@ -466,6 +465,7 @@ public final class GboardNintypeRuntime {
                                 session.geometry
                         );
                         track.finished = true;
+                        isSwipe = track.isSwipe(multiSwipeThreshold);
                         session.activePointers.remove(pid);
                         NintypeInputToken token = track.toToken(multiSwipeThreshold);
                         if (token != null) {
@@ -473,7 +473,7 @@ public final class GboardNintypeRuntime {
                         }
                     }
                     releasePointerSlot(session, pid);
-                    finishTrailForPointer(handler, pid);
+                    finishTrailForPointer(handler, pid, isSwipe);
 
                     if (session.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
@@ -489,7 +489,7 @@ public final class GboardNintypeRuntime {
                         }
                     }
 
-                    if (hasAnySwipingPointer(session, 10f)) {
+                    if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
                         session.nintypeTakeoverActive = true;
                         ensureTrailRecorderEnabled(handler);
                     }
@@ -497,6 +497,7 @@ public final class GboardNintypeRuntime {
                 }
 
                 case MotionEvent.ACTION_UP: {
+                    boolean anySwipeThisSession = false;
                     for (int i = 0; i < session.activePointers.size(); i++) {
                         PointerTrack track = session.activePointers.valueAt(i);
                         int pIdx = event.findPointerIndex(track.pointerId);
@@ -509,20 +510,26 @@ public final class GboardNintypeRuntime {
                             );
                         }
                         track.finished = true;
+                        boolean isSwipe = track.isSwipe(multiSwipeThreshold);
+                        if (isSwipe) {
+                            anySwipeThisSession = true;
+                        }
                         NintypeInputToken token = track.toToken(multiSwipeThreshold);
                         if (token != null) {
                             session.completedTokens.add(token);
                         }
-                        finishTrailForPointer(handler, track.pointerId);
+                        finishTrailForPointer(handler, track.pointerId, isSwipe);
                     }
                     session.activePointers.clear();
                     session.lastTouchUpTimeMs = eventTime;
 
-                    boolean hasSwipe = false;
-                    for (int i = 0; i < session.completedTokens.size(); i++) {
-                        if (session.completedTokens.get(i).kind == NintypeInputToken.Kind.SWIPE) {
-                            hasSwipe = true;
-                            break;
+                    boolean hasSwipe = anySwipeThisSession;
+                    if (!hasSwipe) {
+                        for (int i = 0; i < session.completedTokens.size(); i++) {
+                            if (session.completedTokens.get(i).kind == NintypeInputToken.Kind.SWIPE) {
+                                hasSwipe = true;
+                                break;
+                            }
                         }
                     }
                     if (!hasSwipe) {
@@ -531,6 +538,16 @@ public final class GboardNintypeRuntime {
                                 hasSwipe = true;
                                 break;
                             }
+                        }
+                    }
+
+                    if (!hasSwipe && trailActiveBoolField != null) {
+                        try {
+                            Object tm = trailManagerField.get(handler);
+                            if (tm != null) {
+                                trailActiveBoolField.setBoolean(tm, false);
+                            }
+                        } catch (Throwable ignored) {
                         }
                     }
 
@@ -567,7 +584,16 @@ public final class GboardNintypeRuntime {
                     session.resetGestureState();
                     session.clearWordBuffer();
                     for (int i = 0; i < 10; i++) {
-                        finishTrailForPointer(handler, i);
+                        finishTrailForPointer(handler, i, false);
+                    }
+                    if (trailActiveBoolField != null) {
+                        try {
+                            Object tm = trailManagerField.get(handler);
+                            if (tm != null) {
+                                trailActiveBoolField.setBoolean(tm, false);
+                            }
+                        } catch (Throwable ignored) {
+                        }
                     }
                     break;
                 }
@@ -607,25 +633,13 @@ public final class GboardNintypeRuntime {
                 return false;
             }
 
-            // When multi-touch is detected (both thumbs active), start gesture as soon as any thumb moves >= 10px
-            if (session.sawMultiTouch && hasAnySwipingPointer(session, 10f)) {
+            // When multi-touch is detected (both thumbs active), start gesture as soon as any thumb moves >= multiSwipeThreshold
+            float multiSwipeThreshold = Math.max(
+                    MULTI_TOUCH_SWIPE_THRESHOLD_PX, session.geometry.keyWidthPx * 0.24f);
+            if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
                 session.nintypeTakeoverActive = true;
                 ensureTrailRecorderEnabled(handler);
                 return true;
-            }
-
-            // Also start trail & gesture ownership when a single finger slides across a key boundary
-            // or moves >= 20px (e.g. sliding a -> s on the left thumb before the right thumb taps l for "als").
-            float singleNeighborThreshold = Math.max(
-                    SINGLE_FINGER_NEIGHBOR_SWIPE_THRESHOLD_PX, session.geometry.keyWidthPx * 0.22f);
-            for (int i = 0; i < session.activePointers.size(); i++) {
-                PointerTrack t = session.activePointers.valueAt(i);
-                if (t.startedOnLetter && (t.crossedKeyBoundary || t.pathLengthPx >= singleNeighborThreshold)) {
-                    session.shortSwipeForceStarted = true;
-                    session.nintypeTakeoverActive = true;
-                    ensureTrailRecorderEnabled(handler);
-                    return true;
-                }
             }
         } catch (Throwable t) {
             Log.w(TAG, "shouldStartGesture error", t);
@@ -699,47 +713,80 @@ public final class GboardNintypeRuntime {
     }
 
     @SuppressWarnings("unchecked")
-    private static void finishTrailForPointer(Object handler, int pointerId) {
+    private static void sanitizeTrailIndices(Object handler) {
         probeHandlerFields(handler);
         try {
-            if (trailManagerField != null) {
-                Object trailMgr = trailManagerField.get(handler);
-                if (trailMgr != null) {
-                    if (trailSparseArrayField == null) {
-                        try {
-                            Field b = trailMgr.getClass().getDeclaredField("b");
-                            b.setAccessible(true);
-                            trailSparseArrayField = b;
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                    if (trailFadingListField == null) {
-                        try {
-                            Field e = trailMgr.getClass().getDeclaredField("e");
-                            e.setAccessible(true);
-                            trailFadingListField = e;
-                        } catch (Throwable ignored) {
-                        }
-                    }
-                    if (trailSparseArrayField != null) {
-                        Object sparseObj = trailSparseArrayField.get(trailMgr);
-                        if (sparseObj instanceof SparseArray) {
-                            SparseArray<?> array = (SparseArray<?>) sparseObj;
-                            Object listObj = array.get(pointerId);
-                            if (listObj instanceof List) {
-                                List<?> list = (List<?>) listObj;
-                                if (trailFadingListField != null) {
-                                    Object fadingObj = trailFadingListField.get(trailMgr);
-                                    if (fadingObj instanceof List) {
-                                        ((List<Object>) fadingObj).add(list);
-                                    }
-                                }
-                                array.remove(pointerId);
-                            }
-                        }
+            if (trailManagerField == null || trailStartIndexArrayField == null || trailSparseArrayField == null) {
+                return;
+            }
+            Object trailMgr = trailManagerField.get(handler);
+            if (trailMgr == null) return;
+
+            Object cObj = trailStartIndexArrayField.get(trailMgr);
+            Object bObj = trailSparseArrayField.get(trailMgr);
+
+            if (cObj instanceof SparseIntArray && bObj instanceof SparseArray) {
+                SparseIntArray c = (SparseIntArray) cObj;
+                SparseArray<?> b = (SparseArray<?>) bObj;
+                for (int i = 0; i < c.size(); i++) {
+                    int pid = c.keyAt(i);
+                    Object listObj = b.get(pid);
+                    int listSize = (listObj instanceof List) ? ((List<?>) listObj).size() : 0;
+                    if (c.valueAt(i) > listSize) {
+                        c.put(pid, 0);
                     }
                 }
             }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void finishTrailForPointer(Object handler, int pointerId, boolean isSwipe) {
+        probeHandlerFields(handler);
+        try {
+            if (trailManagerField == null) return;
+            Object trailMgr = trailManagerField.get(handler);
+            if (trailMgr == null) return;
+
+            // 1. Delete pointerId from c (SparseIntArray) so gyq.run() never sees a stale fromIndex
+            if (trailStartIndexArrayField != null) {
+                Object cObj = trailStartIndexArrayField.get(trailMgr);
+                if (cObj instanceof SparseIntArray) {
+                    ((SparseIntArray) cObj).delete(pointerId);
+                }
+            }
+
+            // 2. Remove pointer trail from b (SparseArray)
+            if (trailSparseArrayField != null) {
+                Object sparseObj = trailSparseArrayField.get(trailMgr);
+                if (sparseObj instanceof SparseArray) {
+                    SparseArray<?> array = (SparseArray<?>) sparseObj;
+                    Object listObj = array.get(pointerId);
+                    if (listObj instanceof List) {
+                        List<?> list = (List<?>) listObj;
+                        if (isSwipe && list.size() >= 3) {
+                            if (trailFadingListField != null) {
+                                Object fadingObj = trailFadingListField.get(trailMgr);
+                                if (fadingObj instanceof List) {
+                                    ((List<Object>) fadingObj).add(list);
+                                }
+                            }
+                        } else {
+                            if (recyclePointsMethod != null) {
+                                try {
+                                    recyclePointsMethod.invoke(trailMgr, list);
+                                } catch (Throwable ignored) {
+                                }
+                            }
+                        }
+                        array.remove(pointerId);
+                    }
+                }
+            }
+
+            // 3. Keep indices sanitized
+            sanitizeTrailIndices(handler);
         } catch (Throwable ignored) {
         }
     }
@@ -1368,8 +1415,6 @@ public final class GboardNintypeRuntime {
                             letterStartedField = f;
                         } else if ("Q".equals(name) && type == boolean.class) {
                             gestureResetField = f;
-                        } else if ("w".equals(name) && type == int.class) {
-                            minSampleDistanceSqField = f;
                         } else if ("d".equals(name) && SparseArray.class.isAssignableFrom(type)) {
                             softKeyMapField = f;
                         } else if ("U".equals(name) && !type.isPrimitive()) {
@@ -1389,9 +1434,21 @@ public final class GboardNintypeRuntime {
                             } catch (Throwable ignored) {
                             }
                             try {
+                                Field cField = type.getDeclaredField("c");
+                                cField.setAccessible(true);
+                                trailStartIndexArrayField = cField;
+                            } catch (Throwable ignored) {
+                            }
+                            try {
                                 Field eField = type.getDeclaredField("e");
                                 eField.setAccessible(true);
                                 trailFadingListField = eField;
+                            } catch (Throwable ignored) {
+                            }
+                            try {
+                                Method eMeth = type.getDeclaredMethod("e", List.class);
+                                eMeth.setAccessible(true);
+                                recyclePointsMethod = eMeth;
                             } catch (Throwable ignored) {
                             }
                         } else if ("p".equals(name) && type.isInterface()) {
