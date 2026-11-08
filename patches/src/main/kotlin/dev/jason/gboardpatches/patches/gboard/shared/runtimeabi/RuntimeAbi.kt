@@ -160,6 +160,11 @@ internal enum class RuntimeCallId(internal val encodedAbi: String) {
     ZHUYIN_TRADITIONAL_SIMPLIFIED_TOGGLE_RUNTIME_PATCH_POPUP_ACTION("Ldev/jason/gboardpatches/extension/zhuyintoggle/GboardZhuyinTraditionalSimplifiedToggleRuntime;->patchPopupAction(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"),
     MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_UPDATED("Ldev/jason/gboardpatches/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onCandidatesUpdated(Ljava/lang/Object;Ljava/lang/Object;)V"),
     MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED("Ldev/jason/gboardpatches/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onCandidatesCleared(Ljava/lang/Object;)V"),
+    NINTYPE_RUNTIME_ON_GESTURE_EVENT_ENTRY("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
+    NINTYPE_RUNTIME_SHOULD_START_GESTURE("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->shouldStartGesture(Ljava/lang/Object;Z)Z"),
+    NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_DISPATCH("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->shouldInterceptGestureDispatch(Ljava/lang/Object;)Z"),
+    NINTYPE_RUNTIME_ON_GESTURE_RESET("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->onGestureReset(Ljava/lang/Object;)V"),
+    NINTYPE_RUNTIME_ON_GESTURE_CANCEL("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->onGestureHandlerCancelRequested(Ljava/lang/Object;)V"),
 }
 
 internal data class RuntimeAbi(

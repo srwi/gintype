@@ -66,6 +66,9 @@ import dev.jason.gboardpatches.patches.gboard.features.longpressquickactions.gbo
 import dev.jason.gboardpatches.patches.gboard.features.manualincognito.gboardManualIncognitoFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.manualincognito.gboardManualIncognitoLifecyclePatch
 import dev.jason.gboardpatches.patches.gboard.features.manualincognito.gboardManualIncognitoPolicyPatch
+import dev.jason.gboardpatches.patches.gboard.features.nintype.gboardNintypeAssetsPatch
+import dev.jason.gboardpatches.patches.gboard.features.nintype.gboardNintypeBytecodePatch
+import dev.jason.gboardpatches.patches.gboard.features.nintype.gboardNintypeFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.ocr.gboardOcrFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.packagerename.applyGboardApplicationDisplayName
 import dev.jason.gboardpatches.patches.gboard.features.packagerename.gboardPackageRenameResourcePatch
@@ -310,6 +313,24 @@ val gboardMatrixSuggestionsPatch = gboardPublicResourcePatch(
         gboardPatchesSettingsPatch,
         gboardMatrixSuggestionsFeatureMarkerPatch,
         gboardMatrixSuggestionsBytecodePatch,
+    )
+}
+
+@Suppress("unused")
+val gboardNintypePatch = gboardPublicResourcePatch(
+    featureId = "nintype_multi_touch",
+    name = "Nintype Multi-Touch Swipe",
+    description = "Zwei-Finger-Swipe und Tap+Swipe-Eingabe nach dem Nintype-Algorithmus mit Gboard-Wörterbuch.\n" +
+        "Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.",
+    default = true,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(
+        gboardPatchesSettingsPatch,
+        gboardNintypeAssetsPatch,
+        gboardNintypeFeatureMarkerPatch,
+        gboardNintypeBytecodePatch,
     )
 }
 
@@ -902,6 +923,7 @@ object GboardPublishedPatchCatalog {
         gboardSimpleCalculatorPatch,
         gboardSwipeDismissPatch,
         gboardMatrixSuggestionsPatch,
+        gboardNintypePatch,
         gboardAdvancedVoiceTypingPatch,
         gboardBluetoothMicrophonePatch,
         gboardEmojiSizePatch,

@@ -702,6 +702,7 @@ class GboardPortProductCatalogContractTest {
             "latin_globe_key_ignore_interval" to "version-sensitive",
             "long_press_editing_shortcuts" to "version-sensitive",
             "matrix_word_suggestions" to "version-sensitive",
+            "nintype_multi_touch" to "version-sensitive",
             "package_rename" to "generic",
             "quick_insert" to "version-sensitive",
             "rounded_keyboard_panel" to "version-sensitive",

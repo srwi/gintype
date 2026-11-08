@@ -745,4 +745,19 @@ public final class GboardMatrixSuggestionsRuntime {
     public static MatrixSentenceBuffer getSentenceBuffer() {
         return SENTENCE_BUFFER;
     }
+
+    public static void recordNintypeDecodedWord(String committedWord, List<String> alternatives) {
+        try {
+            if (alternatives != null && !alternatives.isEmpty()) {
+                cacheAlternativeGroup(alternatives);
+            }
+            if (committedWord != null && !committedWord.isEmpty()) {
+                List<String> alts = (alternatives != null && !alternatives.isEmpty())
+                        ? new ArrayList<>(alternatives)
+                        : Collections.singletonList(committedWord);
+                SENTENCE_BUFFER.addWord(committedWord, alts, 0);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
 }

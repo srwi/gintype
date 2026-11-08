@@ -1749,6 +1749,42 @@
       ]
     },
     {
+      "feature_id": "nintype_multi_touch",
+      "public_patch_name": "Nintype Multi-Touch Swipe",
+      "feature_marker": "dev.jason.gboardpatches.feature.nintype",
+      "target_family_ids": [
+        "nintype"
+      ],
+      "migration_scope": "version-sensitive",
+      "consumer_files": [
+        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/features/nintype/GboardNintypeAssetsPatch.kt",
+        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/features/nintype/GboardNintypeBytecodePatch.kt",
+        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/features/nintype/GboardNintypeFeatureMarkerPatch.kt",
+        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/registry/GboardPatchRegistry.kt",
+        "patches/src/main/resources/nintype-assets/de_bigrams.txt.gz",
+        "patches/src/main/resources/nintype-assets/de_wordlist.txt.gz",
+        "patches/src/main/resources/nintype-assets/en_bigrams.txt.gz",
+        "patches/src/main/resources/nintype-assets/en_wordlist.txt.gz",
+        "patches/src/main/resources/nintype-assets/index.txt"
+      ],
+      "contributions": [
+        {
+          "contribution_id": "nintype_multi_touch.gesture",
+          "anchor_family_id": "dedicated_bytecode",
+          "phase": "dedicated",
+          "order": 1970,
+          "required_bindings": [],
+          "runtime_calls": [
+            "NINTYPE_RUNTIME_ON_GESTURE_EVENT_ENTRY",
+            "NINTYPE_RUNTIME_SHOULD_START_GESTURE",
+            "NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_DISPATCH",
+            "NINTYPE_RUNTIME_ON_GESTURE_RESET",
+            "NINTYPE_RUNTIME_ON_GESTURE_CANCEL"
+          ]
+        }
+      ]
+    },
+    {
       "feature_id": "package_rename",
       "public_patch_name": "Package Rename",
       "feature_marker": null,

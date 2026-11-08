@@ -3792,4 +3792,40 @@
         <translation locale="en">Enter a size between 12 and 40 dp.</translation>
         <translation locale="zh-Hant">請輸入 12 至 40 dp 的尺寸。</translation>
     </string>
+    <string name="gboard_patches_nintype_title">
+        <translation locale="en">Nintype Multi-Touch Swipe</translation>
+        <translation locale="zh-Hant">Nintype 雙指滑行輸入</translation>
+    </string>
+    <string name="gboard_patches_nintype_summary">
+        <translation locale="en">Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm.</translation>
+        <translation locale="zh-Hant">支援使用雙指同時滑行或點擊加滑行的 Nintype 演算法輸入。</translation>
+    </string>
+    <string name="gboard_patches_nintype_section_behavior">
+        <translation locale="en">Behavior</translation>
+        <translation locale="zh-Hant">行為</translation>
+    </string>
+    <string name="gboard_patches_nintype_enabled_title">
+        <translation locale="en">Enable Nintype two-finger swipe</translation>
+        <translation locale="zh-Hant">啟用 Nintype 雙指滑行輸入</translation>
+    </string>
+    <string name="gboard_patches_nintype_enabled_summary">
+        <translation locale="en">Automatically takes over when two fingers swipe or combine tap + swipe on the keyboard while keeping single-finger typing and swiping on the stock Gboard engine.</translation>
+        <translation locale="zh-Hant">當雙指在鍵盤上滑行或組合點擊與滑行時自動接管，單指輸入與滑行則維持 Gboard 原生引擎。</translation>
+    </string>
+    <string name="gboard_patches_nintype_auto_space_title">
+        <translation locale="en">Auto-space before/after two-finger words</translation>
+        <translation locale="zh-Hant">雙指輸入單字自動插入空白</translation>
+    </string>
+    <string name="gboard_patches_nintype_auto_space_summary">
+        <translation locale="en">Automatically insert spaces between words decoded by Nintype two-finger gestures.</translation>
+        <translation locale="zh-Hant">在透過 Nintype 雙指手勢解碼的單字之間自動插入空白。</translation>
+    </string>
+    <string name="gboard_patches_nintype_error_title">
+        <translation locale="en">Nintype settings unavailable</translation>
+        <translation locale="zh-Hant">Nintype 設定無法使用</translation>
+    </string>
+    <string name="gboard_patches_nintype_error_summary">
+        <translation locale="en">The Nintype settings screen failed to load. Reopen Gboard settings and try again.</translation>
+        <translation locale="zh-Hant">Nintype 設定畫面載入失敗。請重新開啟 Gboard 設定再試一次。</translation>
+    </string>
 </settings-text>
