@@ -3,6 +3,8 @@ package dev.jason.gboardpatches.extension.nintype;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.inputmethodservice.InputMethodService;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.util.SparseArray;
 import android.util.SparseIntArray;
@@ -145,9 +147,12 @@ public final class GboardNintypeRuntime {
     private static final class HandlerSession {
         final SparseArray<PointerTrack> activePointers = new SparseArray<>(4);
         final List<NintypeInputToken> completedTokens = new ArrayList<>(4);
+        final List<NintypeInputToken> wordTokens = new ArrayList<>(16);
         final NintypeGeometry geometry = new NintypeGeometry();
         final int[] pointerBySlot = new int[] {-1, -1};
         final SparseIntArray slotByPointer = new SparseIntArray(4);
+        final Handler mainHandler = new Handler(Looper.getMainLooper());
+
         boolean geometryReady = false;
         int lastKeyboardWidth = 0;
         int lastKeyboardHeight = 0;
@@ -160,6 +165,21 @@ public final class GboardNintypeRuntime {
         String pendingChordBaselineText = null;
         float pendingChordAnchorX = 0f;
         String lastCommittedWord = null;
+        long lastTouchUpTimeMs = 0L;
+
+        // Auto-space & Live Composing (WordComposer) state
+        String currentComposingWord = null;
+        List<String> currentAlternativeWords = null;
+        boolean autospaceInserted = false;
+        boolean autospaceTimerPending = false;
+        Runnable autospaceRunnable = null;
+
+        void cancelAutospaceTimer() {
+            if (autospaceTimerPending && autospaceRunnable != null) {
+                mainHandler.removeCallbacks(autospaceRunnable);
+                autospaceTimerPending = false;
+            }
+        }
 
         void resetGestureState() {
             activePointers.clear();
@@ -178,6 +198,14 @@ public final class GboardNintypeRuntime {
             pendingChordBaselineText = null;
             pendingChordAnchorX = 0f;
         }
+
+        void clearWordBuffer() {
+            cancelAutospaceTimer();
+            wordTokens.clear();
+            currentComposingWord = null;
+            currentAlternativeWords = null;
+            lastTouchUpTimeMs = 0L;
+        }
     }
 
     private static final Map<Object, HandlerSession> SESSIONS =
@@ -190,6 +218,8 @@ public final class GboardNintypeRuntime {
     private static volatile Field gestureActiveFlagField;
     private static volatile Field trailManagerField;
     private static volatile Field trailActiveBoolField;
+    private static volatile Field trailSparseArrayField;
+    private static volatile Field trailFadingListField;
     private static volatile Field minSampleDistanceSqField;
     private static volatile Field letterStartedField;
     private static volatile Field gestureResetField;
@@ -309,22 +339,45 @@ public final class GboardNintypeRuntime {
                     float x = event.getX(0);
                     float y = event.getY(0);
 
-                    boolean keepPendingChord = false;
-                    if (session.pendingChordToken != null
-                            && (eventTime - session.pendingChordToken.endTimeMs <= MAX_SEQUENTIAL_CHORD_GAP_MS)
-                            && session.geometry.isOnLetterArea(x, y)) {
-                        float minHandSeparation = Math.max(120f, session.geometry.keyWidthPx * 1.45f);
-                        if (Math.abs(x - session.pendingChordAnchorX) >= minHandSeparation) {
-                            keepPendingChord = true;
+                    // Clear any lingering trail segment for this pointer
+                    finishTrailForPointer(handler, pid);
+
+                    // 1. Kinetica eatBefore: retract automatically inserted space if a hugging punctuation is tapped
+                    if (session.autospaceInserted) {
+                        KeySpec hit = session.geometry.findKeyAt(x, y);
+                        if (hit == null) {
+                            hit = session.geometry.nearestAnyKey(x, y);
                         }
+                        if (hit != null && session.geometry.isPunctuationChar(hit.character)) {
+                            InputConnection ic = resolveActiveInputConnection(handler, context);
+                            if (ic != null) {
+                                CharSequence before = ic.getTextBeforeCursor(1, 0);
+                                if (before != null && before.length() > 0 && before.charAt(before.length() - 1) == ' ') {
+                                    ic.deleteSurroundingText(1, 0);
+                                }
+                            }
+                        }
+                        session.autospaceInserted = false;
                     }
 
+                    // 2. WordComposer continuation:
+                    // If the user touches again within 380ms of last lift (or autospace timer was ticking),
+                    // cancel autospace and keep existing wordTokens to continue the word in progress.
+                    long timeSinceLastUp = (session.lastTouchUpTimeMs > 0)
+                            ? (eventTime - session.lastTouchUpTimeMs)
+                            : Long.MAX_VALUE;
+                    boolean wasAutospacing = session.autospaceTimerPending;
+                    session.cancelAutospaceTimer();
+
+                    boolean isWordContinuing = wasAutospacing
+                            || (timeSinceLastUp <= 380L && !session.wordTokens.isEmpty())
+                            || (session.activePointers.size() > 0);
+
                     session.resetGestureState();
-                    if (!keepPendingChord) {
-                        session.clearPendingChord();
+
+                    if (!isWordContinuing) {
+                        session.clearWordBuffer();
                         session.textSnapshotAtActionDown = readTextBeforeCursorSnapshot(handler, context);
-                    } else {
-                        session.textSnapshotAtActionDown = session.pendingChordBaselineText;
                     }
 
                     registerPointerDown(session, pid, x, y, eventTime);
@@ -332,10 +385,10 @@ public final class GboardNintypeRuntime {
                 }
 
                 case MotionEvent.ACTION_POINTER_DOWN: {
-                    session.clearPendingChord();
                     int pid = event.getPointerId(actionIndex);
                     float x = event.getX(actionIndex);
                     float y = event.getY(actionIndex);
+                    finishTrailForPointer(handler, pid);
                     PointerTrack track = registerPointerDown(session, pid, x, y, eventTime);
                     session.sawMultiTouch = true;
                     if (letterStartedField != null) {
@@ -381,17 +434,6 @@ public final class GboardNintypeRuntime {
                         session.sawMultiTouch = true;
                     }
 
-                    // If a recent opposite-hand tap preceded this swipe within 180ms, promote it into a chord
-                    if (!session.sawMultiTouch
-                            && session.pendingChordToken != null
-                            && session.pendingChordToken.kind == NintypeInputToken.Kind.TAP
-                            && hasAnySwipingPointer(session, multiSwipeThreshold)) {
-                        session.completedTokens.add(session.pendingChordToken);
-                        session.sawMultiTouch = true;
-                        session.textSnapshotAtActionDown = session.pendingChordBaselineText;
-                        session.clearPendingChord();
-                    }
-
                     if (session.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
                     }
@@ -406,7 +448,7 @@ public final class GboardNintypeRuntime {
                         }
                     }
 
-                    if (session.sawMultiTouch && hasAnySwipingPointer(session, 10f)) {
+                    if (hasAnySwipingPointer(session, 10f)) {
                         session.nintypeTakeoverActive = true;
                         ensureTrailRecorderEnabled(handler);
                     }
@@ -431,6 +473,8 @@ public final class GboardNintypeRuntime {
                         }
                     }
                     releasePointerSlot(session, pid);
+                    finishTrailForPointer(handler, pid);
+
                     if (session.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
                     }
@@ -445,7 +489,7 @@ public final class GboardNintypeRuntime {
                         }
                     }
 
-                    if (session.sawMultiTouch && hasAnySwipingPointer(session, 10f)) {
+                    if (hasAnySwipingPointer(session, 10f)) {
                         session.nintypeTakeoverActive = true;
                         ensureTrailRecorderEnabled(handler);
                     }
@@ -453,12 +497,10 @@ public final class GboardNintypeRuntime {
                 }
 
                 case MotionEvent.ACTION_UP: {
-                    float lastUpX = event.getX();
                     for (int i = 0; i < session.activePointers.size(); i++) {
                         PointerTrack track = session.activePointers.valueAt(i);
                         int pIdx = event.findPointerIndex(track.pointerId);
                         if (pIdx >= 0) {
-                            lastUpX = event.getX(pIdx);
                             track.addPoint(
                                     event.getX(pIdx),
                                     event.getY(pIdx),
@@ -471,45 +513,62 @@ public final class GboardNintypeRuntime {
                         if (token != null) {
                             session.completedTokens.add(token);
                         }
+                        finishTrailForPointer(handler, track.pointerId);
                     }
                     session.activePointers.clear();
+                    session.lastTouchUpTimeMs = eventTime;
 
-                    // Check if a recent opposite-hand swipe (e.g. a->s) was followed within 180ms by this tap (e.g. l)
-                    if (!session.sawMultiTouch
-                            && session.pendingChordToken != null
-                            && session.completedTokens.size() == 1) {
-                        NintypeInputToken currentToken = session.completedTokens.get(0);
-                        if (session.pendingChordToken.kind == NintypeInputToken.Kind.SWIPE
-                                || currentToken.kind == NintypeInputToken.Kind.SWIPE) {
-                            session.completedTokens.add(0, session.pendingChordToken);
-                            session.sawMultiTouch = true;
-                            session.textSnapshotAtActionDown = session.pendingChordBaselineText;
+                    boolean hasSwipe = false;
+                    for (int i = 0; i < session.completedTokens.size(); i++) {
+                        if (session.completedTokens.get(i).kind == NintypeInputToken.Kind.SWIPE) {
+                            hasSwipe = true;
+                            break;
                         }
-                        session.clearPendingChord();
+                    }
+                    if (!hasSwipe) {
+                        for (int i = 0; i < session.wordTokens.size(); i++) {
+                            if (session.wordTokens.get(i).kind == NintypeInputToken.Kind.SWIPE) {
+                                hasSwipe = true;
+                                break;
+                            }
+                        }
                     }
 
-                    if (session.sawMultiTouch && shouldDecodeMultiFingerSession(session)) {
+                    boolean shouldDecodeNow = hasSwipe
+                            || (session.sawMultiTouch && session.completedTokens.size() >= 2)
+                            || (!session.wordTokens.isEmpty() && !session.completedTokens.isEmpty());
+
+                    if (shouldDecodeNow) {
                         session.nintypeTakeoverActive = true;
-                        session.clearPendingChord();
                         activateNintypeTakeoverOnFinish(handler);
-                        if (!session.decodedThisSession) {
-                            session.decodedThisSession = true;
-                            decodeAndCommitSession(handler, session, context, activeLang);
-                        }
-                    } else if (!session.sawMultiTouch && session.completedTokens.size() == 1) {
-                        NintypeInputToken singleToken = session.completedTokens.get(0);
-                        session.pendingChordToken = singleToken;
-                        session.pendingChordBaselineText = session.textSnapshotAtActionDown;
-                        session.pendingChordAnchorX = lastUpX;
+
+                        // Accumulate all completed tokens into persistent word buffer
+                        session.wordTokens.addAll(session.completedTokens);
+                        session.completedTokens.clear();
+
+                        // 1. Live Composing Text preview (exact Kinetica WordComposer)
+                        decodeAndPreviewSession(handler, session, context, activeLang);
+
+                        // 2. Schedule 300ms autospace timer from lift (exact Kinetica Autospace)
+                        session.cancelAutospaceTimer();
+                        session.autospaceTimerPending = true;
+                        session.autospaceRunnable = () -> finalizeComposingAndAutospace(handler, session, context, activeLang);
+                        session.mainHandler.postDelayed(session.autospaceRunnable, 300L);
                     } else {
-                        session.clearPendingChord();
+                        // Single tap without any swipe yet:
+                        // Save in wordTokens buffer so subsequent taps/swipes within 380ms can combine
+                        session.wordTokens.addAll(session.completedTokens);
+                        session.completedTokens.clear();
                     }
                     break;
                 }
 
                 case MotionEvent.ACTION_CANCEL: {
                     session.resetGestureState();
-                    session.clearPendingChord();
+                    session.clearWordBuffer();
+                    for (int i = 0; i < 10; i++) {
+                        finishTrailForPointer(handler, i);
+                    }
                     break;
                 }
 
@@ -538,9 +597,7 @@ public final class GboardNintypeRuntime {
 
             if (stockShouldStart) {
                 ensureTrailRecorderEnabled(handler);
-                if (session.sawMultiTouch) {
-                    session.nintypeTakeoverActive = true;
-                }
+                session.nintypeTakeoverActive = true;
                 return true;
             }
 
@@ -565,6 +622,7 @@ public final class GboardNintypeRuntime {
                 PointerTrack t = session.activePointers.valueAt(i);
                 if (t.startedOnLetter && (t.crossedKeyBoundary || t.pathLengthPx >= singleNeighborThreshold)) {
                     session.shortSwipeForceStarted = true;
+                    session.nintypeTakeoverActive = true;
                     ensureTrailRecorderEnabled(handler);
                     return true;
                 }
@@ -579,8 +637,8 @@ public final class GboardNintypeRuntime {
      * Injected right before `invoke-interface {v4, v7}, Lqit;->n(Lohe;)V` inside
      * AbstractGestureMotionEventHandler.g(MotionEvent).
      *
-     * @return true if Nintype has taken over this multi-finger gesture (suppressing Gboard's
-     *         1-finger gesture event dispatch), or false for normal 1-finger swipes.
+     * @return true if Nintype has taken over this swipe gesture (suppressing Gboard's
+     *         native gesture event dispatch), or false for normal tap typing.
      */
     public static boolean shouldInterceptGestureDispatch(Object handler) {
         if (handler == null) return false;
@@ -590,20 +648,99 @@ public final class GboardNintypeRuntime {
 
     /**
      * Injected at the start of AbstractGestureMotionEventHandler.B() (reset gesture state).
-     * Only resets Nintype session state if all active fingers have been lifted. If fingers are
-     * still touching the keyboard (e.g. holding 'i' while tapping 'c'), the session is preserved.
+     *
+     * @return true to intercept and abort B()'s body when active fingers are down
+     *         (preserving softKeyMap this.d, letterStarted this.u, and trail state),
+     *         false to proceed with stock cleanup when no touches are active.
      */
-    public static void onGestureReset(Object handler) {
-        if (handler == null) return;
+    public static boolean shouldInterceptGestureReset(Object handler) {
+        if (handler == null) return false;
         try {
             HandlerSession session = SESSIONS.get(handler);
-            if (session != null) {
-                if (session.activePointers.size() == 0) {
-                    session.resetGestureState();
+            if (session == null) return false;
+
+            boolean hasFingersDown = session.activePointers.size() > 0;
+            if (hasFingersDown) {
+                ensureGestureHandlerOwnsDispatcher(handler);
+                return true;
+            }
+
+            session.resetGestureState();
+            return false;
+        } catch (Throwable t) {
+            Log.w(TAG, "shouldInterceptGestureReset error", t);
+            return false;
+        }
+    }
+
+    private static void ensureGestureHandlerOwnsDispatcher(Object handler) {
+        probeHandlerFields(handler);
+        try {
+            if (letterStartedField != null) {
+                try {
+                    letterStartedField.setBoolean(handler, true);
+                } catch (Throwable ignored) {
                 }
             }
-        } catch (Throwable t) {
-            Log.w(TAG, "onGestureReset error", t);
+            if (gestureResetField != null) {
+                try {
+                    gestureResetField.setBoolean(handler, false);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (hostBridgeField != null && claimOwnershipMethod != null) {
+                Object bridge = hostBridgeField.get(handler);
+                if (bridge != null) {
+                    claimOwnershipMethod.invoke(bridge);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void finishTrailForPointer(Object handler, int pointerId) {
+        probeHandlerFields(handler);
+        try {
+            if (trailManagerField != null) {
+                Object trailMgr = trailManagerField.get(handler);
+                if (trailMgr != null) {
+                    if (trailSparseArrayField == null) {
+                        try {
+                            Field b = trailMgr.getClass().getDeclaredField("b");
+                            b.setAccessible(true);
+                            trailSparseArrayField = b;
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    if (trailFadingListField == null) {
+                        try {
+                            Field e = trailMgr.getClass().getDeclaredField("e");
+                            e.setAccessible(true);
+                            trailFadingListField = e;
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    if (trailSparseArrayField != null) {
+                        Object sparseObj = trailSparseArrayField.get(trailMgr);
+                        if (sparseObj instanceof SparseArray) {
+                            SparseArray<?> array = (SparseArray<?>) sparseObj;
+                            Object listObj = array.get(pointerId);
+                            if (listObj instanceof List) {
+                                List<?> list = (List<?>) listObj;
+                                if (trailFadingListField != null) {
+                                    Object fadingObj = trailFadingListField.get(trailMgr);
+                                    if (fadingObj instanceof List) {
+                                        ((List<Object>) fadingObj).add(list);
+                                    }
+                                }
+                                array.remove(pointerId);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -725,7 +862,7 @@ public final class GboardNintypeRuntime {
         }
     }
 
-    private static void decodeAndCommitSession(
+    private static void decodeAndPreviewSession(
             Object handler,
             HandlerSession session,
             Context context,
@@ -738,15 +875,17 @@ public final class GboardNintypeRuntime {
                 return;
             }
 
-            NintypeDecoder decoder = new NintypeDecoder(pack.trie, pack.bigrams, session.geometry);
+            KineticaDtwDecoder decoder = new KineticaDtwDecoder();
             InputConnection ic = resolveActiveInputConnection(handler, context);
             String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
 
+            // Re-decode full wordTokens buffer using Kinetica's continuous DTW engine
             List<WordCandidate> candidates = decoder.decode(
-                    session.completedTokens,
-                    prevWord,
-                    12,
-                    words -> GboardNintypeDictionaryManager.checkWordsInGboard(context, words)
+                    session.wordTokens,
+                    pack.trie,
+                    pack.bigrams,
+                    session.geometry,
+                    prevWord
             );
             if (candidates.isEmpty()) {
                 return;
@@ -769,20 +908,20 @@ public final class GboardNintypeRuntime {
                 }
             }
 
+            session.currentComposingWord = bestWord;
+            session.currentAlternativeWords = alternativeWords;
+
             if (ic != null) {
-                commitWordToInputConnection(context, ic, bestWord, session.textSnapshotAtActionDown);
+                previewWordToInputConnection(ic, bestWord, session.textSnapshotAtActionDown);
             }
 
-            session.lastCommittedWord = bestWord;
-            GboardNintypeDictionaryManager.recordCommittedWord(prevWord, bestWord, lang);
             GboardMatrixSuggestionsRuntime.recordNintypeDecodedWord(bestWord, alternativeWords);
         } catch (Throwable t) {
-            Log.e(TAG, "decodeAndCommitSession failed", t);
+            Log.e(TAG, "decodeAndPreviewSession failed", t);
         }
     }
 
-    private static void commitWordToInputConnection(
-            Context context,
+    private static void previewWordToInputConnection(
             InputConnection ic,
             String word,
             String baselineBeforeText
@@ -790,12 +929,8 @@ public final class GboardNintypeRuntime {
         try {
             ic.beginBatchEdit();
             try {
-                // 1) Clear any partial composing preview that 1-finger swipe or tap might have started
-                ic.setComposingText("", 1);
-                ic.finishComposingText();
-
-                // 2) If BasicMotionEventHandler committed any stray rollover tap characters after ACTION_DOWN,
-                //    cleanly roll back to the pre-gesture baseline before committing the Nintype word.
+                // If BasicMotionEventHandler committed any stray rollover tap characters after ACTION_DOWN,
+                // cleanly roll back to the pre-gesture baseline before displaying composing preview.
                 if (baselineBeforeText != null) {
                     CharSequence currentSeq = ic.getTextBeforeCursor(64, 0);
                     if (currentSeq != null) {
@@ -810,32 +945,60 @@ public final class GboardNintypeRuntime {
                     }
                 }
 
-                boolean autoSpace = GboardNintypeSettings.isAutoSpaceEnabled(context);
-                boolean prependSpace = false;
-                if (autoSpace) {
-                    CharSequence before = ic.getTextBeforeCursor(2, 0);
-                    if (before != null && before.length() > 0) {
-                        char lastChar = before.charAt(before.length() - 1);
-                        if (Character.isLetterOrDigit(lastChar)
-                                || lastChar == '.'
-                                || lastChar == ','
-                                || lastChar == '!'
-                                || lastChar == '?'
-                                || lastChar == ')'
-                                || lastChar == '"'
-                                || lastChar == '\'') {
-                            prependSpace = true;
-                        }
-                    }
-                }
-
-                String toCommit = prependSpace ? (" " + word) : word;
-                ic.commitText(toCommit, 1);
+                // Display Live Composing preview (underlined text, exact Kinetica behavior)
+                ic.setComposingText(word, 1);
             } finally {
                 ic.endBatchEdit();
             }
         } catch (Throwable t) {
-            Log.w(TAG, "commitWordToInputConnection failed", t);
+            Log.w(TAG, "previewWordToInputConnection failed", t);
+        }
+    }
+
+    private static void finalizeComposingAndAutospace(
+            Object handler,
+            HandlerSession session,
+            Context context,
+            String lang
+    ) {
+        try {
+            if (!session.autospaceTimerPending) return;
+            session.autospaceTimerPending = false;
+
+            // Autospace fires only after all thumbs have lifted
+            if (session.activePointers.size() > 0) return;
+
+            InputConnection ic = resolveActiveInputConnection(handler, context);
+            String committedWord = session.currentComposingWord;
+
+            if (ic != null && committedWord != null && !committedWord.isEmpty()) {
+                ic.beginBatchEdit();
+                try {
+                    // 1) Finish composing text
+                    ic.finishComposingText();
+
+                    // 2) Append space BEHIND the committed word (exact Kinetica autospace)
+                    boolean autospaceEnabled = GboardNintypeSettings.isAutoSpaceEnabled(context);
+                    if (autospaceEnabled) {
+                        ic.commitText(" ", 1);
+                        session.autospaceInserted = true;
+                    }
+                } finally {
+                    ic.endBatchEdit();
+                }
+
+                session.lastCommittedWord = committedWord;
+                String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
+                GboardNintypeDictionaryManager.recordCommittedWord(prevWord, committedWord, lang);
+                if (session.currentAlternativeWords != null) {
+                    GboardMatrixSuggestionsRuntime.recordNintypeDecodedWord(committedWord, session.currentAlternativeWords);
+                }
+            }
+
+            session.clearWordBuffer();
+            session.resetGestureState();
+        } catch (Throwable t) {
+            Log.w(TAG, "finalizeComposingAndAutospace failed", t);
         }
     }
 
@@ -1072,7 +1235,7 @@ public final class GboardNintypeRuntime {
                         hasUmlaut[0] = true;
                     }
                     int idx = NintypeAlphabet.charIndex(labelChar);
-                    if (idx >= 0 && child.getWidth() > 0 && child.getHeight() > 0) {
+                    if (child.getWidth() > 0 && child.getHeight() > 0) {
                         float cx = child.getX() + child.getWidth() * 0.5f;
                         float cy = child.getY() + child.getHeight() * 0.5f;
                         View parent = (View) child.getParent();
@@ -1083,8 +1246,9 @@ public final class GboardNintypeRuntime {
                                     ? (View) parent.getParent()
                                     : null;
                         }
+                        char storeChar = (idx >= 0) ? NintypeAlphabet.indexToChar(idx) : labelChar;
                         out.add(new KeySpec(
-                                NintypeAlphabet.indexToChar(idx),
+                                storeChar,
                                 cx,
                                 cy,
                                 child.getWidth(),
@@ -1107,7 +1271,8 @@ public final class GboardNintypeRuntime {
                     CharSequence text = ((TextView) c).getText();
                     if (text != null && text.length() == 1) {
                         char ch = Character.toLowerCase(text.charAt(0));
-                        if ((ch >= 'a' && ch <= 'z') || ch == 'ä' || ch == 'ö' || ch == 'ü') {
+                        if ((ch >= 'a' && ch <= 'z') || ch == 'ä' || ch == 'ö' || ch == 'ü'
+                                || NintypeGeometry.NO_SPACE_BEFORE.indexOf(ch) >= 0) {
                             return ch;
                         }
                     }
@@ -1117,7 +1282,8 @@ public final class GboardNintypeRuntime {
         CharSequence desc = softKeyView.getContentDescription();
         if (desc != null && desc.length() >= 1) {
             char ch = Character.toLowerCase(desc.charAt(0));
-            if (desc.length() == 1 && ((ch >= 'a' && ch <= 'z') || ch == 'ä' || ch == 'ö' || ch == 'ü')) {
+            if (desc.length() == 1 && ((ch >= 'a' && ch <= 'z') || ch == 'ä' || ch == 'ö' || ch == 'ü'
+                    || NintypeGeometry.NO_SPACE_BEFORE.indexOf(ch) >= 0)) {
                 return ch;
             }
         }
@@ -1214,6 +1380,18 @@ public final class GboardNintypeRuntime {
                                     aField.setAccessible(true);
                                     trailActiveBoolField = aField;
                                 }
+                            } catch (Throwable ignored) {
+                            }
+                            try {
+                                Field bField = type.getDeclaredField("b");
+                                bField.setAccessible(true);
+                                trailSparseArrayField = bField;
+                            } catch (Throwable ignored) {
+                            }
+                            try {
+                                Field eField = type.getDeclaredField("e");
+                                eField.setAccessible(true);
+                                trailFadingListField = eField;
                             } catch (Throwable ignored) {
                             }
                         } else if ("p".equals(name) && type.isInterface()) {

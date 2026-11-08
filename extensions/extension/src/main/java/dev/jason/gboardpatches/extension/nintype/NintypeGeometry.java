@@ -49,6 +49,12 @@ public final class NintypeGeometry {
         }
     }
 
+    public static final String NO_SPACE_BEFORE = ".,!?;:)]}\u00bb\u2026";
+
+    public boolean isPunctuationChar(char c) {
+        return NO_SPACE_BEFORE.indexOf(c) >= 0;
+    }
+
     private final List<KeySpec> allKeys = new ArrayList<>(32);
     private final KeySpec[] letterArray = new KeySpec[NintypeAlphabet.ALPHABET_SIZE];
 
@@ -128,6 +134,39 @@ public final class NintypeGeometry {
     public KeySpec keySpecByIdx(int charIdx) {
         if (charIdx < 0 || charIdx >= NintypeAlphabet.ALPHABET_SIZE) return null;
         return letterArray[charIdx];
+    }
+
+    public boolean hasKey(int code) {
+        return code >= 0 && code < NintypeAlphabet.ALPHABET_SIZE && letterArray[code] != null;
+    }
+
+    public float centerXKw(int code) {
+        KeySpec k = (code >= 0 && code < NintypeAlphabet.ALPHABET_SIZE) ? letterArray[code] : null;
+        return k != null ? (k.centerX / keyWidthPx) : 0f;
+    }
+
+    public float centerYKw(int code) {
+        KeySpec k = (code >= 0 && code < NintypeAlphabet.ALPHABET_SIZE) ? letterArray[code] : null;
+        return k != null ? (k.centerY / keyWidthPx) : 0f;
+    }
+
+    public float distToCenterKw(float xKw, float yKw, int code) {
+        KeySpec k = (code >= 0 && code < NintypeAlphabet.ALPHABET_SIZE) ? letterArray[code] : null;
+        if (k == null) return Float.MAX_VALUE;
+        float dx = xKw - (k.centerX / keyWidthPx);
+        float dy = yKw - (k.centerY / keyWidthPx);
+        return (float) Math.sqrt(dx * dx + dy * dy);
+    }
+
+    public float keyDist(int code1, int code2) {
+        if (code1 == code2) return 0f;
+        if (code1 < 0 || code1 >= NintypeAlphabet.ALPHABET_SIZE || code2 < 0 || code2 >= NintypeAlphabet.ALPHABET_SIZE) return 0f;
+        KeySpec k1 = letterArray[code1];
+        KeySpec k2 = letterArray[code2];
+        if (k1 == null || k2 == null) return 0f;
+        float dx = (k1.centerX - k2.centerX) / keyWidthPx;
+        float dy = (k1.centerY - k2.centerY) / keyWidthPx;
+        return (float) Math.sqrt(dx * dx + dy * dy);
     }
 
     public KeySpec keySpec(char c) {
@@ -214,6 +253,33 @@ public final class NintypeGeometry {
             return out.subList(0, maxCount);
         }
         return out;
+    }
+
+    public KeySpec findKeyAt(float px, float py) {
+        for (int i = 0; i < allKeys.size(); i++) {
+            KeySpec k = allKeys.get(i);
+            float hW = k.width * 0.5f;
+            float hH = k.height * 0.5f;
+            if (px >= k.centerX - hW && px <= k.centerX + hW
+                    && py >= k.centerY - hH && py <= k.centerY + hH) {
+                return k;
+            }
+        }
+        return null;
+    }
+
+    public KeySpec nearestAnyKey(float px, float py) {
+        KeySpec best = null;
+        float bestDist = Float.MAX_VALUE;
+        for (int i = 0; i < allKeys.size(); i++) {
+            KeySpec k = allKeys.get(i);
+            float d = k.distanceSqTo(px, py);
+            if (d < bestDist) {
+                bestDist = d;
+                best = k;
+            }
+        }
+        return best;
     }
 
     /**

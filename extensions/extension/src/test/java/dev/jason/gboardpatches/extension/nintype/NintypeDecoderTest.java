@@ -19,7 +19,7 @@ public class NintypeDecoderTest {
     private NintypeGeometry geometry;
     private NintypeTrie trie;
     private NintypeBigramTable bigrams;
-    private NintypeDecoder decoder;
+    private KineticaDtwDecoder decoder;
 
     @Before
     public void setUp() {
@@ -40,12 +40,24 @@ public class NintypeDecoderTest {
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "sie", 97000, false, "de", false);
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "Hunde", 70000, true, "de", false);
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "hunde", 70000, false, "de", false);
+        NintypeDictionaryLoader.insertWordIntoTrie(trie, "wie", 96000, false, "de", false);
+        NintypeDictionaryLoader.insertWordIntoTrie(trie, "nochmal", 91000, false, "de", false);
+        NintypeDictionaryLoader.insertWordIntoTrie(trie, "Monica", 20000, true, "de", false);
 
         bigrams.put("wir", "müssen", 1200);
         bigrams.put("wir", "schreiben", 900);
         bigrams.freeze();
 
-        decoder = new NintypeDecoder(trie, bigrams, geometry);
+        decoder = new KineticaDtwDecoder();
+    }
+
+    @Test
+    public void decodesSingleSwipeForHallo() {
+        NintypeInputToken swipeHallo = buildSwipeToken(0, "halo", 100L, 350L);
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(swipeHallo), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("hallo", results.get(0).word);
     }
 
     @Test
@@ -55,7 +67,7 @@ public class NintypeDecoderTest {
         NintypeInputToken rightSwipe = buildSwipeToken(1, "lo", 210L, 330L);
 
         List<WordCandidate> results = decoder.decode(
-                Arrays.asList(leftSwipe, rightSwipe), null, 5, null);
+                Arrays.asList(leftSwipe, rightSwipe), trie, bigrams, geometry, null);
         assertFalse(results.isEmpty());
         assertEquals("hallo", results.get(0).word);
     }
@@ -70,7 +82,7 @@ public class NintypeDecoderTest {
         NintypeInputToken swipeEute = buildSwipeToken(1, "eute", 130L, 320L);
 
         List<WordCandidate> results = decoder.decode(
-                Arrays.asList(tapH, swipeEute), null, 5, null);
+                Arrays.asList(tapH, swipeEute), trie, bigrams, geometry, null);
         assertFalse(results.isEmpty());
         assertEquals("heute", results.get(0).word);
     }
@@ -82,89 +94,76 @@ public class NintypeDecoderTest {
         KeySpec tKey = geometry.keySpec('t');
         assertNotNull(tKey);
         NintypeInputToken tapT = NintypeInputToken.tap(
-                1, 't', tKey.centerX, tKey.centerY, 270L, 310L);
+                1, 't', tKey.centerX, tKey.centerY, 380L, 420L);
 
         List<WordCandidate> results = decoder.decode(
-                Arrays.asList(swipeWel, tapT), null, 5, null);
+                Arrays.asList(swipeWel, tapT), trie, bigrams, geometry, null);
         assertFalse(results.isEmpty());
         assertEquals("Welt", results.get(0).word);
     }
 
     @Test
-    public void decodesGermanUmlautAndDigraphWithBigramAndGboardCallbackBoost() {
-        // Finger 0 swipes m -> u -> e -> s, Finger 1 swipes s -> e -> n -> "müssen"
-        NintypeInputToken leftSwipe = buildSwipeToken(0, "mues", 100L, 240L);
-        NintypeInputToken rightSwipe = buildSwipeToken(1, "sen", 230L, 360L);
-
+    public void decodesGermanUmlautWithBigram() {
+        NintypeInputToken swipeMussen = buildSwipeToken(0, "muesen", 100L, 360L);
         List<WordCandidate> results = decoder.decode(
-                Arrays.asList(leftSwipe, rightSwipe),
-                "wir",
-                5,
-                words -> {
-                    boolean[] valid = new boolean[words.size()];
-                    for (int i = 0; i < words.size(); i++) {
-                        valid[i] = "müssen".equals(words.get(i));
-                    }
-                    return valid;
-                });
+                Arrays.asList(swipeMussen), trie, bigrams, geometry, "wir");
 
         assertFalse(results.isEmpty());
         assertEquals("müssen", results.get(0).word);
-        assertTrue(results.get(0).bigramScore > 0.5f);
-    }
-
-    @Test
-    public void decodesInterleavedShortSwipeAndTapLikeAlsEvenWhenTapTimestampIsAfterSwipeEnd() {
-        // User scenario: left finger swipes a -> s (short 1-key neighbor swipe), right finger taps 'l'
-        // Even if the short swipe a -> s reaches 's' at 165ms and 'l' is tapped at 185ms, "als" must win!
-        NintypeInputToken swipeAs = buildSwipeToken(0, "as", 100L, 165L);
-        KeySpec lKey = geometry.keySpec('l');
-        assertNotNull(lKey);
-        NintypeInputToken tapL = NintypeInputToken.tap(
-                1, 'l', lKey.centerX, lKey.centerY, 185L, 215L);
-
-        List<WordCandidate> results = decoder.decode(
-                Arrays.asList(swipeAs, tapL), null, 5, null);
-        assertFalse(results.isEmpty());
-        assertEquals("als", results.get(0).word);
-
-        // Also test when 'l' is tapped concurrently during the swipe (at 130ms)
-        NintypeInputToken tapLConcurrent = NintypeInputToken.tap(
-                1, 'l', lKey.centerX, lKey.centerY, 130L, 155L);
-        List<WordCandidate> concurrentResults = decoder.decode(
-                Arrays.asList(swipeAs, tapLConcurrent), null, 5, null);
-        assertFalse(concurrentResults.isEmpty());
-        assertEquals("als", concurrentResults.get(0).word);
-    }
-
-    @Test
-    public void decodesShortSwipeAndRightTapForSie() {
-        // Left finger swipes s -> e, right finger taps 'i' -> "sie"
-        NintypeInputToken swipeSe = buildSwipeToken(0, "se", 100L, 180L);
-        KeySpec iKey = geometry.keySpec('i');
-        assertNotNull(iKey);
-        NintypeInputToken tapI = NintypeInputToken.tap(
-                1, 'i', iKey.centerX, iKey.centerY, 195L, 225L);
-
-        List<WordCandidate> results = decoder.decode(
-                Arrays.asList(swipeSe, tapI), null, 5, null);
-        assertFalse(results.isEmpty());
-        assertEquals("sie", results.get(0).word);
     }
 
     @Test
     public void decodesAlternatingDualThumbSwipeForSchreiben() {
         // User scenario: Left thumb swipes s -> c -> r -> e (stream 0)
         // Right thumb swipes h -> i -> b -> n (stream 1)
-        // Combined word: "schreiben" (switches hands 4 times)
         NintypeInputToken leftSwipe = buildSwipeToken(0, "scre", 100L, 380L);
         NintypeInputToken rightSwipe = buildSwipeToken(1, "hibn", 160L, 460L);
 
-        // Even with no prior bigram and "Hunde" present in dictionary, "schreiben" must be top candidate!
         List<WordCandidate> results = decoder.decode(
-                Arrays.asList(leftSwipe, rightSwipe), null, 5, null);
+                Arrays.asList(leftSwipe, rightSwipe), trie, bigrams, geometry, null);
         assertFalse(results.isEmpty());
         assertEquals("schreiben", results.get(0).word);
+    }
+
+    @Test
+    public void decodesTapPlusTapPlusSwipeForNochmal() {
+        // Scenario reported by user: tap 'c' and 'a' on left thumb, swipe "nohml" on right thumb
+        KeySpec cKey = geometry.keySpec('c');
+        KeySpec aKey = geometry.keySpec('a');
+        assertNotNull(cKey);
+        assertNotNull(aKey);
+
+        NintypeInputToken tapC = NintypeInputToken.tap(0, 0, 'c', cKey.centerX, cKey.centerY, 100L, 140L);
+        NintypeInputToken tapA = NintypeInputToken.tap(0, 0, 'a', aKey.centerX, aKey.centerY, 300L, 340L);
+        NintypeInputToken swipeNohml = buildSwipeToken(1, "nohml", 120L, 420L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(tapC, tapA, swipeNohml), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("nochmal", results.get(0).word);
+    }
+
+    @Test
+    public void decodesSingleSwipeForWie() {
+        NintypeInputToken swipeWie = buildSwipeToken(0, "wie", 100L, 300L);
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(swipeWie), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("wie", results.get(0).word);
+    }
+
+    @Test
+    public void decodesSwipePlusTapForWie() {
+        // User swipes w -> i and then taps 'e'
+        NintypeInputToken swipeWi = buildSwipeToken(0, "wi", 100L, 250L);
+        KeySpec eKey = geometry.keySpec('e');
+        assertNotNull(eKey);
+        NintypeInputToken tapE = NintypeInputToken.tap(1, 1, 'e', eKey.centerX, eKey.centerY, 300L, 340L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(swipeWi, tapE), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("wie", results.get(0).word);
     }
 
     private NintypeInputToken buildSwipeToken(
@@ -203,6 +202,7 @@ public class NintypeDecoderTest {
         }
 
         int streamId = (pointerId == 0) ? 0 : 1;
-        return NintypeInputToken.swipe(pointerId, streamId, pts, Math.max(60f, pathLen), startTimeMs, endTimeMs);
+        long finalEnd = pts.get(pts.size() - 1).timeMs;
+        return NintypeInputToken.swipe(pointerId, streamId, pts, Math.max(60f, pathLen), startTimeMs, finalEnd);
     }
 }

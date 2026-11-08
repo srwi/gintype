@@ -1,7 +1,12 @@
 package dev.jason.gboardpatches.extension.nintype;
 
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.AssetManager;
+import android.database.Cursor;
+import android.net.Uri;
+import android.provider.UserDictionary;
+import android.util.Log;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -100,6 +105,7 @@ public final class GboardNintypeDictionaryManager {
                 try (InputStream ws = assets.open("nintype/" + key + "_wordlist.txt.gz")) {
                     trie = NintypeDictionaryLoader.loadTrieFromGzipStream(ws, key, hasDedicatedUmlauts);
                 }
+                loadUserDictionaryIntoTrie(appContext, trie, key);
                 NintypeBigramTable bigrams;
                 try (InputStream bs = assets.open("nintype/" + key + "_bigrams.txt.gz")) {
                     bigrams = NintypeDictionaryLoader.loadBigramsFromGzipStream(bs);
@@ -128,6 +134,7 @@ public final class GboardNintypeDictionaryManager {
                 try (InputStream ws = assets.open("nintype/" + key + "_wordlist.txt.gz")) {
                     trie = NintypeDictionaryLoader.loadTrieFromGzipStream(ws, key, hasDedicatedUmlauts);
                 }
+                loadUserDictionaryIntoTrie(context, trie, key);
                 NintypeBigramTable bigrams;
                 try (InputStream bs = assets.open("nintype/" + key + "_bigrams.txt.gz")) {
                     bigrams = NintypeDictionaryLoader.loadBigramsFromGzipStream(bs);
@@ -138,6 +145,38 @@ public final class GboardNintypeDictionaryManager {
             } catch (Throwable ignored) {
                 return null;
             }
+        }
+    }
+
+    public static void loadUserDictionaryIntoTrie(Context context, NintypeTrie trie, String lang) {
+        if (context == null || trie == null) return;
+        try {
+            ContentResolver cr = context.getContentResolver();
+            if (cr == null) return;
+            Uri uri = UserDictionary.Words.CONTENT_URI;
+            String[] projection = new String[] {
+                    UserDictionary.Words.WORD,
+                    UserDictionary.Words.FREQUENCY,
+                    UserDictionary.Words.LOCALE
+            };
+            try (Cursor cursor = cr.query(uri, projection, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int wordCol = cursor.getColumnIndex(UserDictionary.Words.WORD);
+                    int freqCol = cursor.getColumnIndex(UserDictionary.Words.FREQUENCY);
+                    do {
+                        String word = (wordCol >= 0) ? cursor.getString(wordCol) : null;
+                        if (word != null && word.length() >= 2) {
+                            int rawFreq = (freqCol >= 0) ? cursor.getInt(freqCol) : 128;
+                            int boostedFreq = Math.max(25_000, rawFreq * 350);
+                            boolean isProper = Character.isUpperCase(word.charAt(0));
+                            NintypeDictionaryLoader.insertWordIntoTrie(
+                                    trie, word, boostedFreq, isProper, lang, false);
+                        }
+                    } while (cursor.moveToNext());
+                }
+            }
+        } catch (Throwable t) {
+            Log.w("GboardNintypeDict", "UserDictionary query skipped: " + t.getMessage());
         }
     }
 
