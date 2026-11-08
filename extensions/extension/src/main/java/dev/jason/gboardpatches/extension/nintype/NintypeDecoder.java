@@ -214,7 +214,7 @@ public final class NintypeDecoder {
     // 3. Anchor Extraction (Ported from Kinetica's extractAnchors)
     // =========================================================================
     private List<Anchor> extractAnchors(List<NintypeInputToken> streamTokens, int fingerId) {
-        if (streamTokens.isEmpty()) return Collections.emptyList();
+        if (geometry == null || streamTokens.isEmpty()) return Collections.emptyList();
 
         List<NintypeInputToken> sorted = new ArrayList<>(streamTokens);
         sorted.sort((a, b) -> Long.compare(a.startTimeMs, b.startTimeMs));
@@ -694,7 +694,7 @@ public final class NintypeDecoder {
         }
         dtw[0][0] = 0f;
 
-        float normDist = Math.max(30f, geometry.keyWidthPx * 1.5f);
+        float normDist = Math.max(30f, (geometry != null ? geometry.keyWidthPx : 96f) * 1.5f);
 
         for (int i = 1; i <= n; i++) {
             TouchPoint p1 = resampled.get(i - 1);
@@ -750,6 +750,7 @@ public final class NintypeDecoder {
     }
 
     private List<TouchPoint> buildIdealWordPath(String word, int sampleCount) {
+        if (geometry == null) return Collections.emptyList();
         List<KeySpec> keys = new ArrayList<>(word.length());
         for (int i = 0; i < word.length(); i++) {
             KeySpec ks = geometry.keySpec(word.charAt(i));

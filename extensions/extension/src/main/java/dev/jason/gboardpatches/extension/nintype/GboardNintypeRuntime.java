@@ -191,6 +191,7 @@ public final class GboardNintypeRuntime {
     private static volatile Field trailManagerField;
     private static volatile Field trailActiveBoolField;
     private static volatile Field trailSparseArrayField;
+    private static volatile Field trailSentinelField;
     private static volatile Method showOverlayMethod;
     private static volatile Field minSampleDistanceSqField;
     private static volatile Field letterStartedField;
@@ -246,10 +247,6 @@ public final class GboardNintypeRuntime {
                     int pid = event.getPointerId(0);
                     float x = event.getX(0);
                     float y = event.getY(0);
-
-                    for (int i = 0; i < 10; i++) {
-                        clearTrailForPointer(handler, i);
-                    }
 
                     boolean keepPendingChord = false;
                     if (session.pendingChordToken != null
@@ -373,7 +370,7 @@ public final class GboardNintypeRuntime {
                         }
                     }
                     releasePointerSlot(session, pid);
-                    clearTrailForPointer(handler, pid);
+                    terminateTrailSegmentForPointer(handler, pid);
                     if (session.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
                     }
@@ -416,9 +413,6 @@ public final class GboardNintypeRuntime {
                         }
                     }
                     session.activePointers.clear();
-                    for (int i = 0; i < 10; i++) {
-                        clearTrailForPointer(handler, i);
-                    }
 
                     // Check if a recent opposite-hand swipe (e.g. a->s) was followed within 180ms by this tap (e.g. l)
                     if (!session.sawMultiTouch
@@ -456,9 +450,6 @@ public final class GboardNintypeRuntime {
                 case MotionEvent.ACTION_CANCEL: {
                     session.resetGestureState();
                     session.clearPendingChord();
-                    for (int i = 0; i < 10; i++) {
-                        clearTrailForPointer(handler, i);
-                    }
                     break;
                 }
 
@@ -549,13 +540,11 @@ public final class GboardNintypeRuntime {
     }
 
     /**
-     * Injected at the start of AbstractGestureMotionEventHandler.B() (reset gesture state).
-     *
-     * @return true to intercept and abort B()'s body when active fingers are down
-     *         (preserving softKeyMap this.d, letterStarted this.u, and trail state),
-     *         false to proceed with stock cleanup when no touches are active.
+     * Appends Gboard's native stroke sentinel (this.U.e) to a lifted pointer's trail list.
+     * This separates successive taps without clearing or destroying the list, ensuring that
+     * GestureOverlayView.draw() never encounters an empty list and never crashes with IndexOutOfBoundsException.
      */
-    private static void clearTrailForPointer(Object handler, int pointerId) {
+    private static void terminateTrailSegmentForPointer(Object handler, int pointerId) {
         probeHandlerFields(handler);
         try {
             if (trailManagerField != null) {
@@ -569,15 +558,27 @@ public final class GboardNintypeRuntime {
                         } catch (Throwable ignored) {
                         }
                     }
-                    if (trailSparseArrayField != null) {
+                    if (trailSentinelField == null) {
+                        try {
+                            Field e = trailMgr.getClass().getDeclaredField("e");
+                            e.setAccessible(true);
+                            trailSentinelField = e;
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    if (trailSparseArrayField != null && trailSentinelField != null) {
                         Object sparse = trailSparseArrayField.get(trailMgr);
-                        if (sparse instanceof SparseArray) {
+                        Object sentinel = trailSentinelField.get(trailMgr);
+                        if (sparse instanceof SparseArray && sentinel != null) {
                             SparseArray<?> array = (SparseArray<?>) sparse;
                             Object list = array.get(pointerId);
                             if (list instanceof List) {
-                                ((List<?>) list).clear();
+                                @SuppressWarnings("unchecked")
+                                List<Object> l = (List<Object>) list;
+                                if (!l.isEmpty() && l.get(l.size() - 1) != sentinel) {
+                                    l.add(sentinel);
+                                }
                             }
-                            array.remove(pointerId);
                         }
                     }
                 }
@@ -778,50 +779,54 @@ public final class GboardNintypeRuntime {
             Context context,
             String lang
     ) {
-        LanguagePack pack = GboardNintypeDictionaryManager.loadBlockingIfNeeded(
-                context, lang, session.geometry.hasDedicatedUmlauts());
-        if (pack == null) {
-            return;
-        }
-
-        NintypeDecoder decoder = new NintypeDecoder(pack.trie, pack.bigrams, session.geometry);
-        InputConnection ic = resolveActiveInputConnection(handler, context);
-        String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
-
-        List<WordCandidate> candidates = decoder.decode(
-                session.completedTokens,
-                prevWord,
-                12,
-                words -> GboardNintypeDictionaryManager.checkWordsInGboard(context, words)
-        );
-        if (candidates.isEmpty()) {
-            return;
-        }
-
-        String bestWord = candidates.get(0).word;
-        boolean capitalizeFirst = shouldCapitalizeFirstLetter(session.textSnapshotAtActionDown, ic);
-        if (capitalizeFirst && bestWord.length() > 0) {
-            bestWord = capitalizeFirstChar(bestWord);
-        }
-
-        List<String> alternativeWords = new ArrayList<>(candidates.size());
-        for (int i = 0; i < candidates.size(); i++) {
-            String w = candidates.get(i).word;
-            if (capitalizeFirst && w.length() > 0) {
-                w = capitalizeFirstChar(w);
+        try {
+            LanguagePack pack = GboardNintypeDictionaryManager.loadBlockingIfNeeded(
+                    context, lang, session.geometry.hasDedicatedUmlauts());
+            if (pack == null) {
+                return;
             }
-            if (!alternativeWords.contains(w)) {
-                alternativeWords.add(w);
+
+            NintypeDecoder decoder = new NintypeDecoder(pack.trie, pack.bigrams, session.geometry);
+            InputConnection ic = resolveActiveInputConnection(handler, context);
+            String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
+
+            List<WordCandidate> candidates = decoder.decode(
+                    session.completedTokens,
+                    prevWord,
+                    12,
+                    words -> GboardNintypeDictionaryManager.checkWordsInGboard(context, words)
+            );
+            if (candidates.isEmpty()) {
+                return;
             }
-        }
 
-        if (ic != null) {
-            commitWordToInputConnection(context, ic, bestWord, session.textSnapshotAtActionDown);
-        }
+            String bestWord = candidates.get(0).word;
+            boolean capitalizeFirst = shouldCapitalizeFirstLetter(session.textSnapshotAtActionDown, ic);
+            if (capitalizeFirst && bestWord.length() > 0) {
+                bestWord = capitalizeFirstChar(bestWord);
+            }
 
-        session.lastCommittedWord = bestWord;
-        GboardNintypeDictionaryManager.recordCommittedWord(prevWord, bestWord, lang);
-        GboardMatrixSuggestionsRuntime.recordNintypeDecodedWord(bestWord, alternativeWords);
+            List<String> alternativeWords = new ArrayList<>(candidates.size());
+            for (int i = 0; i < candidates.size(); i++) {
+                String w = candidates.get(i).word;
+                if (capitalizeFirst && w.length() > 0) {
+                    w = capitalizeFirstChar(w);
+                }
+                if (!alternativeWords.contains(w)) {
+                    alternativeWords.add(w);
+                }
+            }
+
+            if (ic != null) {
+                commitWordToInputConnection(context, ic, bestWord, session.textSnapshotAtActionDown);
+            }
+
+            session.lastCommittedWord = bestWord;
+            GboardNintypeDictionaryManager.recordCommittedWord(prevWord, bestWord, lang);
+            GboardMatrixSuggestionsRuntime.recordNintypeDecodedWord(bestWord, alternativeWords);
+        } catch (Throwable t) {
+            Log.e(TAG, "decodeAndCommitSession failed", t);
+        }
     }
 
     private static void commitWordToInputConnection(
