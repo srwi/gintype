@@ -408,4 +408,8 @@ public final class NintypeGeometry {
         geo.setKeys(specs, keyW, rowH, false);
         return geo;
     }
+
+    public List<KeySpec> allKeysSnapshot() {
+        return new ArrayList<>(allKeys);
+    }
 }

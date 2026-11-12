@@ -12,8 +12,10 @@ public final class GboardNintypeSettings {
 
     public static final String PREF_KEY_ENABLED = "pref_nintype_multi_touch_enabled";
     public static final String PREF_KEY_AUTO_SPACE = "pref_nintype_auto_space_enabled";
+    public static final String PREF_KEY_TRACE_LOGGING = "pref_nintype_trace_logging_enabled";
     public static final boolean DEFAULT_ENABLED = true;
     public static final boolean DEFAULT_AUTO_SPACE = true;
+    public static final boolean DEFAULT_TRACE_LOGGING = true;
 
     private GboardNintypeSettings() {}
 
@@ -66,6 +68,20 @@ public final class GboardNintypeSettings {
             return preferences.getBoolean(PREF_KEY_AUTO_SPACE, DEFAULT_AUTO_SPACE);
         } catch (Throwable ignored) {
             return DEFAULT_AUTO_SPACE;
+        }
+    }
+
+    public static boolean isTraceLoggingEnabled(Context context) {
+        if (context == null) return DEFAULT_TRACE_LOGGING;
+        try {
+            SharedPreferences preferences = GboardPatchesSettings.preferencesOrNull(context);
+            if (preferences == null) {
+                preferences = context.getSharedPreferences(
+                        context.getPackageName() + "_preferences", Context.MODE_PRIVATE);
+            }
+            return preferences.getBoolean(PREF_KEY_TRACE_LOGGING, DEFAULT_TRACE_LOGGING);
+        } catch (Throwable ignored) {
+            return DEFAULT_TRACE_LOGGING;
         }
     }
 }

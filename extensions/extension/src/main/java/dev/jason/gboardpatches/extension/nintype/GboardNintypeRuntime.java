@@ -293,6 +293,8 @@ public final class GboardNintypeRuntime {
         float pendingChordAnchorX = 0f;
         String lastCommittedWord = null;
         long lastTouchUpTimeMs = 0L;
+        int restingDroppedThisSession = 0;
+        int lastPromotedPassiveCount = 0;
         final PassiveTapBuffer passiveTapBuffer = new PassiveTapBuffer();
 
         // Auto-space & Live Composing (WordComposer) state
@@ -320,6 +322,7 @@ public final class GboardNintypeRuntime {
             shortSwipeForceStarted = false;
             decodedThisSession = false;
             sawNonLetterThisSession = false;
+            restingDroppedThisSession = 0;
         }
 
         void clearPendingChord() {
@@ -335,6 +338,7 @@ public final class GboardNintypeRuntime {
             currentAlternativeWords = null;
             nintypeWordActive = false;
             lastTouchUpTimeMs = 0L;
+            lastPromotedPassiveCount = 0;
         }
     }
 
@@ -625,6 +629,8 @@ public final class GboardNintypeRuntime {
                             if (token != null) {
                                 session.completedTokens.add(token);
                             }
+                        } else {
+                            session.restingDroppedThisSession++;
                         }
                     }
                     releasePointerSlot(session, pid);
@@ -670,6 +676,7 @@ public final class GboardNintypeRuntime {
                         }
                         track.finished = true;
                         if (track.isRestingFinger(multiSwipeThreshold)) {
+                            session.restingDroppedThisSession++;
                             if (isNintypeGesture) {
                                 finishTrailForPointer(handler, track.pointerId, false);
                             }
@@ -732,8 +739,11 @@ public final class GboardNintypeRuntime {
                         activateNintypeTakeoverOnFinish(handler);
 
                         if (!wasNintypeWordActive) {
+                            int beforePromoted = session.wordTokens.size();
                             session.textSnapshotAtActionDown = session.passiveTapBuffer.promoteInto(
                                     session.wordTokens, session.textSnapshotAtActionDown);
+                            session.lastPromotedPassiveCount += Math.max(
+                                    0, session.wordTokens.size() - beforePromoted);
                         } else {
                             session.passiveTapBuffer.clear();
                         }
@@ -756,6 +766,7 @@ public final class GboardNintypeRuntime {
                         String tapBaselineAtDown = session.textSnapshotAtActionDown;
                         boolean strokeHadMultiTouch = session.sawMultiTouch;
                         boolean sawNonLetter = session.sawNonLetterThisSession;
+                        int restingDropped = session.restingDroppedThisSession;
                         List<NintypeInputToken> completedCopy = new ArrayList<>(session.completedTokens);
                         session.clearWordBuffer();
                         session.completedTokens.clear();
@@ -766,6 +777,26 @@ public final class GboardNintypeRuntime {
                                 strokeHadMultiTouch,
                                 tapBaselineAtDown,
                                 eventTime);
+                        if (hasSwipe || strokeHadMultiTouch || restingDropped > 0
+                                || !session.passiveTapBuffer.tokens.isEmpty()) {
+                            String reason = !hasSwipe
+                                    ? (strokeHadMultiTouch ? "rollover_no_swipe" : "tap_only")
+                                    : "single_touch_swipe";
+                            GboardNintypeTraceLogger.logSkippedGesture(
+                                    context,
+                                    session.geometry,
+                                    session.geometryFromNativeLayout,
+                                    session.lastKeyboardWidth,
+                                    session.lastKeyboardHeight,
+                                    activeLang,
+                                    reason,
+                                    hasSwipe,
+                                    strokeHadMultiTouch,
+                                    session.passiveTapBuffer.tokens.size(),
+                                    restingDropped,
+                                    tapBaselineAtDown,
+                                    completedCopy);
+                        }
                     }
                     break;
                 }
@@ -1299,6 +1330,22 @@ public final class GboardNintypeRuntime {
                     prevWord
             );
             if (candidates.isEmpty()) {
+                GboardNintypeTraceLogger.logWordDecode(
+                        context,
+                        session.geometry,
+                        session.geometryFromNativeLayout,
+                        session.lastKeyboardWidth,
+                        session.lastKeyboardHeight,
+                        lang,
+                        session.wordTokens,
+                        null,
+                        false,
+                        prevWord,
+                        session.textSnapshotAtActionDown,
+                        session.lastPromotedPassiveCount,
+                        0,
+                        session.restingDroppedThisSession,
+                        candidates);
                 return;
             }
 
@@ -1322,9 +1369,27 @@ public final class GboardNintypeRuntime {
             session.currentComposingWord = bestWord;
             session.currentAlternativeWords = alternativeWords;
 
+            int rollbackDeleted = 0;
             if (ic != null) {
-                previewWordToInputConnection(ic, bestWord, session.textSnapshotAtActionDown);
+                rollbackDeleted = previewWordToInputConnection(ic, bestWord, session.textSnapshotAtActionDown);
             }
+
+            GboardNintypeTraceLogger.logWordDecode(
+                    context,
+                    session.geometry,
+                    session.geometryFromNativeLayout,
+                    session.lastKeyboardWidth,
+                    session.lastKeyboardHeight,
+                    lang,
+                    session.wordTokens,
+                    bestWord,
+                    capitalizeFirst,
+                    prevWord,
+                    session.textSnapshotAtActionDown,
+                    session.lastPromotedPassiveCount,
+                    rollbackDeleted,
+                    session.restingDroppedThisSession,
+                    candidates);
 
             GboardMatrixSuggestionsRuntime.recordNintypeDecodedWord(bestWord, alternativeWords);
         } catch (Throwable t) {
@@ -1332,11 +1397,12 @@ public final class GboardNintypeRuntime {
         }
     }
 
-    private static void previewWordToInputConnection(
+    private static int previewWordToInputConnection(
             InputConnection ic,
             String word,
             String baselineBeforeText
     ) {
+        int extraChars = 0;
         try {
             ic.beginBatchEdit();
             try {
@@ -1345,7 +1411,7 @@ public final class GboardNintypeRuntime {
                 if (baselineBeforeText != null) {
                     CharSequence currentSeq = ic.getTextBeforeCursor(TEXT_SNAPSHOT_CHARS, 0);
                     if (currentSeq != null) {
-                        int extraChars = computeExtraCharsAfterBaseline(
+                        extraChars = computeExtraCharsAfterBaseline(
                                 baselineBeforeText, currentSeq.toString());
                         if (extraChars > 0) {
                             ic.finishComposingText();
@@ -1362,6 +1428,7 @@ public final class GboardNintypeRuntime {
         } catch (Throwable t) {
             Log.w(TAG, "previewWordToInputConnection failed", t);
         }
+        return extraChars;
     }
 
     private static void finalizeComposingAndAutospace(
@@ -1391,6 +1458,8 @@ public final class GboardNintypeRuntime {
                     if (autospaceEnabled) {
                         ic.commitText(" ", 1);
                         session.autospaceInserted = true;
+                    } else {
+                        session.autospaceInserted = false;
                     }
                 } finally {
                     ic.endBatchEdit();
@@ -1399,6 +1468,7 @@ public final class GboardNintypeRuntime {
                 session.lastCommittedWord = committedWord;
                 String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
                 GboardNintypeDictionaryManager.recordCommittedWord(prevWord, committedWord, lang);
+                GboardNintypeTraceLogger.logCommit(context, committedWord, session.autospaceInserted, prevWord);
                 if (session.currentAlternativeWords != null) {
                     GboardMatrixSuggestionsRuntime.recordNintypeDecodedWord(committedWord, session.currentAlternativeWords);
                 }

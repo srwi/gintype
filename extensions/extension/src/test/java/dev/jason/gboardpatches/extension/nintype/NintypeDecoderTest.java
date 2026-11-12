@@ -692,4 +692,53 @@ public class NintypeDecoderTest {
         assertEquals(0, GboardNintypeRuntime.computeExtraCharsAfterBaseline(
                 repeated.toString(), repeated.toString()));
     }
+
+    @Test
+    public void traceLoggerEmitsGeometryOnceAndSerializesRawTouchPointsAndCandidates() {
+        List<String> lines = new ArrayList<>();
+        GboardNintypeTraceLogger.setTraceSinkForTesting((ctx, jsonLine) -> lines.add(jsonLine));
+        try {
+            NintypeInputToken tapH = buildTapToken(0, 'h', 1000L, 1040L);
+            NintypeInputToken swipeEute = buildSwipeTokenWithContacts(1, 1, "eute", 1030L, 1250L);
+            List<NintypeInputToken> tokens = Arrays.asList(tapH, swipeEute);
+            List<WordCandidate> candidates = decoder.decode(tokens, trie, bigrams, geometry, "wir");
+            assertFalse(candidates.isEmpty());
+
+            GboardNintypeTraceLogger.logWordDecode(
+                    null, geometry, true, 1080, 680, "de",
+                    tokens, "heute", false, "wir", "wir ", 1, 2, 1, candidates);
+            GboardNintypeTraceLogger.logSkippedGesture(
+                    null, geometry, true, 1080, 680, "de",
+                    "rollover_no_swipe", false, true, 2, 0, "ich ", Arrays.asList(tapH));
+            GboardNintypeTraceLogger.logCommit(null, "heute", true, "wir");
+
+            // Expected order: 1x geom (only once for same geometry), 1x word, 1x pass, 1x commit
+            assertEquals(4, lines.size());
+            String geomLine = lines.get(0);
+            assertTrue(geomLine.contains("\"type\":\"geom\""));
+            assertTrue(geomLine.contains("\"midX\":"));
+            assertTrue(geomLine.contains("\"keys\":{"));
+
+            String wordLine = lines.get(1);
+            assertTrue(wordLine.contains("\"type\":\"word\""));
+            assertTrue(wordLine.contains("\"best\":\"heute\""));
+            assertTrue(wordLine.contains("\"passiveCount\":1"));
+            assertTrue(wordLine.contains("\"rollback\":2"));
+            assertTrue(wordLine.contains("\"restingDropped\":1"));
+            assertTrue(wordLine.contains("\"kind\":\"TAP\""));
+            assertTrue(wordLine.contains("\"kind\":\"SWIPE\""));
+            assertTrue(wordLine.contains("\"pts\":["));
+            assertTrue(wordLine.contains("\"contacts\":["));
+
+            String passLine = lines.get(2);
+            assertTrue(passLine.contains("\"type\":\"pass\""));
+            assertTrue(passLine.contains("\"reason\":\"rollover_no_swipe\""));
+
+            String commitLine = lines.get(3);
+            assertTrue(commitLine.contains("\"type\":\"commit\""));
+            assertTrue(commitLine.contains("\"word\":\"heute\""));
+        } finally {
+            GboardNintypeTraceLogger.setTraceSinkForTesting(null);
+        }
+    }
 }
