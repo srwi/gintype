@@ -266,6 +266,7 @@ public final class GboardNintypeRuntime {
         int lastKeyboardHeight = 0;
         boolean sawMultiTouch = false;
         boolean nintypeTakeoverActive = false;
+        boolean nintypeWordActive = false;
         boolean shortSwipeForceStarted = false;
         boolean decodedThisSession = false;
         String textSnapshotAtActionDown = null;
@@ -312,6 +313,7 @@ public final class GboardNintypeRuntime {
             wordTokens.clear();
             currentComposingWord = null;
             currentAlternativeWords = null;
+            nintypeWordActive = false;
             lastTouchUpTimeMs = 0L;
         }
     }
@@ -493,7 +495,8 @@ public final class GboardNintypeRuntime {
                     boolean wasAutospacing = session.autospaceTimerPending;
                     session.cancelAutospaceTimer();
 
-                    boolean isWordContinuing = downOnLetter && (wasAutospacing
+                    boolean isWordContinuing = downOnLetter && session.nintypeWordActive
+                            && (wasAutospacing
                             || (timeSinceLastUp <= 380L && !session.wordTokens.isEmpty())
                             || (session.activePointers.size() > 0));
 
@@ -626,6 +629,9 @@ public final class GboardNintypeRuntime {
                 }
 
                 case MotionEvent.ACTION_UP: {
+                    boolean isNintypeGesture = session.sawMultiTouch
+                            || session.nintypeTakeoverActive
+                            || (session.nintypeWordActive && !session.wordTokens.isEmpty());
                     boolean anySwipeThisSession = false;
                     for (int i = 0; i < session.activePointers.size(); i++) {
                         PointerTrack track = session.activePointers.valueAt(i);
@@ -647,7 +653,9 @@ public final class GboardNintypeRuntime {
                         if (token != null) {
                             session.completedTokens.add(token);
                         }
-                        finishTrailForPointer(handler, track.pointerId, isSwipe);
+                        if (isNintypeGesture) {
+                            finishTrailForPointer(handler, track.pointerId, isSwipe);
+                        }
                     }
                     session.activePointers.clear();
                     session.lastTouchUpTimeMs = eventTime;
@@ -670,7 +678,7 @@ public final class GboardNintypeRuntime {
                         }
                     }
 
-                    if (!hasSwipe && trailActiveBoolField != null) {
+                    if (isNintypeGesture && !hasSwipe && trailActiveBoolField != null) {
                         try {
                             Object tm = trailManagerField.get(handler);
                             if (tm != null) {
@@ -680,12 +688,14 @@ public final class GboardNintypeRuntime {
                         }
                     }
 
-                    // Only run Nintype decoding when at least one swipe occurred in the current word/gesture.
-                    // Pure multi-touch rollover taps remain on stock Gboard tap typing.
-                    boolean shouldDecodeNow = hasSwipe;
+                    // Only run Nintype decoding for multi-touch gestures (or continuations of an active
+                    // Nintype word) that contain at least one swipe. Single-finger taps, single-finger
+                    // swipes, and pure rollover taps stay 100% on stock Gboard.
+                    boolean shouldDecodeNow = isNintypeGesture && hasSwipe;
 
                     if (shouldDecodeNow) {
                         session.nintypeTakeoverActive = true;
+                        session.nintypeWordActive = true;
                         activateNintypeTakeoverOnFinish(handler);
 
                         // Accumulate all completed tokens into persistent word buffer
@@ -701,9 +711,9 @@ public final class GboardNintypeRuntime {
                         session.autospaceRunnable = () -> finalizeComposingAndAutospace(handler, session, context, activeLang);
                         session.mainHandler.postDelayed(session.autospaceRunnable, 300L);
                     } else {
-                        // Single/rollover taps without any swipe yet:
-                        // Save in wordTokens buffer only if on letter area so subsequent swipes within 380ms can combine.
-                        session.wordTokens.addAll(session.completedTokens);
+                        // Single-finger input and pure multi-touch rollover taps stay on stock Gboard:
+                        // do not retain non-Nintype tokens or mark a Nintype word active.
+                        session.clearWordBuffer();
                         session.completedTokens.clear();
                     }
                     break;
@@ -752,23 +762,32 @@ public final class GboardNintypeRuntime {
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return stockShouldStart;
 
+            boolean nintypeControlled = session.sawMultiTouch
+                    || session.nintypeTakeoverActive
+                    || session.nintypeWordActive;
+
             if (stockShouldStart) {
-                ensureTrailRecorderEnabled(handler);
-                session.nintypeTakeoverActive = true;
-                ensureGestureHandlerOwnsDispatcher(handler);
+                if (nintypeControlled) {
+                    ensureTrailRecorderEnabled(handler);
+                    session.nintypeTakeoverActive = true;
+                    ensureGestureHandlerOwnsDispatcher(handler);
+                }
                 return true;
             }
 
             // Gboard's [0494]..[04cd] transition block must only run when `this.v` is currently false.
             if (isGestureAlreadyActive(handler)) {
-                ensureTrailRecorderEnabled(handler);
+                if (nintypeControlled) {
+                    ensureTrailRecorderEnabled(handler);
+                }
                 return false;
             }
 
-            // When multi-touch is detected (both thumbs active), start gesture as soon as any thumb moves >= multiSwipeThreshold
+            // When multi-touch is detected (both thumbs active) or continuing an active Nintype word,
+            // start gesture as soon as any thumb moves >= multiSwipeThreshold
             float multiSwipeThreshold = Math.max(
                     MULTI_TOUCH_SWIPE_THRESHOLD_PX, session.geometry.keyWidthPx * 0.24f);
-            if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
+            if (nintypeControlled && hasAnySwipingPointer(session, multiSwipeThreshold)) {
                 session.nintypeTakeoverActive = true;
                 ensureTrailRecorderEnabled(handler);
                 ensureGestureHandlerOwnsDispatcher(handler);
@@ -912,8 +931,11 @@ public final class GboardNintypeRuntime {
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return false;
 
-            boolean hasFingersDown = session.activePointers.size() > 0;
-            if (hasFingersDown) {
+            boolean protectNintypeSession = session.activePointers.size() > 0
+                    && (session.sawMultiTouch
+                    || session.nintypeTakeoverActive
+                    || session.nintypeWordActive);
+            if (protectNintypeSession) {
                 ensureGestureHandlerOwnsDispatcher(handler);
                 return true;
             }
