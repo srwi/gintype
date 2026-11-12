@@ -46,6 +46,7 @@ public final class NintypeTrie {
     private int[] children;
     private int[] frequency;
     private int[] maxSubtreeFreq;
+    private int[] maxWordLen;
     private String[] wordRef;
 
     private final Map<Integer, List<WordForm>> wordForms = new HashMap<>();
@@ -60,6 +61,7 @@ public final class NintypeTrie {
         Arrays.fill(this.children, -1);
         this.frequency = new int[this.capacity];
         this.maxSubtreeFreq = new int[this.capacity];
+        this.maxWordLen = new int[this.capacity];
         this.wordRef = new String[this.capacity];
     }
 
@@ -72,6 +74,7 @@ public final class NintypeTrie {
         Arrays.fill(children, oldChildrenLen, newChildrenLen, -1);
         frequency = Arrays.copyOf(frequency, newCap);
         maxSubtreeFreq = Arrays.copyOf(maxSubtreeFreq, newCap);
+        maxWordLen = Arrays.copyOf(maxWordLen, newCap);
         wordRef = Arrays.copyOf(wordRef, newCap);
         capacity = newCap;
     }
@@ -101,6 +104,13 @@ public final class NintypeTrie {
         if (freq > maxSubtreeFreq[0]) {
             maxSubtreeFreq[0] = freq;
         }
+        int letterLen = 0;
+        for (int i = 0; i < word.length(); i++) {
+            if (NintypeAlphabet.charIndex(word.charAt(i)) >= 0) letterLen++;
+        }
+        if (letterLen > maxWordLen[0]) {
+            maxWordLen[0] = letterLen;
+        }
 
         for (int i = 0; i < word.length(); i++) {
             int idx = NintypeAlphabet.charIndex(word.charAt(i));
@@ -115,6 +125,9 @@ public final class NintypeTrie {
             cur = next;
             if (freq > maxSubtreeFreq[cur]) {
                 maxSubtreeFreq[cur] = freq;
+            }
+            if (letterLen > maxWordLen[cur]) {
+                maxWordLen[cur] = letterLen;
             }
         }
 
@@ -171,6 +184,10 @@ public final class NintypeTrie {
 
     public int getMaxSubtreeFreq(int node) {
         return node >= 0 ? maxSubtreeFreq[node] : 0;
+    }
+
+    public int getMaxWordLen(int node) {
+        return node >= 0 ? maxWordLen[node] : 0;
     }
 
     public String getWord(int node) {
@@ -248,6 +265,7 @@ public final class NintypeTrie {
         children = Arrays.copyOf(children, nodeCount * NintypeAlphabet.ALPHABET_SIZE);
         frequency = Arrays.copyOf(frequency, nodeCount);
         maxSubtreeFreq = Arrays.copyOf(maxSubtreeFreq, nodeCount);
+        maxWordLen = Arrays.copyOf(maxWordLen, nodeCount);
         wordRef = Arrays.copyOf(wordRef, nodeCount);
         capacity = nodeCount;
     }

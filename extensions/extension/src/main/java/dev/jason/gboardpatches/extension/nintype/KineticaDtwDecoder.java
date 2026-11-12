@@ -125,6 +125,21 @@ public final class KineticaDtwDecoder {
     private final DtwMatcher dtw = new DtwMatcher();
     private final float[] idealPathScratch = new float[2 * KineticaConstants.RESAMPLE_N];
     private final int[] wordLetters = new int[KineticaConstants.MAX_WORD_LEN + 2];
+    private float saturation = KineticaConstants.GEO_SATURATION_KW;
+    private final Map<NintypeInputToken, Map<Long, Halves>> cutMemo = new IdentityHashMap<>();
+    private final Map<NintypeInputToken, Map<Long, Halves>> ownMemo = new IdentityHashMap<>();
+
+    private static float saturationOf(List<NintypeInputToken> tokens, float kw) {
+        if (kw <= 0f) return KineticaConstants.GEO_SATURATION_KW;
+        float arcKw = 0f;
+        for (int i = 0; i < tokens.size(); i++) {
+            NintypeInputToken t = tokens.get(i);
+            if (t.kind == NintypeInputToken.Kind.SWIPE) {
+                arcKw += t.pathLengthPx / kw;
+            }
+        }
+        return KineticaConstants.saturationFor(arcKw);
+    }
 
     public List<NintypeInputToken.WordCandidate> decode(
             List<NintypeInputToken> tokens,
@@ -136,6 +151,9 @@ public final class KineticaDtwDecoder {
         if (tokens == null || tokens.isEmpty() || trie == null || geometry == null || !geometry.isValid()) {
             return Collections.emptyList();
         }
+        cutMemo.clear();
+        ownMemo.clear();
+        saturation = saturationOf(tokens, geometry.keyWidthPx);
 
         boolean hasSwipe = false;
         List<KineticaMatcher.Anchor> rawAnchors = new ArrayList<>(tokens.size());
@@ -258,9 +276,12 @@ public final class KineticaDtwDecoder {
             for (int i = 0; i < passes.size(); i++) {
                 beamHeap.offer(passes.get(i));
             }
-            ThumbBeam beam = new ThumbBeam(
-                    primary, primaryPattern, geometry, trie, bigrams, prevWord, beamHeap, dtw);
-            beam.run();
+            new ThumbBeam(primary, primaryPattern, geometry, trie, bigrams, prevWord, beamHeap, dtw, false).run();
+            Candidate beamLead = beamHeap.best();
+            if (primary.size() >= 3 && hasTapIn(primary)
+                    && (beamLead == null || beamLead.dTotal > KineticaConstants.RESCUE_MIN_LEAD_D)) {
+                new ThumbBeam(primary, primaryPattern, geometry, trie, bigrams, prevWord, beamHeap, dtw, true).run();
+            }
             merged = mergeBeam(passes, beamHeap.sortedCandidatesDescending());
         } else {
             merged = passes;
@@ -283,6 +304,9 @@ public final class KineticaDtwDecoder {
         if (tokens == null || tokens.isEmpty() || trie == null || geometry == null || !geometry.isValid()) {
             return Collections.emptyList();
         }
+        cutMemo.clear();
+        ownMemo.clear();
+        saturation = saturationOf(tokens, geometry.keyWidthPx);
         List<List<NintypeInputToken>> seqs = MergeAlternatives.sequences(tokens, geometry);
         if (seqs.isEmpty()) return Collections.emptyList();
         List<NintypeInputToken> primary = seqs.get(0);
@@ -310,6 +334,15 @@ public final class KineticaDtwDecoder {
         return false;
     }
 
+    private static boolean hasTapIn(List<NintypeInputToken> tokens) {
+        for (int i = 0; i < tokens.size(); i++) {
+            if (tokens.get(i).kind == NintypeInputToken.Kind.TAP) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static final class StreamPlan {
         final List<KineticaMatcher>[] items;
         final List<NintypeInputToken>[] tokens;
@@ -326,15 +359,31 @@ public final class KineticaDtwDecoder {
         }
     }
 
-    private static final class Halves {
+    private final class Halves {
         final KineticaMatcher.Segment head;
-        final KineticaMatcher.Segment tail;
-        final NintypeInputToken tailToken;
+        private final MergeAlternatives.Cut cut;
+        private final NintypeGeometry geometry;
+        private NintypeInputToken token;
+        private KineticaMatcher.Segment segment;
 
-        Halves(KineticaMatcher.Segment head, KineticaMatcher.Segment tail, NintypeInputToken tailToken) {
+        Halves(KineticaMatcher.Segment head, MergeAlternatives.Cut cut, NintypeGeometry geometry) {
             this.head = head;
-            this.tail = tail;
-            this.tailToken = tailToken;
+            this.cut = cut;
+            this.geometry = geometry;
+        }
+
+        long getTailStart() {
+            return cut.tailStart;
+        }
+
+        NintypeInputToken getTailToken() {
+            if (token == null) token = cut.tail();
+            return token;
+        }
+
+        KineticaMatcher.Segment getTail() {
+            if (segment == null) segment = segmentFromToken(getTailToken(), geometry);
+            return segment;
         }
     }
 
@@ -544,21 +593,16 @@ public final class KineticaDtwDecoder {
         private final int[] pieceTo = new int[KineticaConstants.MAX_WORD_LEN + 1];
         private final int[][] childOrder = new int[KineticaConstants.MAX_WORD_LEN + 1][26];
 
-        private final Map<NintypeInputToken, Map<Long, Halves>> cutCache = new IdentityHashMap<>();
-        private final Map<NintypeInputToken, Map<Long, Halves>> ownCache = new IdentityHashMap<>();
-        private final KineticaMatcher.Segment[] pendingTail =
-                new KineticaMatcher.Segment[KineticaConstants.MAX_SEARCH_CUTS + 1];
+        private final Halves[] pendingTail =
+                new Halves[KineticaConstants.MAX_SEARCH_CUTS + 1];
         private final long[] pendingStart = new long[KineticaConstants.MAX_SEARCH_CUTS + 1];
-        private final NintypeInputToken[] pendingToken =
-                new NintypeInputToken[KineticaConstants.MAX_SEARCH_CUTS + 1];
         private final NintypeInputToken[] pendingOrigin =
                 new NintypeInputToken[KineticaConstants.MAX_SEARCH_CUTS + 1];
         private int cutsOpen = 0;
 
         // Stream pass state (one cursor per thumb)
         private final int[] sCursor = new int[2];
-        private final KineticaMatcher.Segment[] sParked = new KineticaMatcher.Segment[2];
-        private final NintypeInputToken[] sParkedToken = new NintypeInputToken[2];
+        private final Halves[] sParked = new Halves[2];
         private final NintypeInputToken[] sParkedOrigin = new NintypeInputToken[2];
         private long sLastT = Long.MIN_VALUE;
         private int sLastStream = -1;
@@ -699,7 +743,7 @@ public final class KineticaDtwDecoder {
         }
 
         private long nextStart(int s) {
-            if (sParkedToken[s] != null) return sParkedToken[s].startTimeMs;
+            if (sParked[s] != null) return sParked[s].getTailStart();
             int idx = sCursor[s];
             return (idx < plan.tokens[s].size()) ? plan.tokens[s].get(idx).startTimeMs : Long.MAX_VALUE;
         }
@@ -708,16 +752,14 @@ public final class KineticaDtwDecoder {
             long floor = (sLastStream >= 0 && sLastStream != s)
                     ? (sLastT - KineticaConstants.HANDOVER_ALLOWANCE_MS)
                     : Long.MIN_VALUE;
-            KineticaMatcher.Segment parked = sParked[s];
+            Halves parked = sParked[s];
             if (parked != null) {
-                NintypeInputToken token = sParkedToken[s];
                 NintypeInputToken origin = sParkedOrigin[s];
                 sParked[s] = null;
-                sParkedToken[s] = null;
                 sParkedOrigin[s] = null;
-                openPiece(s, node, depth, tapPen, contactKeep, parked, token, origin, floor);
+                openPiece(s, node, depth, tapPen, contactKeep,
+                        parked.getTail(), parked.getTailToken(), origin, floor);
                 sParked[s] = parked;
-                sParkedToken[s] = token;
                 sParkedOrigin[s] = origin;
                 return;
             }
@@ -770,8 +812,7 @@ public final class KineticaDtwDecoder {
                     if (halves == null) continue;
 
                     sCutsMade++;
-                    sParked[s] = halves.tail;
-                    sParkedToken[s] = halves.tailToken;
+                    sParked[s] = halves;
                     sParkedOrigin[s] = origin;
 
                     NintypeInputToken.KeyContact left = null;
@@ -794,7 +835,6 @@ public final class KineticaDtwDecoder {
                             tapPen, contactKeep, halves.head, 0);
 
                     sParked[s] = null;
-                    sParkedToken[s] = null;
                     sParkedOrigin[s] = null;
                     sCutsMade--;
                 }
@@ -885,19 +925,17 @@ public final class KineticaDtwDecoder {
 
             int due = earliestPending(ti);
             if (due >= 0) {
-                KineticaMatcher.Segment tail = pendingTail[due];
+                Halves cut = pendingTail[due];
                 long start = pendingStart[due];
-                NintypeInputToken token = pendingToken[due];
                 NintypeInputToken origin = pendingOrigin[due];
                 pendingTail[due] = null;
                 descend(node, ti, depth, depth, 0, 0f, -KineticaConstants.MONOTONE_SLACK, -1,
-                        tapPen, contactKeep, tail, ti);
-                if (token != null && origin != null) {
-                    offerCuts(node, ti, depth, tapPen, contactKeep, token, origin, ti);
+                        tapPen, contactKeep, cut.getTail(), ti);
+                if (origin != null) {
+                    offerCuts(node, ti, depth, tapPen, contactKeep, cut.getTailToken(), origin, ti);
                 }
-                pendingTail[due] = tail;
+                pendingTail[due] = cut;
                 pendingStart[due] = start;
-                pendingToken[due] = token;
                 pendingOrigin[due] = origin;
                 return;
             }
@@ -942,14 +980,12 @@ public final class KineticaDtwDecoder {
                 Halves halves = cutHalves(token, t);
                 if (halves == null) continue;
                 cutsOpen++;
-                pendingTail[slot] = halves.tail;
+                pendingTail[slot] = halves;
                 pendingStart[slot] = t;
-                pendingToken[slot] = halves.tailToken;
                 pendingOrigin[slot] = origin;
                 descend(node, ti, depth, depth, 0, 0f, -KineticaConstants.MONOTONE_SLACK, -1,
                         tapPen, contactKeep, halves.head, nextTi);
                 pendingTail[slot] = null;
-                pendingToken[slot] = null;
                 pendingOrigin[slot] = null;
                 cutsOpen--;
             }
@@ -967,34 +1003,32 @@ public final class KineticaDtwDecoder {
         }
 
         private Halves cutHalves(NintypeInputToken src, long t) {
-            Map<Long, Halves> perSwipe = cutCache.get(src);
+            Map<Long, Halves> perSwipe = cutMemo.get(src);
             if (perSwipe == null) {
                 perSwipe = new HashMap<>();
-                cutCache.put(src, perSwipe);
+                cutMemo.put(src, perSwipe);
             } else if (perSwipe.containsKey(t)) {
                 return perSwipe.get(t);
             }
-            MergeAlternatives.SplitVariant split = MergeAlternatives.splitSwipe(src, t, geometry.keyWidthPx);
-            Halves built = (split != null)
-                    ? new Halves(segmentFromToken(split.first, geometry),
-                    segmentFromToken(split.second, geometry), split.second)
+            MergeAlternatives.Cut cut = MergeAlternatives.cutSwipe(src, t, geometry.keyWidthPx);
+            Halves built = (cut != null)
+                    ? new Halves(segmentFromToken(cut.head, geometry), cut, geometry)
                     : null;
             perSwipe.put(t, built);
             return built;
         }
 
         private Halves ownHalves(NintypeInputToken src, long t) {
-            Map<Long, Halves> perSwipe = ownCache.get(src);
+            Map<Long, Halves> perSwipe = ownMemo.get(src);
             if (perSwipe == null) {
                 perSwipe = new HashMap<>();
-                ownCache.put(src, perSwipe);
+                ownMemo.put(src, perSwipe);
             } else if (perSwipe.containsKey(t)) {
                 return perSwipe.get(t);
             }
-            MergeAlternatives.SplitVariant split = MergeAlternatives.splitAtOwnContact(src, t, geometry.keyWidthPx);
-            Halves built = (split != null)
-                    ? new Halves(segmentFromToken(split.first, geometry),
-                    segmentFromToken(split.second, geometry), split.second)
+            MergeAlternatives.Cut cut = MergeAlternatives.cutAtOwnContact(src, t, geometry.keyWidthPx);
+            Halves built = (cut != null)
+                    ? new Halves(segmentFromToken(cut.head, geometry), cut, geometry)
                     : null;
             perSwipe.put(t, built);
             return built;
@@ -1098,8 +1132,8 @@ public final class KineticaDtwDecoder {
             if (count == 0) return;
 
             int restNeed = restNeededAfter(nextTi);
-            if (depth + 1 + Math.max(0, seg.minLetters - (lettersInSeg + 1)) + restNeed
-                    > KineticaConstants.MAX_WORD_LEN) {
+            int shortest = depth + 1 + Math.max(0, seg.minLetters - (lettersInSeg + 1)) + restNeed;
+            if (shortest > KineticaConstants.MAX_WORD_LEN) {
                 return;
             }
 
@@ -1146,6 +1180,7 @@ public final class KineticaDtwDecoder {
                 if (!geometry.hasKey(code)) continue;
                 int child = trie.child(node, code);
                 if (child == -1) continue;
+                if (trie.getMaxWordLen(child) < shortest) continue;
 
                 int pass = seg.passAtOrAfter(code, lastIdx - KineticaConstants.MONOTONE_SLACK);
                 float startKeep = 1.0f;
@@ -1229,10 +1264,19 @@ public final class KineticaDtwDecoder {
                     (1.0f - KineticaConstants.FREQ_WEIGHT_FLOOR) * (rawFreq / 255.0f);
             float maxBm = (prevWord != null && bigrams != null) ? 2.0f : 1.0f;
 
+            float shortKeep = 1.0f;
+            if (pieceCount == 1 && pieceSeg[0] != null
+                    && pieceSeg[0].letterArcLen >= KineticaConstants.SHORT_READING_ARC_KW) {
+                float idealLen = dtw.idealLength(wordLetters, pieceFrom[0], pieceTo[0], geometry);
+                shortKeep = KineticaConstants.shortReadingKeep(idealLen, pieceSeg[0].letterArcLen);
+            }
+            float finalKeep = keep * shortKeep;
+
             float accumBudget = Float.POSITIVE_INFINITY;
             int totalSteps = pieceCount * KineticaConstants.RESAMPLE_N;
             if (heap.isFull() && totalSteps > 0) {
-                float maxDTotal = KineticaConstants.maxDTotalForScore(maxFw * maxBm * keep, heap.minScore());
+                float maxDTotal = KineticaConstants.maxDTotalForScore(
+                        maxFw * maxBm * finalKeep, heap.minScore(), saturation);
                 if (maxDTotal <= tapPen + extraPenalty) return;
                 if (!Float.isInfinite(maxDTotal)) {
                     accumBudget = totalSteps * (maxDTotal - tapPen - extraPenalty);
@@ -1258,7 +1302,7 @@ public final class KineticaDtwDecoder {
 
             float geoFit = (totalSteps > 0) ? accum / (float) totalSteps : 0f;
             float dTotal = geoFit + tapPen + extraPenalty;
-            float geo = KineticaConstants.geometricTerm(dTotal);
+            float geo = KineticaConstants.geometricTerm(dTotal, saturation);
 
             String word = trie.getWord(node);
             float bm = 1.0f;
@@ -1273,11 +1317,11 @@ public final class KineticaDtwDecoder {
                     NintypeTrie.WordForm f = forms.get(i);
                     float fv = KineticaConstants.FREQ_WEIGHT_FLOOR +
                             (1.0f - KineticaConstants.FREQ_WEIGHT_FLOOR) * (Math.min(255, f.frequency) / 255.0f);
-                    heap.offer(new Candidate(f.displayWord, fv * geo * bmApplied * keep, dTotal, f.isProperNoun));
+                    heap.offer(new Candidate(f.displayWord, fv * geo * bmApplied * finalKeep, dTotal, f.isProperNoun));
                 }
                 emitted++;
             } else if (word != null) {
-                heap.offer(new Candidate(word, maxFw * geo * bmApplied * keep, dTotal, false));
+                heap.offer(new Candidate(word, maxFw * geo * bmApplied * finalKeep, dTotal, false));
                 emitted++;
             }
         }

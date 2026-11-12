@@ -24,6 +24,7 @@ public final class ThumbBeam {
     private final String prevWord;
     private final KineticaDtwDecoder.CandidateHeap heap;
     private final DtwMatcher dtw;
+    private final boolean dropsTap;
 
     private final int[][] streams;
     private final int[] swipeItems;
@@ -43,6 +44,20 @@ public final class ThumbBeam {
             KineticaDtwDecoder.CandidateHeap heap,
             DtwMatcher dtw
     ) {
+        this(tokens, items, geometry, trie, bigrams, prevWord, heap, dtw, false);
+    }
+
+    public ThumbBeam(
+            List<NintypeInputToken> tokens,
+            List<KineticaMatcher> items,
+            NintypeGeometry geometry,
+            NintypeTrie trie,
+            NintypeBigramTable bigrams,
+            String prevWord,
+            KineticaDtwDecoder.CandidateHeap heap,
+            DtwMatcher dtw,
+            boolean dropsTap
+    ) {
         this.tokens = tokens;
         this.items = items;
         this.geometry = geometry;
@@ -51,6 +66,7 @@ public final class ThumbBeam {
         this.prevWord = prevWord;
         this.heap = heap;
         this.dtw = dtw;
+        this.dropsTap = dropsTap;
 
         List<Integer> left = new ArrayList<>();
         List<Integer> right = new ArrayList<>();
@@ -177,12 +193,16 @@ public final class ThumbBeam {
         final float tapPen;
         final float keep;
         final int gates;
+        final float hand;
         final float priority;
+        final float handKeep;
+        final int dropped;
 
         Hyp(
                 int node, int depth, Hyp parent, int code, int item,
                 int[] nx, int[] open, int[] n, int[] last, int[] lastCode, float[] ideal,
-                long lastT, int lastStream, float cost, float tapPen, float keep, int gates, float priority
+                long lastT, int lastStream, float cost, float tapPen, float keep, int gates,
+                float hand, float priority, float handKeep, int dropped
         ) {
             this.node = node;
             this.depth = depth;
@@ -201,7 +221,10 @@ public final class ThumbBeam {
             this.tapPen = tapPen;
             this.keep = keep;
             this.gates = gates;
+            this.hand = hand;
             this.priority = priority;
+            this.handKeep = handKeep;
+            this.dropped = dropped;
         }
     }
 
@@ -213,7 +236,7 @@ public final class ThumbBeam {
                 h.n[0], h.n[1],
                 h.last[0], h.last[1],
                 h.lastCode[0], h.lastCode[1],
-                h.lastStream
+                h.lastStream + 4 * h.dropped
         );
     }
 
@@ -222,7 +245,7 @@ public final class ThumbBeam {
                 0, 0, null, -1, -1,
                 new int[2], new int[]{-1, -1}, new int[2],
                 new int[2], new int[]{-1, -1}, new float[2],
-                Long.MIN_VALUE, -1, 0f, 0f, 1f, 0, 0f
+                Long.MIN_VALUE, -1, 0f, 0f, 1f, 0, 0f, 0f, 1f, 0
         );
 
         List<Hyp> frontier = Collections.singletonList(root);
@@ -266,20 +289,71 @@ public final class ThumbBeam {
     }
 
     private void expand(Hyp h, List<Hyp> out) {
+        int shortest = h.depth + stillNeeded(h);
         for (int code = 0; code < 26; code++) {
             int child = trie.child(h.node, code);
             if (child == -1) continue;
             if (!geometry.hasKey(code)) continue;
+            if (trie.getMaxWordLen(child) < shortest) continue;
 
             for (int s = 0; s < 2; s++) {
                 continueOpen(h, child, code, s, out);
-                openNext(h, child, code, s, out);
+                openNext(h, child, code, s, out, 0);
+                if (dropsTap && h.dropped == 0
+                        && h.nx[s] + 1 < streams[s].length
+                        && items.get(streams[s][h.nx[s]]) instanceof KineticaMatcher.Anchor) {
+                    openNext(h, child, code, s, out, 1);
+                }
             }
         }
     }
 
+    private int stillNeeded(Hyp h) {
+        int need = 0;
+        for (int s = 0; s < 2; s++) {
+            need += restMin[s][h.nx[s]];
+            int o = h.open[s];
+            if (o >= 0) {
+                KineticaMatcher m = items.get(o);
+                if (m instanceof KineticaMatcher.Segment) {
+                    need += Math.max(0, ((KineticaMatcher.Segment) m).minLetters - h.n[s]);
+                }
+            }
+        }
+        if (dropsTap && h.dropped == 0 && need > 0) need--;
+        return need;
+    }
+
+    private long stepBack(Hyp h, int s, long t) {
+        return (h.lastStream < 0 || h.lastStream == s) ? 0L : (h.lastT - t);
+    }
+
     private boolean timeOk(Hyp h, int s, long t) {
-        return h.lastStream < 0 || h.lastStream == s || t >= h.lastT - KineticaConstants.HANDOVER_ALLOWANCE_MS;
+        return stepBack(h, s, t) <= KineticaConstants.HANDOVER_CHARGE_MAX_MS;
+    }
+
+    private int passInTime(Hyp h, KineticaMatcher.Segment m, int code, int s, int minIdx) {
+        int earliest = m.passAtOrAfter(code, minIdx);
+        if (earliest < 0 || !KineticaConstants.BEAM_PASS_IN_TIME
+                || timeOk(h, s, m.letterTime(code, earliest))) {
+            return earliest;
+        }
+        int[] passes = m.passesOf(code);
+        for (int i = 0; i < passes.length; i++) {
+            int idx = passes[i];
+            if (idx > earliest && timeOk(h, s, m.letterTime(code, idx))) {
+                return idx;
+            }
+        }
+        return earliest;
+    }
+
+    private static float handoverCost(long back) {
+        return KineticaConstants.HANDOVER_CHARGE_KW * KineticaConstants.handoverExcess(back);
+    }
+
+    private static float chargeOf(Hyp h, long back) {
+        return Math.min(handoverCost(back), Math.max(0f, KineticaConstants.HANDOVER_CHARGE_CAP_KW - h.hand));
     }
 
     private void continueOpen(Hyp h, int child, int code, int s, List<Hyp> out) {
@@ -291,16 +365,19 @@ public final class ThumbBeam {
             KineticaMatcher.Segment seg = (KineticaMatcher.Segment) m;
             if (h.n[s] >= seg.maxLetters) return;
 
-            int pass = seg.passAtOrAfter(code, h.last[s] - KineticaConstants.MONOTONE_SLACK);
+            int pass = passInTime(h, seg, code, s, h.last[s] - KineticaConstants.MONOTONE_SLACK);
             if (pass < 0) return;
 
             long t = seg.letterTime(code, pass);
             if (!timeOk(h, s, t)) return;
 
-            float c = h.cost + passCost(seg, code, pass);
+            long back = stepBack(h, s, t);
+            float hc = chargeOf(h, back);
+            float c = h.cost + passCost(seg, code, pass) + hc;
             float keep = seg.isContacted(code)
                     ? h.keep
                     : (h.keep * KineticaConstants.UNCONTACTED_LETTER_KEEP);
+            float hk = h.handKeep * KineticaConstants.handoverKeep(back);
 
             int n0 = h.n[0], n1 = h.n[1];
             int l0 = h.last[0], l1 = h.last[1];
@@ -320,7 +397,8 @@ public final class ThumbBeam {
             }
 
             out.add(next(
-                    h, child, code, o, c, h.tapPen, keep, h.gates, t, s,
+                    h, child, code, o, c, h.tapPen, keep, h.gates, h.hand + hc, t, s,
+                    hk, h.dropped,
                     h.nx[0], h.nx[1], h.open[0], h.open[1], n0, n1, l0, l1, c0, c1, id0, id1
             ));
         } else if (m instanceof KineticaMatcher.Anchor) {
@@ -332,7 +410,8 @@ public final class ThumbBeam {
 
             out.add(next(
                     h, child, code, o, h.cost, h.tapPen + KineticaConstants.DOUBLE_TAP_PEN_KW,
-                    h.keep, h.gates, ((KineticaMatcher.Anchor) m).t, s,
+                    h.keep, h.gates, h.hand, ((KineticaMatcher.Anchor) m).t, s,
+                    h.handKeep, h.dropped,
                     h.nx[0], h.nx[1], h.open[0], h.open[1], n0, n1,
                     h.last[0], h.last[1], h.lastCode[0], h.lastCode[1],
                     h.ideal[0], h.ideal[1]
@@ -340,9 +419,11 @@ public final class ThumbBeam {
         }
     }
 
-    private void openNext(Hyp h, int child, int code, int s, List<Hyp> out) {
+    private void openNext(Hyp h, int child, int code, int s, List<Hyp> out, int past) {
         int[] list = streams[s];
-        if (h.nx[s] >= list.length) return;
+        int at = h.nx[s] + past;
+        float drop = (past > 0) ? KineticaConstants.DROPPED_TAP_COST_KW : 0f;
+        if (at >= list.length) return;
 
         int closeGates = 0;
         int o = h.open[s];
@@ -352,7 +433,7 @@ public final class ThumbBeam {
             closeGates = cg;
         }
 
-        int nextItem = list[h.nx[s]];
+        int nextItem = list[at];
         KineticaMatcher m = items.get(nextItem);
 
         if (m instanceof KineticaMatcher.Anchor) {
@@ -366,10 +447,13 @@ public final class ThumbBeam {
 
             if (!timeOk(h, s, anc.t)) return;
 
-            float c = h.cost + pen + closeGates * KineticaConstants.BEAM_GATE_COST;
+            long back = stepBack(h, s, anc.t);
+            float hc = chargeOf(h, back);
+            float c = h.cost + pen + closeGates * KineticaConstants.BEAM_GATE_COST + hc + drop;
+            float hk = h.handKeep * KineticaConstants.handoverKeep(back);
 
-            int nx0 = (s == 0) ? h.nx[0] + 1 : h.nx[0];
-            int nx1 = (s == 1) ? h.nx[1] + 1 : h.nx[1];
+            int nx0 = (s == 0) ? at + 1 : h.nx[0];
+            int nx1 = (s == 1) ? at + 1 : h.nx[1];
             int op0 = (s == 0) ? nextItem : h.open[0];
             int op1 = (s == 1) ? nextItem : h.open[1];
             int n0 = (s == 0) ? 1 : h.n[0];
@@ -381,11 +465,12 @@ public final class ThumbBeam {
 
             out.add(next(
                     h, child, code, nextItem, c, h.tapPen + pen, h.keep, h.gates + closeGates,
-                    anc.t, s, nx0, nx1, op0, op1, n0, n1, l0, l1, c0, c1, h.ideal[0], h.ideal[1]
+                    h.hand + hc, anc.t, s, hk, h.dropped + past,
+                    nx0, nx1, op0, op1, n0, n1, l0, l1, c0, c1, h.ideal[0], h.ideal[1]
             ));
         } else if (m instanceof KineticaMatcher.Segment) {
             KineticaMatcher.Segment seg = (KineticaMatcher.Segment) m;
-            int pass = seg.passAtOrAfter(code, -KineticaConstants.MONOTONE_SLACK);
+            int pass = passInTime(h, seg, code, s, -KineticaConstants.MONOTONE_SLACK);
             if (pass < 0) return;
 
             long t = seg.letterTime(code, pass);
@@ -393,13 +478,16 @@ public final class ThumbBeam {
 
             int startGate = (seg.softStart || seg.isStart(code)) ? 0 : 1;
             int gates = closeGates + startGate;
-            float c = h.cost + passCost(seg, code, pass) + gates * KineticaConstants.BEAM_GATE_COST;
+            long back = stepBack(h, s, t);
+            float hc = chargeOf(h, back);
+            float c = h.cost + passCost(seg, code, pass) + gates * KineticaConstants.BEAM_GATE_COST + hc + drop;
             float keep = seg.isContacted(code)
                     ? h.keep
                     : (h.keep * KineticaConstants.UNCONTACTED_LETTER_KEEP);
+            float hk = h.handKeep * KineticaConstants.handoverKeep(back);
 
-            int nx0 = (s == 0) ? h.nx[0] + 1 : h.nx[0];
-            int nx1 = (s == 1) ? h.nx[1] + 1 : h.nx[1];
+            int nx0 = (s == 0) ? at + 1 : h.nx[0];
+            int nx1 = (s == 1) ? at + 1 : h.nx[1];
             int op0 = (s == 0) ? nextItem : h.open[0];
             int op1 = (s == 1) ? nextItem : h.open[1];
             int n0 = (s == 0) ? 1 : h.n[0];
@@ -413,7 +501,8 @@ public final class ThumbBeam {
 
             out.add(next(
                     h, child, code, nextItem, c, h.tapPen, keep, h.gates + gates,
-                    t, s, nx0, nx1, op0, op1, n0, n1, l0, l1, c0, c1, id0, id1
+                    h.hand + hc, t, s, hk, h.dropped + past,
+                    nx0, nx1, op0, op1, n0, n1, l0, l1, c0, c1, id0, id1
             ));
         }
     }
@@ -447,8 +536,11 @@ public final class ThumbBeam {
             float tapPen,
             float keep,
             int gates,
+            float hand,
             long t,
             int stream,
+            float handKeep,
+            int dropped,
             int nx0, int nx1,
             int open0, int open1,
             int n0, int n1,
@@ -479,7 +571,10 @@ public final class ThumbBeam {
                 tapPen,
                 keep,
                 gates,
-                priority
+                hand,
+                priority,
+                handKeep,
+                dropped
         );
     }
 
@@ -487,8 +582,12 @@ public final class ThumbBeam {
         if (h.depth == 0 || !trie.isWord(h.node)) return;
 
         int gates = h.gates;
+        int droppable = dropsTap ? (1 - h.dropped) : 0;
         for (int s = 0; s < 2; s++) {
-            if (h.nx[s] < streams[s].length) {
+            if (droppable > 0 && h.nx[s] == streams[s].length - 1
+                    && items.get(streams[s][h.nx[s]]) instanceof KineticaMatcher.Anchor) {
+                droppable--;
+            } else if (h.nx[s] < streams[s].length) {
                 return; // Not all items were opened
             }
             int o = h.open[s];
@@ -498,6 +597,7 @@ public final class ThumbBeam {
                 gates += g;
             }
         }
+        if (dropsTap && h.dropped == 0 && droppable > 0) return;
 
         attempts++;
 
@@ -536,9 +636,12 @@ public final class ThumbBeam {
             pieceTo[pi] = own;
         }
 
-        float keep = h.keep;
+        float keep = h.keep * Math.max(KineticaConstants.HANDOVER_KEEP_FLOOR, h.handKeep);
         for (int g = 0; g < gates; g++) {
             keep *= KineticaConstants.BEAM_GATE_KEEP;
+        }
+        if (dropsTap) {
+            keep *= KineticaConstants.DROPPED_TAP_KEEP;
         }
 
         scoreReading(h.node, letters, h.depth, pieceCount, pieceSeg, pieceLetters, pieceFrom, pieceTo, h.tapPen, keep);
@@ -607,12 +710,16 @@ public final class ThumbBeam {
     }
 
     public static boolean applies(List<NintypeInputToken> tokens, List<KineticaMatcher> items) {
-        if (tokens == null || items == null || tokens.size() < 2) return false;
+        if (tokens == null || items == null || items.size() != tokens.size()) return false;
+        boolean hasSwipe = false;
         for (int i = 0; i < tokens.size(); i++) {
-            if (tokens.get(i).kind == NintypeInputToken.Kind.SWIPE) {
-                return true;
+            NintypeInputToken.Kind kind = tokens.get(i).kind;
+            if (kind == NintypeInputToken.Kind.SWIPE) {
+                hasSwipe = true;
+            } else if (kind != NintypeInputToken.Kind.TAP) {
+                return false;
             }
         }
-        return false;
+        return hasSwipe;
     }
 }

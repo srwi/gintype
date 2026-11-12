@@ -142,6 +142,12 @@ public abstract class KineticaMatcher {
             return -1;
         }
 
+        public int[] passesOf(int code) {
+            if (code < 0 || code >= 26) return EMPTY_INT;
+            int[] passes = passIdx[code];
+            return (passes != null) ? passes : EMPTY_INT;
+        }
+
         public long letterTime(int code, int pass) {
             int n = (sampleT != null && sampleT.length > 0) ? sampleT.length : KineticaConstants.RESAMPLE_N;
             int idx = (pass < 0) ? 0 : (pass >= n ? n - 1 : pass);

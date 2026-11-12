@@ -741,4 +741,71 @@ public class NintypeDecoderTest {
             GboardNintypeTraceLogger.setTraceSinkForTesting(null);
         }
     }
+
+    @Test
+    public void decodesRevisitedLetterWithPassInTimeForVielleicht() {
+        insertQuantized("vielleicht", 92000, false, "de");
+        insertQuantized("vichy", 40000, false, "de");
+
+        // Stream 0 (left thumb) covers v -> e -> e -> c -> t, crossing early around 100..620ms
+        // Stream 1 (right thumb) swipes i -> l -> p -> i -> h, visiting 'i' early (120ms) and again later (560ms)
+        NintypeInputToken leftSwipe = buildSwipeTokenWithContacts(0, 0, "veect", 100L, 650L);
+        NintypeInputToken rightSwipe = buildSwipeTokenWithContacts(1, 1, "ilpih", 120L, 680L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(leftSwipe, rightSwipe), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("vielleicht", results.get(0).word);
+    }
+
+    @Test
+    public void decodesSoftHandoverPast200MsAllowance() {
+        insertQuantized("heute", 92000, false, "de");
+        // Left thumb taps 't' at 150ms, well before right thumb reaches 'u' (~450ms) inside 800ms charge window
+        NintypeInputToken leftSwipe = buildSwipeTokenWithContacts(0, 0, "he", 100L, 280L);
+        NintypeInputToken rightSwipe = buildSwipeTokenWithContacts(1, 1, "ue", 350L, 620L);
+        KeySpec tKey = geometry.keySpec('t');
+        assertNotNull(tKey);
+        NintypeInputToken earlyTapT = NintypeInputToken.tap(
+                2, 0, 't', tKey.centerX, tKey.centerY, 200L, 230L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(leftSwipe, rightSwipe, earlyTapT), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("heute", results.get(0).word);
+    }
+
+    @Test
+    public void decodesDroppedStrayTapInDualThumbBeam() {
+        insertQuantized("schreiben", 90000, false, "de");
+        NintypeInputToken leftSwipe = buildSwipeTokenWithContacts(0, 0, "scre", 100L, 380L);
+        KeySpec qKey = geometry.keySpec('q');
+        assertNotNull(qKey);
+        NintypeInputToken strayTapQ = NintypeInputToken.tap(
+                2, 0, 'q', qKey.centerX, qKey.centerY, 390L, 420L);
+        NintypeInputToken rightSwipe = buildSwipeTokenWithContacts(1, 1, "hibn", 160L, 500L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(leftSwipe, strayTapQ, rightSwipe), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("schreiben", results.get(0).word);
+    }
+
+    @Test
+    public void decodesCompoundWordOver24LettersWithinMaxWordLen40() {
+        String longCompound = "donauschifffahrtsgesellschaftskapitaen";
+        assertEquals(38, longCompound.length());
+        insertQuantized(longCompound, 80000, false, "de");
+        assertTrue(trie.getMaxWordLen(0) >= 38);
+
+        NintypeInputToken p1 = buildSwipeTokenWithContacts(0, 0, "donauschif", 100L, 400L);
+        NintypeInputToken p2 = buildSwipeTokenWithContacts(1, 1, "fahrts", 420L, 650L);
+        NintypeInputToken p3 = buildSwipeTokenWithContacts(0, 0, "gesellschaf", 670L, 1000L);
+        NintypeInputToken p4 = buildSwipeTokenWithContacts(1, 1, "tskapitaen", 1020L, 1350L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(p1, p2, p3, p4), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals(longCompound, results.get(0).word);
+    }
 }

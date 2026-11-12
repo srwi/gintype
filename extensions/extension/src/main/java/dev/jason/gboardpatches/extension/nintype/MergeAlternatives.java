@@ -639,17 +639,82 @@ public final class MergeAlternatives {
         if (halves != null) out.add(halves);
     }
 
+    public static final class Cut {
+        public final NintypeInputToken head;
+        public final long tailStart;
+        private final NintypeInputToken src;
+        private final int from;
+        private final float kw;
+
+        Cut(NintypeInputToken head, NintypeInputToken src, int from, float kw) {
+            this.head = head;
+            this.tailStart = src.points.get(from).timeMs;
+            this.src = src;
+            this.from = from;
+            this.kw = kw;
+        }
+
+        public NintypeInputToken tail() {
+            return slice(src, from, src.points.size() - 1, kw, true, false);
+        }
+    }
+
     public static SplitVariant splitSwipe(NintypeInputToken s, long tCut, float kw) {
         List<NintypeInputToken.TouchPoint> path = s.points;
+        Integer cut = v1Cut(path, tCut);
+        if (cut == null) return null;
+        return buildHalves(s, cut, v1Resume(path, cut, kw), kw, true);
+    }
+
+    public static Cut cutSwipe(NintypeInputToken s, long tCut, float kw) {
+        List<NintypeInputToken.TouchPoint> path = s.points;
+        Integer cut = v1Cut(path, tCut);
+        if (cut == null) return null;
+        int resume = v1Resume(path, cut, kw);
+        if (arcLenKw(path, 0, cut, kw) < KineticaConstants.MIN_SPLIT_HALF_ARC_KW) return null;
+        if (path.size() - resume < 2) return null;
+        return new Cut(slice(s, 0, cut, kw, false, true), s, resume, kw);
+    }
+
+    private static Integer v1Cut(List<NintypeInputToken.TouchPoint> path, long tCut) {
         if (path == null || path.size() < 4) return null;
         int nearest = nearestIndex(path, tCut);
         if (nearest < 1) return null;
-        int cut = clamp(nearest, 1, path.size() - 3);
-        return buildHalves(s, cut, v1Resume(path, cut, kw), kw, true);
+        return clamp(nearest, 1, path.size() - 3);
     }
 
     public static SplitVariant splitAtOwnContact(NintypeInputToken s, long t, float kw) {
         return splitAtContact(s, t, kw);
+    }
+
+    public static Cut cutAtOwnContact(NintypeInputToken s, long t, float kw) {
+        List<NintypeInputToken.TouchPoint> path = s.points;
+        if (path == null || path.size() < 4) return null;
+        int cut = clamp(nearestIndex(path, t), 1, path.size() - 3);
+        NintypeInputToken head = sliceOrNull(s, 0, cut, kw, false, true, true);
+        if (head == null) return null;
+        if (!keeps(s, cut + 1, path.size() - 1, kw, true)) return null;
+        return new Cut(head, s, cut + 1, kw);
+    }
+
+    private static boolean keeps(
+            NintypeInputToken s,
+            int from,
+            int to,
+            float kw,
+            boolean keepIfContacted
+    ) {
+        if (to - from < 1) return false;
+        List<NintypeInputToken.TouchPoint> path = s.points;
+        if (arcLenKw(path, from, to, kw) >= KineticaConstants.MIN_SPLIT_HALF_ARC_KW) return true;
+        if (!keepIfContacted || s.keyContacts == null || s.keyContacts.isEmpty()) return false;
+        long tFrom = path.get(from).timeMs;
+        long tTo = path.get(to).timeMs;
+        for (int i = 0; i < s.keyContacts.size(); i++) {
+            NintypeInputToken.KeyContact c = s.keyContacts.get(i);
+            if (c.tExit >= tFrom && c.tEnter <= tTo) return true;
+        }
+        return false;
     }
 
     private static int nearestIndex(List<NintypeInputToken.TouchPoint> path, long t) {

@@ -20,10 +20,35 @@ public final class KineticaConstants {
     public static final float LEN_BAND_HI = 1.5f;
     public static final float LEN_BAND_MARGIN_KW = 1.0f;
 
-    public static final float FUZZY_TAP_RADIUS_KW = 1.0f;
+    public static final float SHORT_READING_ARC_KW = 18f;
+    public static final float SHORT_READING_RATIO = 0.9f;
+    public static final float SHORT_READING_POWER = 2f;
+
+    public static float shortReadingKeep(float idealKw, float arcKw) {
+        if (arcKw < SHORT_READING_ARC_KW) return 1f;
+        float r = idealKw / arcKw / SHORT_READING_RATIO;
+        return (r >= 1f) ? 1f : (float) Math.pow(r, SHORT_READING_POWER);
+    }
+
+    public static final float FUZZY_TAP_RADIUS_KW = 1.1f;
     public static final float FUZZY_TAP_LAMBDA = 0.15f;
     public static final float DOUBLE_TAP_PEN_KW = 0.1f;
     public static final long HANDOVER_ALLOWANCE_MS = 200L;
+    public static final long HANDOVER_CHARGE_MAX_MS = 800L;
+    public static final float HANDOVER_CHARGE_KW = 0.9f;
+    public static final float HANDOVER_CHARGE_KEEP = 0.6f;
+    public static final float HANDOVER_KEEP_FLOOR = 0.5f;
+    public static final float HANDOVER_CHARGE_CAP_KW = 2.5f;
+
+    public static float handoverExcess(long backMs) {
+        return (backMs <= HANDOVER_ALLOWANCE_MS) ? 0f : (backMs - HANDOVER_ALLOWANCE_MS) / 100f;
+    }
+
+    public static float handoverKeep(long backMs) {
+        float x = handoverExcess(backMs);
+        return (x == 0f) ? 1f : (float) Math.pow(HANDOVER_CHARGE_KEEP, x);
+    }
+
     public static final float UNCONTACTED_LETTER_KEEP = 0.85f;
 
     public static final int BEAM_WIDTH = 128;
@@ -32,20 +57,30 @@ public final class KineticaConstants {
     public static final float BEAM_GATE_COST = 0.5f;
     public static final float BEAM_GATE_KEEP = 0.6f;
     public static final boolean BEAM_UNSATURATED = true;
+    public static final boolean BEAM_PASS_IN_TIME = true;
+    public static final float DROPPED_TAP_COST_KW = 2.0f;
+    public static final float DROPPED_TAP_KEEP = 0.25f;
 
     public static final float GEO_EXPONENT = 3.75f;
     public static final float GEO_SATURATION_KW = 0.5f;
+    public static final float GEO_SATURATION_LONG_KW = 0.9f;
+    public static final float LONG_STROKE_KW = 22f;
+
+    public static float saturationFor(float arcKw) {
+        return (arcKw >= LONG_STROKE_KW) ? GEO_SATURATION_LONG_KW : GEO_SATURATION_KW;
+    }
+
     public static final float FREQ_WEIGHT_FLOOR = 0.25f;
 
     public static final int TOP_K = 10;
-    public static final int MAX_WORD_LEN = 24;
+    public static final int MAX_WORD_LEN = 40;
     public static final int MAX_CANDIDATES = 800;
     public static final int MAX_EMIT_ATTEMPTS = 4000;
     public static final int STREAM_SEARCH_STEP_BUDGET = 100_000;
     public static final int RESCUE_STEP_BUDGET = 15_000;
 
     public static final float TRANSPOSE_PENALTY = 0.15f;
-    public static final long ORDER_AMBIG_MS = 120L;
+    public static final long ORDER_AMBIG_MS = 100L;
     public static final long SPLIT_MARGIN_MS = 80L;
     public static final float MIN_SPLIT_HALF_ARC_KW = 0.5f;
     public static final float SPLIT_HEAD_TRIM_KW = 0.6f;
@@ -55,6 +90,8 @@ public final class KineticaConstants {
     public static final float HANDOVER_CONTACT_FRACTION = 1.0f;
 
     public static final float RESCUE_MIN_LEAD_D = 1.0f;
+    public static final float RESCUE_COMMIT_D = 0.65f;
+    public static final float RESCUE_COMMIT_CLEAR = 2f;
     public static final float RESCUE_GATE_KEEP = 0.6f;
     public static final int RESCUE_MAX_ATTEMPTS = 200;
     public static final int BEAM_MAX_NEW = 2;
@@ -84,7 +121,14 @@ public final class KineticaConstants {
      * Geometric factor of the score; 1.0 at a perfect fit, floored past saturation.
      */
     public static float geometricTerm(float dTotal) {
-        float d = (dTotal < GEO_SATURATION_KW) ? dTotal : GEO_SATURATION_KW;
+        return geometricTerm(dTotal, GEO_SATURATION_KW);
+    }
+
+    /**
+     * Geometric factor of the score; 1.0 at a perfect fit, floored past saturation at cap.
+     */
+    public static float geometricTerm(float dTotal, float cap) {
+        float d = (dTotal < cap) ? dTotal : cap;
         return (float) (1.0 / Math.pow(1.0 + d, GEO_EXPONENT));
     }
 
@@ -96,11 +140,18 @@ public final class KineticaConstants {
      * Exact inverse of geometricTerm for DTW early-abandon.
      */
     public static float maxDTotalForScore(float numerator, float minScore) {
+        return maxDTotalForScore(numerator, minScore, GEO_SATURATION_KW);
+    }
+
+    /**
+     * Exact inverse of geometricTerm(dTotal, cap) for DTW early-abandon.
+     */
+    public static float maxDTotalForScore(float numerator, float minScore, float cap) {
         if (minScore <= 0f) return Float.POSITIVE_INFINITY;
         float ratio = numerator / minScore;
         if (ratio <= 1f) return 0f;
         float d = (float) Math.pow(ratio, 1.0 / GEO_EXPONENT) - 1.0f;
-        return (d >= GEO_SATURATION_KW) ? Float.POSITIVE_INFINITY : d;
+        return (d >= cap) ? Float.POSITIVE_INFINITY : d;
     }
 
     public static float boostWeight(float dGeometric) {

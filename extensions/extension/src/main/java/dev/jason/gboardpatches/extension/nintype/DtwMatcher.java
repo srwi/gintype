@@ -121,6 +121,22 @@ public final class DtwMatcher {
     }
 
     /**
+     * Length in kw of the path idealPath() draws through the same letters.
+     */
+    public float idealLength(int[] letters, int from, int to, NintypeGeometry geometry) {
+        float len = 0f;
+        int prevCode = -1;
+        for (int i = from; i < to; i++) {
+            int code = letters[i];
+            if (!geometry.hasKey(code)) continue;
+            if (code == prevCode) continue;
+            if (prevCode >= 0) len += geometry.keyDist(prevCode, code);
+            prevCode = code;
+        }
+        return len;
+    }
+
+    /**
      * Ideal path for letters[from until to]: polyline through key centers with
      * consecutive duplicate keys removed (a doubled letter adds zero length, so
      * "hello" and "helo" share one ideal path and the dictionary disambiguates).
