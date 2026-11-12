@@ -81,7 +81,7 @@ public final class NintypeAccentFolder {
         return changed ? sb.toString() : null;
     }
 
-    private static char mapSingleChar(char c) {
+    public static char mapSingleChar(char c) {
         if (c >= 'a' && c <= 'z') return c;
         switch (c) {
             case 'ä':

@@ -166,6 +166,77 @@ public class NintypeDecoderTest {
         assertEquals("wie", results.get(0).word);
     }
 
+    @Test
+    public void dynamicMidlineIgnoresAsymmetricUmlautColumn() {
+        NintypeGeometry geo = NintypeGeometry.createStandardLayout(1080f, 680f, true);
+        // Add German 11th-column umlauts on the far right (should NOT shift t/z & g/h midline)
+        List<KeySpec> specs = new ArrayList<>(30);
+        for (int i = 0; i < NintypeAlphabet.ALPHABET_SIZE; i++) {
+            KeySpec ks = geo.keySpecByIdx(i);
+            if (ks != null) specs.add(ks);
+        }
+        specs.add(new KeySpec('ü', 1140f, geo.keySpec('p').centerY, 98f, 140f));
+        specs.add(new KeySpec('ö', 1140f, geo.keySpec('l').centerY, 98f, 140f));
+        specs.add(new KeySpec('ä', 1190f, geo.keySpec('l').centerY, 98f, 140f));
+        geo.setKeys(specs, 98f, 140f, true);
+
+        float tZMid = (geo.keySpec('t').centerX + geo.keySpec('z').centerX) * 0.5f;
+        float gHMid = (geo.keySpec('g').centerX + geo.keySpec('h').centerX) * 0.5f;
+        float expectedMid = (tZMid + gHMid) * 0.5f;
+        assertEquals(expectedMid, geo.midlinePx(), 0.5f);
+        assertTrue(geo.hasDedicatedUmlauts());
+    }
+
+    static final class FakeSoftKeyDef {
+        final List<CharSequence> i; // labels
+        final String m; // contentDescription
+
+        FakeSoftKeyDef(String label) {
+            this.i = Arrays.asList((CharSequence) label);
+            this.m = label;
+        }
+    }
+
+    static final class FakeSoftKeyView {
+        final FakeSoftKeyDef e;
+
+        FakeSoftKeyView(String label) {
+            this.e = new FakeSoftKeyDef(label);
+        }
+    }
+
+    @Test
+    public void extractsNativeLayoutKeysWithoutTextViewsIncludingUmlauts() {
+        String letters = "qwertzuiopasdfghjklyxcvbnmüöä";
+        int n = letters.length();
+        Object[] keyObjs = new Object[n];
+        float[] cx = new float[n];
+        float[] cy = new float[n];
+        int[] w = new int[n];
+        int[] h = new int[n];
+        for (int idx = 0; idx < n; idx++) {
+            char ch = letters.charAt(idx);
+            keyObjs[idx] = new FakeSoftKeyView(String.valueOf(ch));
+            cx[idx] = 50f + (idx % 11) * 98f;
+            cy[idx] = 220f + (idx / 11) * 145f; // realistic offset from suggestion bar
+            w[idx] = 96;
+            h[idx] = 140;
+        }
+        boolean[] hasUmlaut = new boolean[] {false};
+        List<KeySpec> extracted = GboardNintypeRuntime.extractKeysFromNativeLayoutArrays(
+                keyObjs, cx, cy, w, h, hasUmlaut);
+
+        assertEquals(n, extracted.size());
+        assertTrue(hasUmlaut[0]);
+
+        NintypeGeometry geo = new NintypeGeometry();
+        geo.setKeys(extracted, 96f, 140f, hasUmlaut[0]);
+        assertTrue(geo.isValid());
+        // Verify row Y offset from suggestion bar is preserved
+        assertEquals(220f, geo.keySpec('q').centerY, 0.1f);
+        assertEquals(geo.keySpec('q').centerX, extracted.get(0).centerX, 0.1f);
+    }
+
     private NintypeInputToken buildSwipeToken(
             int pointerId,
             String keySequence,

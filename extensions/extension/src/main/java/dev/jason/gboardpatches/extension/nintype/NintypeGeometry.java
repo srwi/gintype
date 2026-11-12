@@ -116,9 +116,46 @@ public final class NintypeGeometry {
     }
 
     public float midlinePx() {
+        KeySpec kT = letterArray[NintypeAlphabet.charIndex('t')];
+        KeySpec kY = letterArray[NintypeAlphabet.charIndex('y')];
+        KeySpec kZ = letterArray[NintypeAlphabet.charIndex('z')];
+        KeySpec kRightTop = kY;
+        if (kT != null && kY != null && kZ != null) {
+            // In QWERTZ, 'z' sits on the top row adjacent to 't' while 'y' sits in the bottom row.
+            if (Math.abs(kZ.centerY - kT.centerY) < Math.abs(kY.centerY - kT.centerY)) {
+                kRightTop = kZ;
+            }
+        } else if (kRightTop == null) {
+            kRightTop = kZ;
+        }
+        float sum = 0f;
+        int pairs = 0;
+        if (kT != null && kRightTop != null) {
+            sum += (kT.centerX + kRightTop.centerX) * 0.5f;
+            pairs++;
+        }
+        KeySpec kG = letterArray[NintypeAlphabet.charIndex('g')];
+        KeySpec kH = letterArray[NintypeAlphabet.charIndex('h')];
+        if (kG != null && kH != null) {
+            sum += (kG.centerX + kH.centerX) * 0.5f;
+            pairs++;
+        }
+        if (pairs > 0) {
+            return sum / pairs;
+        }
+
+        float minX = Float.MAX_VALUE;
+        float maxX = -Float.MAX_VALUE;
+        for (int i = 0; i < letterArray.length; i++) {
+            KeySpec k = letterArray[i];
+            if (k == null) continue;
+            if (k.centerX < minX) minX = k.centerX;
+            if (k.centerX > maxX) maxX = k.centerX;
+        }
+        if (minX < maxX) {
+            return (minX + maxX) * 0.5f;
+        }
         if (!allKeys.isEmpty()) {
-            float minX = Float.MAX_VALUE;
-            float maxX = -Float.MAX_VALUE;
             for (int i = 0; i < allKeys.size(); i++) {
                 KeySpec k = allKeys.get(i);
                 if (k.centerX < minX) minX = k.centerX;
@@ -129,6 +166,63 @@ public final class NintypeGeometry {
             }
         }
         return 540f;
+    }
+
+    /**
+     * Returns the letter code (0..25) whose key bounds contain the (xKw, yKw) point,
+     * falling back to the nearest letter key within 1.45 kw, or -1 if outside the letter area.
+     */
+    public int keyAtKw(float xKw, float yKw) {
+        float px = xKw * keyWidthPx;
+        float py = yKw * keyWidthPx;
+        for (int i = 0; i < NintypeAlphabet.ALPHABET_SIZE; i++) {
+            KeySpec k = letterArray[i];
+            if (k == null) continue;
+            float hw = k.width * 0.5f;
+            float hh = k.height * 0.5f;
+            if (px >= k.centerX - hw && px <= k.centerX + hw
+                    && py >= k.centerY - hh && py <= k.centerY + hh) {
+                return i;
+            }
+        }
+        // Check dedicated umlauts/punctuation keys mapped to folded letter idx if inside box
+        for (int i = 0; i < allKeys.size(); i++) {
+            KeySpec k = allKeys.get(i);
+            float hw = k.width * 0.5f;
+            float hh = k.height * 0.5f;
+            if (px >= k.centerX - hw && px <= k.centerX + hw
+                    && py >= k.centerY - hh && py <= k.centerY + hh) {
+                int folded = foldSupportedCharIndex(k.character);
+                if (folded >= 0) return folded;
+            }
+        }
+        if (!isOnLetterArea(px, py)) return -1;
+        KeySpec nearest = nearestLetterKey(px, py);
+        return nearest != null ? NintypeAlphabet.charIndex(nearest.character) : -1;
+    }
+
+    /**
+     * Sticky-bounds hysteresis check: true while (xKw, yKw) stays within `code`'s key rect
+     * inflated by `inflateKw` on every side.
+     */
+    public boolean insideInflatedKw(float xKw, float yKw, int code, float inflateKw) {
+        if (code < 0 || code >= NintypeAlphabet.ALPHABET_SIZE) return false;
+        KeySpec k = letterArray[code];
+        if (k == null) return false;
+        float px = xKw * keyWidthPx;
+        float py = yKw * keyWidthPx;
+        float inflatePx = inflateKw * keyWidthPx;
+        float hw = k.width * 0.5f + inflatePx;
+        float hh = k.height * 0.5f + inflatePx;
+        return px >= k.centerX - hw && px <= k.centerX + hw
+                && py >= k.centerY - hh && py <= k.centerY + hh;
+    }
+
+    public static int foldSupportedCharIndex(char c) {
+        int idx = NintypeAlphabet.charIndex(c);
+        if (idx >= 0) return idx;
+        char mapped = NintypeAccentFolder.mapSingleChar(Character.toLowerCase(c));
+        return NintypeAlphabet.charIndex(mapped);
     }
 
     public KeySpec keySpecByIdx(int charIdx) {

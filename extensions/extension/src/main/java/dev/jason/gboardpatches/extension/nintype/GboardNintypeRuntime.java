@@ -157,6 +157,8 @@ public final class GboardNintypeRuntime {
         final Handler mainHandler = new Handler(Looper.getMainLooper());
 
         boolean geometryReady = false;
+        boolean geometryFromNativeLayout = false;
+        Object lastNativeLayoutObj = null;
         int lastKeyboardWidth = 0;
         int lastKeyboardHeight = 0;
         boolean sawMultiTouch = false;
@@ -230,6 +232,15 @@ public final class GboardNintypeRuntime {
     private static volatile Field letterStartedField;
     private static volatile Field gestureResetField;
     private static volatile Field softKeyMapField;
+    private static volatile Field nativeLayoutDataField;
+    private static volatile Field nativeLayoutKeysArrayField;
+    private static volatile Field nativeLayoutCenterXField;
+    private static volatile Field nativeLayoutCenterYField;
+    private static volatile Field nativeLayoutWidthArrField;
+    private static volatile Field nativeLayoutHeightArrField;
+    private static volatile Field softKeyViewDefField;
+    private static volatile Field softKeyDefLabelsField;
+    private static volatile Field softKeyDefDescField;
     private static final Set<Class<?>> probedClasses = Collections.synchronizedSet(new HashSet<>());
     private static volatile Context cachedContext = null;
     private static volatile Object cachedSampleKeyView = null;
@@ -1380,6 +1391,14 @@ public final class GboardNintypeRuntime {
         } catch (Throwable ignored) {
         }
 
+        Object nativeLayout = null;
+        try {
+            if (nativeLayoutDataField != null) {
+                nativeLayout = nativeLayoutDataField.get(handler);
+            }
+        } catch (Throwable ignored) {
+        }
+
         int width = (keyboardView != null && keyboardView.getWidth() > 0)
                 ? keyboardView.getWidth()
                 : 1080;
@@ -1390,12 +1409,37 @@ public final class GboardNintypeRuntime {
         if (session.geometryReady
                 && session.geometry.isValid()
                 && width == session.lastKeyboardWidth
-                && height == session.lastKeyboardHeight) {
+                && height == session.lastKeyboardHeight
+                && session.lastNativeLayoutObj == nativeLayout
+                && (session.geometryFromNativeLayout || nativeLayout == null)) {
             return;
         }
 
         session.lastKeyboardWidth = width;
         session.lastKeyboardHeight = height;
+        session.lastNativeLayoutObj = nativeLayout;
+
+        if (nativeLayout != null) {
+            boolean[] hasUmlaut = new boolean[] {false};
+            List<KeySpec> nativeKeys = extractKeysFromNativeLayout(nativeLayout, hasUmlaut);
+            if (nativeKeys.size() >= 20) {
+                float sumW = 0f;
+                float sumH = 0f;
+                for (int i = 0; i < nativeKeys.size(); i++) {
+                    sumW += nativeKeys.get(i).width;
+                    sumH += nativeKeys.get(i).height;
+                }
+                session.geometry.setKeys(
+                        nativeKeys,
+                        sumW / nativeKeys.size(),
+                        sumH / nativeKeys.size(),
+                        hasUmlaut[0]
+                );
+                session.geometryReady = true;
+                session.geometryFromNativeLayout = true;
+                return;
+            }
+        }
 
         if (keyboardView instanceof ViewGroup) {
             List<KeySpec> extracted = new ArrayList<>(32);
@@ -1415,6 +1459,7 @@ public final class GboardNintypeRuntime {
                         hasUmlaut[0]
                 );
                 session.geometryReady = true;
+                session.geometryFromNativeLayout = false;
                 return;
             }
         }
@@ -1429,6 +1474,286 @@ public final class GboardNintypeRuntime {
         }
         session.geometry.setKeys(specs, fallback.keyWidthPx, fallback.keyHeightPx, false);
         session.geometryReady = true;
+        session.geometryFromNativeLayout = false;
+    }
+
+    /**
+     * Extracts exact per-key center coordinates and bounds from Gboard's internal keyboard
+     * layout data (`Ltjz`: SparseArray<SoftKeyView>, float[] centerX, float[] centerY,
+     * int[] width, int[] height). Works even on Canvas-rendered Gboard themes without TextViews.
+     */
+    static List<KeySpec> extractKeysFromNativeLayout(Object nativeLayout, boolean[] hasUmlautOut) {
+        List<KeySpec> out = new ArrayList<>(36);
+        if (nativeLayout == null) return out;
+        try {
+            probeNativeLayoutClass(nativeLayout.getClass());
+            if (nativeLayoutKeysArrayField == null) return out;
+
+            Object sparseObj = nativeLayoutKeysArrayField.get(nativeLayout);
+            if (!(sparseObj instanceof SparseArray)) return out;
+            SparseArray<?> keyMap = (SparseArray<?>) sparseObj;
+            int n = keyMap.size();
+            if (n < 20) return out;
+
+            resolveNativeCoordinateArraysIfNeeded(nativeLayout, n);
+            if (nativeLayoutCenterXField == null || nativeLayoutCenterYField == null) return out;
+
+            Object cxObj = nativeLayoutCenterXField.get(nativeLayout);
+            Object cyObj = nativeLayoutCenterYField.get(nativeLayout);
+            if (!(cxObj instanceof float[]) || !(cyObj instanceof float[])) return out;
+            float[] cxArr = (float[]) cxObj;
+            float[] cyArr = (float[]) cyObj;
+            if (cxArr.length < n || cyArr.length < n) return out;
+
+            int[] wArr = null;
+            int[] hArr = null;
+            if (nativeLayoutWidthArrField != null) {
+                Object wObj = nativeLayoutWidthArrField.get(nativeLayout);
+                if (wObj instanceof int[] && ((int[]) wObj).length >= n) wArr = (int[]) wObj;
+            }
+            if (nativeLayoutHeightArrField != null) {
+                Object hObj = nativeLayoutHeightArrField.get(nativeLayout);
+                if (hObj instanceof int[] && ((int[]) hObj).length >= n) hArr = (int[]) hObj;
+            }
+
+            Object[] keyObjs = new Object[n];
+            for (int i = 0; i < n; i++) {
+                keyObjs[i] = keyMap.valueAt(i);
+            }
+            return extractKeysFromNativeLayoutArrays(keyObjs, cxArr, cyArr, wArr, hArr, hasUmlautOut);
+        } catch (Throwable ignored) {
+        }
+        return out;
+    }
+
+    static List<KeySpec> extractKeysFromNativeLayoutArrays(
+            Object[] keyObjs,
+            float[] cxArr,
+            float[] cyArr,
+            int[] wArr,
+            int[] hArr,
+            boolean[] hasUmlautOut
+    ) {
+        List<KeySpec> out = new ArrayList<>(36);
+        if (keyObjs == null || cxArr == null || cyArr == null) return out;
+        int n = Math.min(keyObjs.length, Math.min(cxArr.length, cyArr.length));
+        Set<Character> seenChars = new HashSet<>(36);
+        for (int i = 0; i < n; i++) {
+            Object keyObj = keyObjs[i];
+            if (keyObj == null) continue;
+            if (keyObj instanceof View && ((View) keyObj).getVisibility() != View.VISIBLE) {
+                continue;
+            }
+            float w = (wArr != null && i < wArr.length)
+                    ? wArr[i]
+                    : ((keyObj instanceof View) ? ((View) keyObj).getWidth() : 0f);
+            float h = (hArr != null && i < hArr.length)
+                    ? hArr[i]
+                    : ((keyObj instanceof View) ? ((View) keyObj).getHeight() : 0f);
+            if (w <= 10f || h <= 10f) continue;
+
+            char ch = extractSupportedCharFromSoftKey(keyObj);
+            if (ch == '\0') continue;
+            if (ch == 'ä' || ch == 'ö' || ch == 'ü') {
+                if (hasUmlautOut != null && hasUmlautOut.length > 0) {
+                    hasUmlautOut[0] = true;
+                }
+            }
+            if (seenChars.add(ch)) {
+                out.add(new KeySpec(ch, cxArr[i], cyArr[i], w, h));
+            }
+        }
+        return out;
+    }
+
+    private static void probeNativeLayoutClass(Class<?> layoutCls) {
+        if (nativeLayoutKeysArrayField != null) return;
+        Field sparseField = null;
+        Field fField = null;
+        Field gField = null;
+        Field dField = null;
+        Field eField = null;
+        List<Field> floatArrays = new ArrayList<>(4);
+        List<Field> intArrays = new ArrayList<>(6);
+        for (Field f : layoutCls.getDeclaredFields()) {
+            f.setAccessible(true);
+            Class<?> t = f.getType();
+            String name = f.getName();
+            if (SparseArray.class.isAssignableFrom(t) && sparseField == null) {
+                sparseField = f;
+            } else if (t == float[].class) {
+                floatArrays.add(f);
+                if ("f".equals(name)) fField = f;
+                else if ("g".equals(name)) gField = f;
+            } else if (t == int[].class) {
+                intArrays.add(f);
+                if ("d".equals(name)) dField = f;
+                else if ("e".equals(name)) eField = f;
+            }
+        }
+        if (sparseField != null) nativeLayoutKeysArrayField = sparseField;
+        if (fField != null && gField != null) {
+            nativeLayoutCenterXField = fField;
+            nativeLayoutCenterYField = gField;
+        } else if (floatArrays.size() >= 2 && "centerX".equalsIgnoreCase(floatArrays.get(0).getName())) {
+            nativeLayoutCenterXField = floatArrays.get(0);
+            nativeLayoutCenterYField = floatArrays.get(1);
+        }
+        if (dField != null && eField != null) {
+            nativeLayoutWidthArrField = dField;
+            nativeLayoutHeightArrField = eField;
+        } else if (intArrays.size() >= 4) {
+            for (Field f : intArrays) {
+                String n = f.getName().toLowerCase();
+                if (n.contains("width")) nativeLayoutWidthArrField = f;
+                else if (n.contains("height")) nativeLayoutHeightArrField = f;
+            }
+        }
+    }
+
+    private static void resolveNativeCoordinateArraysIfNeeded(Object nativeLayout, int count) {
+        if (nativeLayoutCenterXField != null && nativeLayoutCenterYField != null) return;
+        try {
+            List<Field> floatFields = new ArrayList<>(4);
+            for (Field f : nativeLayout.getClass().getDeclaredFields()) {
+                if (f.getType() == float[].class) {
+                    f.setAccessible(true);
+                    Object arr = f.get(nativeLayout);
+                    if (arr instanceof float[] && ((float[]) arr).length >= count) {
+                        floatFields.add(f);
+                    }
+                }
+            }
+            if (floatFields.size() >= 2) {
+                Field bestX = floatFields.get(0);
+                Field bestY = floatFields.get(1);
+                int d0 = countDistinctQuantized((float[]) bestX.get(nativeLayout), count);
+                int d1 = countDistinctQuantized((float[]) bestY.get(nativeLayout), count);
+                if (d1 > d0) {
+                    Field tmp = bestX;
+                    bestX = bestY;
+                    bestY = tmp;
+                }
+                nativeLayoutCenterXField = bestX;
+                nativeLayoutCenterYField = bestY;
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static int countDistinctQuantized(float[] arr, int n) {
+        Set<Integer> buckets = new HashSet<>(16);
+        int limit = Math.min(n, arr.length);
+        for (int i = 0; i < limit; i++) {
+            buckets.add(Math.round(arr[i] / 12f));
+        }
+        return buckets.size();
+    }
+
+    private static boolean isSupportedGeometryChar(char ch) {
+        return (ch >= 'a' && ch <= 'z')
+                || ch == 'ä'
+                || ch == 'ö'
+                || ch == 'ü'
+                || NintypeGeometry.NO_SPACE_BEFORE.indexOf(ch) >= 0;
+    }
+
+    private static char extractSupportedCharFromSoftKey(Object softKeyObj) {
+        try {
+            Field defField = softKeyViewDefField;
+            if (defField == null) {
+                Class<?> cur = softKeyObj.getClass();
+                while (cur != null && cur != Object.class && defField == null) {
+                    for (Field f : cur.getDeclaredFields()) {
+                        if (f.getType().getName().endsWith("SoftKeyDef")) {
+                            f.setAccessible(true);
+                            defField = f;
+                            softKeyViewDefField = f;
+                            break;
+                        }
+                    }
+                    cur = cur.getSuperclass();
+                }
+            }
+            Object softKeyDef = (defField != null) ? defField.get(softKeyObj) : null;
+            if (softKeyDef != null) {
+                char fromDef = extractSupportedCharFromSoftKeyDef(softKeyDef);
+                if (fromDef != '\0') return fromDef;
+            }
+        } catch (Throwable ignored) {
+        }
+        if (softKeyObj instanceof View) {
+            return extractSingleLetterFromSoftKeyView((View) softKeyObj);
+        }
+        return '\0';
+    }
+
+    private static char extractSupportedCharFromSoftKeyDef(Object softKeyDef) {
+        try {
+            if (softKeyDefLabelsField == null) {
+                Field iCandidate = null;
+                List<Field> listFields = new ArrayList<>(4);
+                for (Field f : softKeyDef.getClass().getDeclaredFields()) {
+                    if (List.class.isAssignableFrom(f.getType())) {
+                        f.setAccessible(true);
+                        listFields.add(f);
+                        if ("i".equals(f.getName())) iCandidate = f;
+                    } else if (softKeyDefDescField == null && f.getType() == String.class && "m".equals(f.getName())) {
+                        f.setAccessible(true);
+                        softKeyDefDescField = f;
+                    }
+                }
+                if (iCandidate != null) {
+                    Object val = iCandidate.get(softKeyDef);
+                    if (val instanceof List && !((List<?>) val).isEmpty() && ((List<?>) val).get(0) instanceof CharSequence) {
+                        softKeyDefLabelsField = iCandidate;
+                    }
+                }
+                if (softKeyDefLabelsField == null) {
+                    for (Field f : listFields) {
+                        Object val = f.get(softKeyDef);
+                        if (val instanceof List && !((List<?>) val).isEmpty() && ((List<?>) val).get(0) instanceof CharSequence) {
+                            softKeyDefLabelsField = f;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (softKeyDefLabelsField != null) {
+                Object val = softKeyDefLabelsField.get(softKeyDef);
+                if (val instanceof List) {
+                    List<?> labels = (List<?>) val;
+                    for (int i = 0; i < labels.size(); i++) {
+                        Object item = labels.get(i);
+                        if (item instanceof CharSequence) {
+                            String text = item.toString().trim();
+                            if (text.length() == 1) {
+                                char ch = Character.toLowerCase(text.charAt(0));
+                                if (isSupportedGeometryChar(ch)) {
+                                    return ch;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (softKeyDefDescField != null) {
+                Object desc = softKeyDefDescField.get(softKeyDef);
+                if (desc instanceof String) {
+                    String s = ((String) desc).trim();
+                    if (s.length() == 1) {
+                        char ch = Character.toLowerCase(s.charAt(0));
+                        if (isSupportedGeometryChar(ch)) {
+                            return ch;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return '\0';
     }
 
     private static void collectLetterKeysFromViewHierarchy(
@@ -1626,6 +1951,9 @@ public final class GboardNintypeRuntime {
                                 claimOwnershipMethod = m;
                             } catch (Throwable ignored) {
                             }
+                        } else if (nativeLayoutDataField == null && looksLikeNativeLayoutData(type)) {
+                            nativeLayoutDataField = f;
+                            probeNativeLayoutClass(type);
                         }
                     }
                     cur = cur.getSuperclass();
@@ -1635,5 +1963,25 @@ public final class GboardNintypeRuntime {
                 probedClasses.add(handlerClass);
             }
         }
+    }
+
+    private static boolean looksLikeNativeLayoutData(Class<?> type) {
+        if (type == null || type.isPrimitive() || type.isInterface() || type.isArray()) {
+            return false;
+        }
+        String pkgName = type.getName();
+        if (pkgName.startsWith("android.") || pkgName.startsWith("java.") || pkgName.startsWith("dalvik.")) {
+            return false;
+        }
+        boolean hasSparseArray = false;
+        int floatArrayCount = 0;
+        int intArrayCount = 0;
+        for (Field f : type.getDeclaredFields()) {
+            Class<?> ft = f.getType();
+            if (SparseArray.class.isAssignableFrom(ft)) hasSparseArray = true;
+            else if (ft == float[].class) floatArrayCount++;
+            else if (ft == int[].class) intArrayCount++;
+        }
+        return hasSparseArray && floatArrayCount >= 2 && intArrayCount >= 2;
     }
 }
