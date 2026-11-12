@@ -16,12 +16,13 @@ echo "=== 2. Copying MPP bundle to Downloads ==="
 cp "$MPP_FILE" ~/storage/downloads/gboard-matrix-suggestions-patches.mpp
 cp "$MPP_FILE" ~/storage/downloads/patches-4.2.0.mpp
 
-echo "=== 3. Patching APK with Matrix Word Suggestions + Nintype Multi-Touch Swipe + Package Rename (GboardPatched) ==="
+echo "=== 3. Patching APK with Matrix Word Suggestions + Nintype Multi-Touch Swipe + Signature Bypass + Package Rename (GboardPatched) ==="
 java -jar "$MORPHE_JAR" patch \
   --patches="$MPP_FILE" \
   --exclusive \
   -e "Matrix Word Suggestions" \
   -e "Nintype Multi-Touch Swipe" \
+  -e "Add Gboard Signature Bypass" \
   -e "Package Rename" \
   -O app_display_name="GboardPatched" \
   -o "$OUT_APK" \
