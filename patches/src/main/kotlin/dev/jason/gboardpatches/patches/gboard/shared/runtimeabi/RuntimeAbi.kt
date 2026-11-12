@@ -164,6 +164,10 @@ internal enum class RuntimeCallId(internal val encodedAbi: String) {
     NINTYPE_RUNTIME_SHOULD_START_GESTURE("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->shouldStartGesture(Ljava/lang/Object;Z)Z"),
     NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_DISPATCH("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->shouldInterceptGestureDispatch(Ljava/lang/Object;)Z"),
     NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->shouldInterceptGestureReset(Ljava/lang/Object;)Z"),
+    NINTYPE_RUNTIME_RESOLVE_LETTER_STARTED("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->resolveLetterStarted(Ljava/lang/Object;Z)Z"),
+    NINTYPE_RUNTIME_SHOULD_RECEIVE_EVENTS_DURING_OTHER_OWNER("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->shouldReceiveEventsDuringOtherOwner(Ljava/lang/Object;)Z"),
+    NINTYPE_RUNTIME_SHOULD_SUPPRESS_BASIC_HANDLER("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->shouldSuppressBasicMotionEventHandler(Ljava/lang/Object;Landroid/view/MotionEvent;)Z"),
+    NINTYPE_RUNTIME_SHOULD_SUPPRESS_ROLLOVER_COMMIT("Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->shouldSuppressRolloverCommitOnPointerDown(Landroid/view/MotionEvent;)Z"),
 }
 
 internal data class RuntimeAbi(

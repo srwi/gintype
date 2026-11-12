@@ -67,4 +67,93 @@ class GboardNintypeSmaliCompilationTest {
         )
         assertEquals(5, instructions.size)
     }
+
+    @Test
+    fun `verify resolveLetterStarted invoke compiles for method g with 39 registers`() {
+        val invoke = RuntimeCallEmitter.invoke(
+            RuntimeCallId.NINTYPE_RUNTIME_RESOLVE_LETTER_STARTED,
+            "v0, v2",
+        )
+        val smali = """
+            $invoke
+            move-result v2
+        """.trimIndent()
+
+        val instructions = InlineSmaliCompiler.compile(
+            instructions = smali,
+            parameters = "Landroid/view/MotionEvent;",
+            registers = 39,
+            forStaticMethod = false,
+        )
+        assertEquals(2, instructions.size)
+    }
+
+    @Test
+    fun `verify shouldReceiveEventsDuringOtherOwner helper compiles for gu()Z`() {
+        val invoke = RuntimeCallEmitter.invoke(
+            RuntimeCallId.NINTYPE_RUNTIME_SHOULD_RECEIVE_EVENTS_DURING_OTHER_OWNER,
+            "p0",
+        )
+        val smali = """
+            $invoke
+            move-result v0
+            return v0
+        """.trimIndent()
+
+        val instructions = InlineSmaliCompiler.compile(
+            instructions = smali,
+            parameters = "",
+            registers = 2,
+            forStaticMethod = false,
+        )
+        assertEquals(3, instructions.size)
+    }
+
+    @Test
+    fun `verify shouldSuppressBasicMotionEventHandler compiles for BasicMotionEventHandler t with 16 registers`() {
+        val invoke = RuntimeCallEmitter.invoke(
+            RuntimeCallId.NINTYPE_RUNTIME_SHOULD_SUPPRESS_BASIC_HANDLER,
+            "v14, v15",
+        )
+        val smali = """
+            $invoke
+            move-result v0
+            if-eqz v0, :nintype_continue_basic_handler
+            return-void
+            :nintype_continue_basic_handler
+            nop
+        """.trimIndent()
+
+        val instructions = InlineSmaliCompiler.compile(
+            instructions = smali,
+            parameters = "Landroid/view/MotionEvent;",
+            registers = 16,
+            forStaticMethod = false,
+        )
+        assertEquals(5, instructions.size)
+    }
+
+    @Test
+    fun `verify shouldSuppressRolloverCommitOnPointerDown compiles for Lqil c with 12 registers`() {
+        val invoke = RuntimeCallEmitter.invoke(
+            RuntimeCallId.NINTYPE_RUNTIME_SHOULD_SUPPRESS_ROLLOVER_COMMIT,
+            "v10",
+        )
+        val smali = """
+            $invoke
+            move-result v3
+            if-nez v3, :nintype_skip_rollover_commit
+            invoke-static {v2, v10, v0}, Lqil;->t(Lqin;Landroid/view/MotionEvent;I)V
+            :nintype_skip_rollover_commit
+            nop
+        """.trimIndent()
+
+        val instructions = InlineSmaliCompiler.compile(
+            instructions = smali,
+            parameters = "Landroid/view/MotionEvent;Z",
+            registers = 12,
+            forStaticMethod = false,
+        )
+        assertEquals(5, instructions.size)
+    }
 }

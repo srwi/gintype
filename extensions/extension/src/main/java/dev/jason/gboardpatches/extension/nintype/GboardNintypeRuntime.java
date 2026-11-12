@@ -218,6 +218,8 @@ public final class GboardNintypeRuntime {
     private static volatile Field keyboardViewField;
     private static volatile Field hostBridgeField;
     private static volatile Method claimOwnershipMethod;
+    private static volatile Field bridgeDispatcherField;
+    private static volatile Field dispatcherOwnerField;
     private static volatile Field gestureActiveFlagField;
     private static volatile Field trailManagerField;
     private static volatile Field trailActiveBoolField;
@@ -231,6 +233,10 @@ public final class GboardNintypeRuntime {
     private static final Set<Class<?>> probedClasses = Collections.synchronizedSet(new HashSet<>());
     private static volatile Context cachedContext = null;
     private static volatile Object cachedSampleKeyView = null;
+    private static volatile Object lastGestureHandler = null;
+    private static volatile long lastActionDownTimeMs = 0L;
+    private static volatile boolean lastDownOnLetterArea = false;
+    private static volatile boolean nintypeEnabledCached = true;
     private static volatile boolean crashHandlerInstalled = false;
 
     static {
@@ -307,8 +313,11 @@ public final class GboardNintypeRuntime {
     public static void onGestureEventEntry(Object handler, MotionEvent event) {
         if (handler == null || event == null) return;
         try {
+            lastGestureHandler = handler;
             Context context = extractContext(handler);
-            if (context != null && !GboardNintypeSettings.readEnabled(context)) {
+            boolean enabled = (context == null) || GboardNintypeSettings.readEnabled(context);
+            nintypeEnabledCached = enabled;
+            if (!enabled) {
                 return;
             }
 
@@ -335,6 +344,9 @@ public final class GboardNintypeRuntime {
                     int pid = event.getPointerId(0);
                     float x = event.getX(0);
                     float y = event.getY(0);
+                    lastActionDownTimeMs = eventTime;
+                    boolean downOnLetter = session.geometry.isOnLetterArea(x, y);
+                    lastDownOnLetterArea = downOnLetter;
 
                     // Clear any lingering trail segment for this pointer
                     finishTrailForPointer(handler, pid, false);
@@ -358,17 +370,18 @@ public final class GboardNintypeRuntime {
                     }
 
                     // 2. WordComposer continuation:
-                    // If the user touches again within 380ms of last lift (or autospace timer was ticking),
+                    // If the user touches another letter within 380ms of last lift (or autospace timer was ticking),
                     // cancel autospace and keep existing wordTokens to continue the word in progress.
+                    // Tapping outside the letter area (Space/Enter/Backspace) always clears the word buffer.
                     long timeSinceLastUp = (session.lastTouchUpTimeMs > 0)
                             ? (eventTime - session.lastTouchUpTimeMs)
                             : Long.MAX_VALUE;
                     boolean wasAutospacing = session.autospaceTimerPending;
                     session.cancelAutospaceTimer();
 
-                    boolean isWordContinuing = wasAutospacing
+                    boolean isWordContinuing = downOnLetter && (wasAutospacing
                             || (timeSinceLastUp <= 380L && !session.wordTokens.isEmpty())
-                            || (session.activePointers.size() > 0);
+                            || (session.activePointers.size() > 0));
 
                     session.resetGestureState();
 
@@ -449,6 +462,7 @@ public final class GboardNintypeRuntime {
                     if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
                         session.nintypeTakeoverActive = true;
                         ensureTrailRecorderEnabled(handler);
+                        ensureGestureHandlerOwnsDispatcher(handler);
                     }
                     break;
                 }
@@ -492,6 +506,7 @@ public final class GboardNintypeRuntime {
                     if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
                         session.nintypeTakeoverActive = true;
                         ensureTrailRecorderEnabled(handler);
+                        ensureGestureHandlerOwnsDispatcher(handler);
                     }
                     break;
                 }
@@ -551,9 +566,9 @@ public final class GboardNintypeRuntime {
                         }
                     }
 
-                    boolean shouldDecodeNow = hasSwipe
-                            || (session.sawMultiTouch && session.completedTokens.size() >= 2)
-                            || (!session.wordTokens.isEmpty() && !session.completedTokens.isEmpty());
+                    // Only run Nintype decoding when at least one swipe occurred in the current word/gesture.
+                    // Pure multi-touch rollover taps remain on stock Gboard tap typing.
+                    boolean shouldDecodeNow = hasSwipe;
 
                     if (shouldDecodeNow) {
                         session.nintypeTakeoverActive = true;
@@ -572,8 +587,8 @@ public final class GboardNintypeRuntime {
                         session.autospaceRunnable = () -> finalizeComposingAndAutospace(handler, session, context, activeLang);
                         session.mainHandler.postDelayed(session.autospaceRunnable, 300L);
                     } else {
-                        // Single tap without any swipe yet:
-                        // Save in wordTokens buffer so subsequent taps/swipes within 380ms can combine
+                        // Single/rollover taps without any swipe yet:
+                        // Save in wordTokens buffer only if on letter area so subsequent swipes within 380ms can combine.
                         session.wordTokens.addAll(session.completedTokens);
                         session.completedTokens.clear();
                     }
@@ -618,12 +633,15 @@ public final class GboardNintypeRuntime {
     public static boolean shouldStartGesture(Object handler, boolean stockShouldStart) {
         if (handler == null) return stockShouldStart;
         try {
+            lastGestureHandler = handler;
+            if (!nintypeEnabledCached) return stockShouldStart;
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return stockShouldStart;
 
             if (stockShouldStart) {
                 ensureTrailRecorderEnabled(handler);
                 session.nintypeTakeoverActive = true;
+                ensureGestureHandlerOwnsDispatcher(handler);
                 return true;
             }
 
@@ -639,12 +657,119 @@ public final class GboardNintypeRuntime {
             if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
                 session.nintypeTakeoverActive = true;
                 ensureTrailRecorderEnabled(handler);
+                ensureGestureHandlerOwnsDispatcher(handler);
                 return true;
             }
         } catch (Throwable t) {
             Log.w(TAG, "shouldStartGesture error", t);
         }
         return stockShouldStart;
+    }
+
+    /**
+     * Injected right after reading `AbstractGestureMotionEventHandler.u` (`letterStarted`)
+     * before its `if-eqz -> return` guard in `g(MotionEvent)`.
+     */
+    public static boolean resolveLetterStarted(Object handler, boolean stockLetterStarted) {
+        if (handler == null) return stockLetterStarted;
+        try {
+            lastGestureHandler = handler;
+            if (stockLetterStarted || !nintypeEnabledCached) {
+                return stockLetterStarted;
+            }
+            HandlerSession session = SESSIONS.get(handler);
+            if (session != null && (session.sawMultiTouch
+                    || session.nintypeTakeoverActive
+                    || !session.completedTokens.isEmpty())) {
+                if (letterStartedField != null) {
+                    try {
+                        letterStartedField.setBoolean(handler, true);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                if (gestureResetField != null) {
+                    try {
+                        gestureResetField.setBoolean(handler, false);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                return true;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "resolveLetterStarted error", t);
+        }
+        return stockLetterStarted;
+    }
+
+    /**
+     * Implements `AbstractGestureMotionEventHandler.gu()Z` override so dispatcher ownership
+     * changes away from BasicMotionEventHandler do not cancel active multi-touch state.
+     */
+    public static boolean shouldReceiveEventsDuringOtherOwner(Object handler) {
+        if (handler == null || !nintypeEnabledCached) return false;
+        try {
+            lastGestureHandler = handler;
+            HandlerSession session = SESSIONS.get(handler);
+            return session != null && (session.activePointers.size() > 0
+                    || session.sawMultiTouch
+                    || session.nintypeTakeoverActive);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Injected at entry of `BasicMotionEventHandler.t(MotionEvent)`.
+     * Suppresses tap/popup handling once Nintype takeover is active, while keeping fresh ACTION_DOWN
+     * events intact for normal single-finger and rollover taps.
+     */
+    public static boolean shouldSuppressBasicMotionEventHandler(Object basicHandler, MotionEvent event) {
+        if (!nintypeEnabledCached || event == null) return false;
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) return false;
+        try {
+            Object gestureHandler = lastGestureHandler;
+            if (gestureHandler == null) return false;
+            HandlerSession session = SESSIONS.get(gestureHandler);
+            return session != null && session.nintypeTakeoverActive;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Injected in `Lqil.c(MotionEvent, Z)` right before prematurely committing pointer 0 on
+     * `ACTION_POINTER_DOWN`. Suppresses rollover commit when two thumbs land on letter keys within
+     * the simultaneous multi-touch window (220ms) or while Nintype takeover is active.
+     */
+    public static boolean shouldSuppressRolloverCommitOnPointerDown(MotionEvent event) {
+        if (!nintypeEnabledCached || event == null) return false;
+        if (event.getActionMasked() != MotionEvent.ACTION_POINTER_DOWN) return false;
+        try {
+            Object gestureHandler = lastGestureHandler;
+            if (gestureHandler == null) return false;
+            HandlerSession session = SESSIONS.get(gestureHandler);
+            if (session == null || !session.geometryReady) return false;
+            if (session.nintypeTakeoverActive) return true;
+
+            long deltaMs = event.getEventTime() - lastActionDownTimeMs;
+            if (!lastDownOnLetterArea || deltaMs < 0L || deltaMs > 220L) {
+                return false;
+            }
+            int actionIdx = event.getActionIndex();
+            if (actionIdx < 0 || actionIdx >= event.getPointerCount()) return false;
+            float newX = event.getX(actionIdx);
+            float newY = event.getY(actionIdx);
+            if (!session.geometry.isOnLetterArea(newX, newY)) return false;
+
+            if (event.getPointerCount() >= 2) {
+                float firstX = event.getX(0);
+                float firstY = event.getY(0);
+                return session.geometry.isOnLetterArea(firstX, firstY);
+            }
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     /**
@@ -705,7 +830,49 @@ public final class GboardNintypeRuntime {
             if (hostBridgeField != null && claimOwnershipMethod != null) {
                 Object bridge = hostBridgeField.get(handler);
                 if (bridge != null) {
+                    preemptOtherDispatcherOwner(bridge, handler);
                     claimOwnershipMethod.invoke(bridge);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void preemptOtherDispatcherOwner(Object bridge, Object gestureHandler) {
+        try {
+            Field dispField = bridgeDispatcherField;
+            if (dispField == null) {
+                for (Field f : bridge.getClass().getDeclaredFields()) {
+                    Class<?> type = f.getType();
+                    if (!type.isPrimitive() && !type.isInterface()) {
+                        f.setAccessible(true);
+                        dispField = f;
+                        bridgeDispatcherField = f;
+                        break;
+                    }
+                }
+            }
+            if (dispField == null) return;
+            Object dispatcher = dispField.get(bridge);
+            if (dispatcher == null) return;
+
+            Field ownerField = dispatcherOwnerField;
+            if (ownerField == null) {
+                Class<?> handlerCls = gestureHandler.getClass();
+                for (Field f : dispatcher.getClass().getDeclaredFields()) {
+                    Class<?> type = f.getType();
+                    if (type.isInterface() && type.isAssignableFrom(handlerCls)) {
+                        f.setAccessible(true);
+                        ownerField = f;
+                        dispatcherOwnerField = f;
+                        break;
+                    }
+                }
+            }
+            if (ownerField != null) {
+                Object currentOwner = ownerField.get(dispatcher);
+                if (currentOwner != null && currentOwner != gestureHandler) {
+                    ownerField.set(dispatcher, null);
                 }
             }
         } catch (Throwable ignored) {
