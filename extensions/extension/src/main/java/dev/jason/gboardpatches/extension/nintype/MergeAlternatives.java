@@ -648,6 +648,10 @@ public final class MergeAlternatives {
         return buildHalves(s, cut, v1Resume(path, cut, kw), kw, true);
     }
 
+    public static SplitVariant splitAtOwnContact(NintypeInputToken s, long t, float kw) {
+        return splitAtContact(s, t, kw);
+    }
+
     private static int nearestIndex(List<NintypeInputToken.TouchPoint> path, long t) {
         int best = 0;
         long bestDt = Long.MAX_VALUE;

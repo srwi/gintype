@@ -456,7 +456,7 @@ public final class ThumbBeam {
             int lastCode0, int lastCode1,
             float ideal0, float ideal1
     ) {
-        int maxDesc = trie.getMaxSubtreeFreq(child);
+        int maxDesc = Math.min(255, trie.getMaxSubtreeFreq(child));
         float fwMax = KineticaConstants.FREQ_WEIGHT_FLOOR +
                 (1.0f - KineticaConstants.FREQ_WEIGHT_FLOOR) * (maxDesc / 255.0f);
         float priority = cost + tapPen - KineticaConstants.BEAM_FREQ_WEIGHT * (float) Math.log(fwMax);

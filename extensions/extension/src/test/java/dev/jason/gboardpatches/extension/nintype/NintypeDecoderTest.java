@@ -8,6 +8,9 @@ import static org.junit.Assert.assertTrue;
 import dev.jason.gboardpatches.extension.nintype.NintypeGeometry.KeySpec;
 import dev.jason.gboardpatches.extension.nintype.NintypeInputToken.TouchPoint;
 import dev.jason.gboardpatches.extension.nintype.NintypeInputToken.WordCandidate;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,23 +30,23 @@ public class NintypeDecoderTest {
         trie = new NintypeTrie(4096);
         bigrams = new NintypeBigramTable();
 
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "hallo", 85000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "halten", 40000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "heute", 92000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "Welt", 78000, true, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "müssen", 88000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "schreiben", 75000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "wir", 98000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "als", 95000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "las", 42000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "as", 25000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "sie", 97000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "Hunde", 70000, true, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "hunde", 70000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "wie", 96000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "nochmal", 91000, false, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "Monica", 20000, true, "de", false);
-        NintypeDictionaryLoader.insertWordIntoTrie(trie, "sempre", 84000, false, "it", false);
+        insertQuantized("hallo", 85000, false, "de");
+        insertQuantized("halten", 40000, false, "de");
+        insertQuantized("heute", 92000, false, "de");
+        insertQuantized("Welt", 78000, true, "de");
+        insertQuantized("müssen", 88000, false, "de");
+        insertQuantized("schreiben", 75000, false, "de");
+        insertQuantized("wir", 98000, false, "de");
+        insertQuantized("als", 95000, false, "de");
+        insertQuantized("las", 42000, false, "de");
+        insertQuantized("as", 25000, false, "de");
+        insertQuantized("sie", 97000, false, "de");
+        insertQuantized("Hunde", 70000, true, "de");
+        insertQuantized("hunde", 70000, false, "de");
+        insertQuantized("wie", 96000, false, "de");
+        insertQuantized("nochmal", 91000, false, "de");
+        insertQuantized("Monica", 20000, true, "de");
+        insertQuantized("sempre", 84000, false, "it");
 
         bigrams.put("wir", "müssen", 1200);
         bigrams.put("wir", "schreiben", 900);
@@ -329,6 +332,111 @@ public class NintypeDecoderTest {
                 Arrays.asList(noisy), trie, bigrams, geometry, null);
         assertFalse(results.isEmpty());
         assertEquals("hallo", results.get(0).word);
+    }
+
+    @Test
+    public void quantizedCorpusFrequenciesPreventShortWordDomination() throws IOException {
+        String corpus = ""
+                + "ich\t5890279\t0\n"
+                + "ist\t2900000\t0\n"
+                + "hallo\t85000\t0\n"
+                + "schreiben\t75000\t0\n"
+                + "schreibt\t12000\t0\n";
+        NintypeTrie loaded = NintypeDictionaryLoader.loadTrieFromStream(
+                new ByteArrayInputStream(corpus.getBytes(StandardCharsets.UTF_8)), "de", false);
+
+        int ichFreq = loaded.lookupFrequency("ich");
+        int schreibenFreq = loaded.lookupFrequency("schreiben");
+        assertTrue("Expected quantized frequency in [1,255], was " + ichFreq, ichFreq >= 1 && ichFreq <= 255);
+        assertTrue("Expected quantized frequency in [1,255], was " + schreibenFreq,
+                schreibenFreq >= 1 && schreibenFreq <= 255);
+        assertTrue(ichFreq > schreibenFreq);
+
+        NintypeInputToken leftSwipe = buildSwipeToken(0, "scre", 100L, 380L);
+        NintypeInputToken rightSwipe = buildSwipeToken(1, "hibn", 160L, 460L);
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(leftSwipe, rightSwipe), loaded, new NintypeBigramTable(), geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("schreiben", results.get(0).word);
+    }
+
+    @Test
+    public void streamPassDecodesInterleavedHandoverWithinAllowance() {
+        // Right thumb swipes m->u->n (100..440ms), left thumb swipes e->s->e (190..380ms)
+        // Right thumb finishes 'u' slightly around the time left starts 'e'; 1 cut (mu|n) decodes "müssen".
+        NintypeInputToken rightSwipe = buildSwipeTokenWithContacts(1, 1, "mun", 100L, 440L);
+        NintypeInputToken leftSwipe = buildSwipeTokenWithContacts(0, 0, "ese", 190L, 380L);
+
+        List<WordCandidate> streamResults = decoder.streamPassOnly(
+                Arrays.asList(rightSwipe, leftSwipe), trie, bigrams, geometry, null);
+        assertFalse(streamResults.isEmpty());
+        assertEquals("müssen", streamResults.get(0).word);
+
+        // Also verify stream pass decodes interleaved swipe + double-handover taps ("nochmal": c, a + swipe "nohml")
+        KeySpec cKey = geometry.keySpec('c');
+        KeySpec aKey = geometry.keySpec('a');
+        NintypeInputToken tapC = NintypeInputToken.tap(0, 0, 'c', cKey.centerX, cKey.centerY, 180L, 210L);
+        NintypeInputToken tapA = NintypeInputToken.tap(0, 0, 'a', aKey.centerX, aKey.centerY, 320L, 350L);
+        NintypeInputToken swipeNohml = buildSwipeTokenWithContacts(1, 1, "nohml", 100L, 440L);
+        List<WordCandidate> mixedStream = decoder.streamPassOnly(
+                Arrays.asList(swipeNohml, tapC, tapA), trie, bigrams, geometry, null);
+        assertFalse(mixedStream.isEmpty());
+        assertEquals("nochmal", mixedStream.get(0).word);
+    }
+
+    @Test
+    public void runtimePointerTrackRejectsJitterAndDropsRestingFinger() {
+        KeySpec kKey = geometry.keySpec('k');
+        assertNotNull(kKey);
+        float swipeThreshold = Math.max(22f, geometry.keyWidthPx * 0.24f);
+
+        GboardNintypeRuntime.PointerTrack jitterTrack = new GboardNintypeRuntime.PointerTrack(
+                0, kKey.centerX, kKey.centerY, 100L, 'k', true, 1, geometry);
+        jitterTrack.overlapped = true;
+        // Oscillate 6px back and forth: cumulative arc > swipeThreshold, net displacement ~6px
+        for (int i = 1; i <= 10; i++) {
+            float dx = (i % 2 == 0) ? 0f : 6f;
+            jitterTrack.addPoint(kKey.centerX + dx, kKey.centerY, 100L + i * 50L, geometry);
+        }
+        assertFalse(jitterTrack.isSwipe(swipeThreshold));
+        assertTrue(jitterTrack.isRestingFinger(swipeThreshold));
+    }
+
+    private void insertQuantized(String word, int rawCount, boolean isProperFlag, String lang) {
+        int freqByte = NintypeTrie.freqByteFor(rawCount, 98_000L);
+        NintypeDictionaryLoader.insertWordIntoTrie(trie, word, freqByte, isProperFlag, lang, false);
+    }
+
+    private NintypeInputToken buildSwipeTokenWithContacts(
+            int pointerId,
+            int streamId,
+            String keySequence,
+            long startTimeMs,
+            long endTimeMs
+    ) {
+        NintypeInputToken base = buildSwipeToken(pointerId, keySequence, startTimeMs, endTimeMs);
+        List<NintypeInputToken.KeyContact> contacts = new ArrayList<>(keySequence.length());
+        long totalSpan = Math.max(1L, base.endTimeMs - startTimeMs);
+        int n = keySequence.length();
+        for (int i = 0; i < n; i++) {
+            int code = NintypeAlphabet.charIndex(keySequence.charAt(i));
+            if (code < 0) continue;
+            long enter = startTimeMs + (totalSpan * i) / n;
+            long exit = startTimeMs + (totalSpan * (i + 1)) / n;
+            contacts.add(new NintypeInputToken.KeyContact(code, enter, exit));
+        }
+        return NintypeInputToken.swipe(
+                pointerId,
+                streamId,
+                base.points,
+                base.pathLengthPx,
+                base.startTimeMs,
+                base.endTimeMs,
+                contacts,
+                java.util.Collections.emptyList(),
+                false,
+                false
+        );
     }
 
     private NintypeInputToken buildSwipeToken(

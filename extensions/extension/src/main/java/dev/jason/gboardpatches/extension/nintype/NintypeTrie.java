@@ -82,6 +82,16 @@ public final class NintypeTrie {
         return id;
     }
 
+    /**
+     * Log-quantizes a raw corpus frequency count into [1, 255], matching Kinetica's Trie.freqByteFor.
+     */
+    public static int freqByteFor(int count, long maxCount) {
+        if (count <= 0) return 1;
+        long effectiveMax = Math.max(1L, maxCount);
+        double ratio = Math.log(1.0 + count) / Math.log(1.0 + effectiveMax);
+        return Math.max(1, Math.min(255, (int) (255.0 * ratio)));
+    }
+
     public void insert(String word, int freq) {
         insert(word, freq, null, false);
     }

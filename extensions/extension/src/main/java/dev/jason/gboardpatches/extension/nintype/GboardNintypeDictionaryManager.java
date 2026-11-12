@@ -40,6 +40,7 @@ public final class GboardNintypeDictionaryManager {
 
     private static final Map<String, LanguagePack> PACKS = new ConcurrentHashMap<>();
     private static final Map<String, Boolean> LOADING = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> COMMIT_COUNTS = new ConcurrentHashMap<>();
     private static final ExecutorService LOADER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "GboardNintypeDictLoader");
         t.setDaemon(true);
@@ -167,10 +168,10 @@ public final class GboardNintypeDictionaryManager {
                         String word = (wordCol >= 0) ? cursor.getString(wordCol) : null;
                         if (word != null && word.length() >= 2) {
                             int rawFreq = (freqCol >= 0) ? cursor.getInt(freqCol) : 128;
-                            int boostedFreq = Math.max(25_000, rawFreq * 350);
+                            int freqByte = Math.max(120, Math.min(255, rawFreq > 0 ? rawFreq : 128));
                             boolean isProper = Character.isUpperCase(word.charAt(0));
                             NintypeDictionaryLoader.insertWordIntoTrie(
-                                    trie, word, boostedFreq, isProper, lang, false);
+                                    trie, word, freqByte, isProper, lang, false);
                         }
                     } while (cursor.moveToNext());
                 }
@@ -238,10 +239,14 @@ public final class GboardNintypeDictionaryManager {
         LanguagePack pack = PACKS.get(key);
         if (pack == null) return;
 
-        int existingFreq = pack.trie.lookupFrequency(committedWord);
-        int boostedFreq = Math.max(existingFreq + 250, 15_000);
-        NintypeDictionaryLoader.insertWordIntoTrie(
-                pack.trie, committedWord, boostedFreq, false, key, false);
+        String countKey = key + "|" + committedWord.toLowerCase(Locale.ROOT);
+        int commits = COMMIT_COUNTS.merge(countKey, 1, Integer::sum);
+        if (commits >= KineticaConstants.PERSONAL_MERGE_MIN_COUNT) {
+            int existingFreq = pack.trie.lookupFrequency(committedWord);
+            int freqByte = Math.min(255, Math.max(128, existingFreq + 8));
+            NintypeDictionaryLoader.insertWordIntoTrie(
+                    pack.trie, committedWord, freqByte, false, key, false);
+        }
         if (prevWord != null && !prevWord.isEmpty()) {
             pack.bigrams.put(prevWord, committedWord, 50);
         }

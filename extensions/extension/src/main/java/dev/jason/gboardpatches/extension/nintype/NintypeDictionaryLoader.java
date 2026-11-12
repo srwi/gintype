@@ -5,6 +5,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -25,12 +29,27 @@ public final class NintypeDictionaryLoader {
         }
     }
 
+    private static final class ParsedEntry {
+        final String word;
+        int count;
+        boolean isProper;
+
+        ParsedEntry(String word, int count, boolean isProper) {
+            this.word = word;
+            this.count = count;
+            this.isProper = isProper;
+        }
+    }
+
     public static NintypeTrie loadTrieFromStream(
             InputStream stream,
             String lang,
             boolean hasDedicatedUmlautKeys
     ) throws IOException {
-        NintypeTrie trie = new NintypeTrie(300_000);
+        List<ParsedEntry> entries = new ArrayList<>(65_536);
+        Map<String, Integer> indexByDisplay = new HashMap<>(65_536);
+        long maxCount = 1L;
+
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -64,9 +83,29 @@ public final class NintypeDictionaryLoader {
                     rawWord = trimmed;
                     freq = 1000;
                 }
+                if (rawWord.isEmpty()) continue;
 
-                insertWordIntoTrie(trie, rawWord, freq, flag == 1, lang, hasDedicatedUmlautKeys);
+                Integer existingIdx = indexByDisplay.get(rawWord);
+                if (existingIdx != null) {
+                    ParsedEntry prev = entries.get(existingIdx);
+                    long sum = (long) prev.count + (long) freq;
+                    prev.count = (int) Math.min(Integer.MAX_VALUE, sum);
+                    if (flag == 1) prev.isProper = true;
+                    if (prev.count > maxCount) maxCount = prev.count;
+                } else {
+                    int clampedFreq = Math.max(1, freq);
+                    indexByDisplay.put(rawWord, entries.size());
+                    entries.add(new ParsedEntry(rawWord, clampedFreq, flag == 1));
+                    if (clampedFreq > maxCount) maxCount = clampedFreq;
+                }
             }
+        }
+
+        NintypeTrie trie = new NintypeTrie(Math.max(4096, entries.size() * 4));
+        for (int i = 0; i < entries.size(); i++) {
+            ParsedEntry entry = entries.get(i);
+            int freqByte = NintypeTrie.freqByteFor(entry.count, maxCount);
+            insertWordIntoTrie(trie, entry.word, freqByte, entry.isProper, lang, hasDedicatedUmlautKeys);
         }
         trie.compact();
         return trie;

@@ -59,6 +59,17 @@ public final class KineticaConstants {
     public static final int RESCUE_MAX_ATTEMPTS = 200;
     public static final int BEAM_MAX_NEW = 2;
 
+    public static final int MAX_SEARCH_CUTS = 2;
+    public static final int STREAM_SEARCH_GATE = 1;
+    public static final int STREAM_SEARCH_MAX_CUTS = 3;
+    public static final int MAX_SEARCH_CUT_TIMES = 8;
+    public static final boolean STREAM_SEARCH_OWN_CUTS = true;
+    public static final boolean STREAM_SEARCH_OWN_CUT_CLOSES_ON_KEY = true;
+    public static final boolean STREAM_SEARCH_CLOSE_INSIDE_LAST_KEY = true;
+
+    public static final long RESTING_FINGER_MIN_MS = 400L;
+    public static final int PERSONAL_MERGE_MIN_COUNT = 2;
+
     public static final float STICKY_INFLATE_KW = 0.2f;
     public static final long DWELL_MIN_MS = 150L;
     public static final float DWELL_RADIUS_KW = 0.3f;

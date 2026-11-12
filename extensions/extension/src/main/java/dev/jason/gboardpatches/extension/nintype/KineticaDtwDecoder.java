@@ -5,10 +5,12 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Continuous Dynamic Time Warping (DTW) multi-finger & single-finger swipe decoder.
@@ -80,6 +82,16 @@ public final class KineticaDtwDecoder {
         public float minScore() {
             if (pq.isEmpty()) return 0f;
             return pq.peek().score;
+        }
+
+        public Candidate best() {
+            Candidate best = null;
+            for (Candidate c : pq) {
+                if (best == null || c.score > best.score) {
+                    best = c;
+                }
+            }
+            return best;
         }
 
         public List<Candidate> sortedCandidatesDescending() {
@@ -166,58 +178,237 @@ public final class KineticaDtwDecoder {
         }
 
         CandidateHeap heap = new CandidateHeap(KineticaConstants.TOP_K);
+        List<NintypeInputToken> primary = validSeqs.get(0);
+        List<KineticaMatcher> primaryPattern = patterns.get(0);
 
         // 1) Primary DFS passes across MergeAlternatives sequences (exact anchors)
         for (int i = 0; i < patterns.size(); i++) {
             runSearch(patterns.get(i), trie, bigrams, geometry, prevWord, heap, false, false, 0f);
         }
 
-        // 2) Dual-thumb beam search on primary sequence + Kinetica mergeBeam rules
-        List<Candidate> merged;
-        if (ThumbBeam.applies(validSeqs.get(0), patterns.get(0))) {
-            CandidateHeap beamHeap = new CandidateHeap(KineticaConstants.TOP_K);
-            ThumbBeam beam = new ThumbBeam(
-                    validSeqs.get(0), patterns.get(0), geometry, trie, bigrams, prevWord, beamHeap, dtw);
-            beam.run();
-            merged = mergeBeam(heap.sortedCandidatesDescending(), beamHeap.sortedCandidatesDescending());
-            heap = new CandidateHeap(KineticaConstants.TOP_K);
-            for (int i = 0; i < merged.size(); i++) {
-                heap.offer(merged.get(i));
+        // 2) Cutting pass over primary sequence: search places its own swipe cuts around other thumb events
+        if (!heap.isFull() && hasSwipeIn(primary) && primaryPattern.size() == primary.size()) {
+            Map<NintypeInputToken, long[]> cuts = cutCandidates(primary);
+            if (!cuts.isEmpty()) {
+                long[] itemStart = new long[primary.size()];
+                NintypeInputToken[] srcOf = new NintypeInputToken[primary.size()];
+                for (int i = 0; i < primary.size(); i++) {
+                    NintypeInputToken tok = primary.get(i);
+                    itemStart[i] = tok.startTimeMs;
+                    srcOf[i] = (tok.kind == NintypeInputToken.Kind.SWIPE) ? tok : null;
+                }
+                new Search(
+                        primaryPattern, trie, bigrams, geometry, prevWord, heap,
+                        false, false, 0f, itemStart, srcOf, cuts, null
+                ).run();
             }
-        } else {
-            merged = heap.sortedCandidatesDescending();
         }
 
-        // 3) Fuzzy anchor & adjacent-tap transposition fallbacks when list is underfilled
-        if (heap.size() < KineticaConstants.TOP_K) {
-            boolean anyAnchors = hasAnchors(patterns.get(0));
+        // 3) Two-thumb cursor stream pass (handles arbitrary interleaving & handover tolerance)
+        if (streamGateOpen(heap)) {
+            StreamPlan plan = streamPlan(primary, primaryPattern, geometry);
+            if (plan != null) {
+                new Search(
+                        primaryPattern, trie, bigrams, geometry, prevWord, heap,
+                        false, false, 0f, null, null, null, plan
+                ).run();
+            }
+        }
+
+        // 4) Fuzzy anchor & adjacent-tap transposition fallbacks when list is underfilled
+        if (!heap.isFull()) {
+            boolean anyAnchors = hasAnchors(primaryPattern);
             if (anyAnchors) {
                 for (int i = 0; i < patterns.size(); i++) {
                     runSearch(patterns.get(i), trie, bigrams, geometry, prevWord, heap, true, false, 0f);
                 }
             }
-            if (heap.size() < KineticaConstants.TOP_K && anyAnchors) {
-                List<List<KineticaMatcher>> transposed = transposedPatterns(patterns.get(0));
+            if (!heap.isFull() && anyAnchors) {
+                List<List<KineticaMatcher>> transposed = transposedPatterns(primaryPattern);
                 for (int i = 0; i < transposed.size(); i++) {
                     runSearch(
                             transposed.get(i), trie, bigrams, geometry, prevWord, heap,
                             false, false, KineticaConstants.TRANSPOSE_PENALTY);
                 }
             }
-            merged = heap.sortedCandidatesDescending();
         }
 
-        // 4) Rescue pass when nothing decoded or lead distance > RESCUE_MIN_LEAD_D
-        Candidate lead = merged.isEmpty() ? null : merged.get(0);
+        // 5) Rescue pass when nothing decoded or lead distance > RESCUE_MIN_LEAD_D
+        Candidate lead = heap.best();
         if (lead == null || lead.dTotal > KineticaConstants.RESCUE_MIN_LEAD_D) {
-            int rescueLimit = Math.min(patterns.size(), 4);
-            for (int i = 0; i < rescueLimit; i++) {
-                runSearch(patterns.get(i), trie, bigrams, geometry, prevWord, heap, true, true, 0f);
+            StreamPlan rescuePlan = streamPlan(primary, primaryPattern, geometry);
+            if (rescuePlan != null) {
+                new Search(
+                        primaryPattern, trie, bigrams, geometry, prevWord, heap,
+                        false, true, 0f, null, null, null, rescuePlan
+                ).run();
+            } else {
+                int rescueLimit = Math.min(patterns.size(), 4);
+                for (int i = 0; i < rescueLimit; i++) {
+                    runSearch(patterns.get(i), trie, bigrams, geometry, prevWord, heap, true, true, 0f);
+                }
             }
-            merged = heap.sortedCandidatesDescending();
+        }
+
+        // 6) Dual-thumb beam search on primary sequence + Kinetica mergeBeam rules
+        List<Candidate> passes = heap.sortedCandidatesDescending();
+        List<Candidate> merged;
+        if (ThumbBeam.applies(primary, primaryPattern)) {
+            CandidateHeap beamHeap = new CandidateHeap(KineticaConstants.TOP_K);
+            for (int i = 0; i < passes.size(); i++) {
+                beamHeap.offer(passes.get(i));
+            }
+            ThumbBeam beam = new ThumbBeam(
+                    primary, primaryPattern, geometry, trie, bigrams, prevWord, beamHeap, dtw);
+            beam.run();
+            merged = mergeBeam(passes, beamHeap.sortedCandidatesDescending());
+        } else {
+            merged = passes;
         }
 
         return toWordCandidates(merged);
+    }
+
+    /**
+     * Runs only the two-thumb stream pass regardless of {@link KineticaConstants#STREAM_SEARCH_GATE}
+     * (used for unit testing handover and cut rules directly).
+     */
+    List<NintypeInputToken.WordCandidate> streamPassOnly(
+            List<NintypeInputToken> tokens,
+            NintypeTrie trie,
+            NintypeBigramTable bigrams,
+            NintypeGeometry geometry,
+            String prevWord
+    ) {
+        if (tokens == null || tokens.isEmpty() || trie == null || geometry == null || !geometry.isValid()) {
+            return Collections.emptyList();
+        }
+        List<List<NintypeInputToken>> seqs = MergeAlternatives.sequences(tokens, geometry);
+        if (seqs.isEmpty()) return Collections.emptyList();
+        List<NintypeInputToken> primary = seqs.get(0);
+        List<KineticaMatcher> p = buildPattern(primary, geometry);
+        if (p == null || p.isEmpty()) return Collections.emptyList();
+        StreamPlan plan = streamPlan(primary, p, geometry);
+        if (plan == null) return Collections.emptyList();
+        CandidateHeap heap = new CandidateHeap(KineticaConstants.TOP_K);
+        new Search(p, trie, bigrams, geometry, prevWord, heap, false, false, 0f, null, null, null, plan).run();
+        return heap.sortedDescending();
+    }
+
+    private static boolean streamGateOpen(CandidateHeap heap) {
+        if (KineticaConstants.STREAM_SEARCH_GATE == 1) return !heap.isFull();
+        return KineticaConstants.STREAM_SEARCH_GATE == 3;
+    }
+
+    private static boolean hasSwipeIn(List<NintypeInputToken> tokens) {
+        for (int i = 0; i < tokens.size(); i++) {
+            NintypeInputToken t = tokens.get(i);
+            if (t.kind == NintypeInputToken.Kind.SWIPE && t.points != null && !t.points.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static final class StreamPlan {
+        final List<KineticaMatcher>[] items;
+        final List<NintypeInputToken>[] tokens;
+        final Map<NintypeInputToken, long[]> cuts;
+
+        StreamPlan(
+                List<KineticaMatcher>[] items,
+                List<NintypeInputToken>[] tokens,
+                Map<NintypeInputToken, long[]> cuts
+        ) {
+            this.items = items;
+            this.tokens = tokens;
+            this.cuts = cuts;
+        }
+    }
+
+    private static final class Halves {
+        final KineticaMatcher.Segment head;
+        final KineticaMatcher.Segment tail;
+        final NintypeInputToken tailToken;
+
+        Halves(KineticaMatcher.Segment head, KineticaMatcher.Segment tail, NintypeInputToken tailToken) {
+            this.head = head;
+            this.tail = tail;
+            this.tailToken = tailToken;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private StreamPlan streamPlan(
+            List<NintypeInputToken> primary,
+            List<KineticaMatcher> pattern,
+            NintypeGeometry geometry
+    ) {
+        if (pattern.size() != primary.size() || !hasSwipeIn(primary)) return null;
+        List<KineticaMatcher>[] itemsByStream = new List[]{new ArrayList<>(), new ArrayList<>()};
+        List<NintypeInputToken>[] tokensByStream = new List[]{new ArrayList<>(), new ArrayList<>()};
+        for (int i = 0; i < primary.size(); i++) {
+            NintypeInputToken t = primary.get(i);
+            int s = (t.streamId == 1) ? 1 : 0;
+            itemsByStream[s].add(pattern.get(i));
+            tokensByStream[s].add(t);
+        }
+        if (itemsByStream[0].isEmpty() || itemsByStream[1].isEmpty()) return null;
+        return new StreamPlan(itemsByStream, tokensByStream, cutCandidates(primary));
+    }
+
+    private static Map<NintypeInputToken, long[]> cutCandidates(List<NintypeInputToken> primary) {
+        Map<NintypeInputToken, long[]> out = new IdentityHashMap<>();
+        for (int i = 0; i < primary.size(); i++) {
+            NintypeInputToken tok = primary.get(i);
+            if (tok.kind != NintypeInputToken.Kind.SWIPE) continue;
+            TreeSet<Long> times = new TreeSet<>();
+            for (int k = 0; k < primary.size(); k++) {
+                if (k == i) continue;
+                NintypeInputToken o = primary.get(k);
+                if (o.streamId == tok.streamId) continue;
+                if (o.startTimeMs > tok.startTimeMs && o.startTimeMs < tok.endTimeMs) {
+                    times.add(o.startTimeMs);
+                }
+                if (o.endTimeMs > tok.startTimeMs && o.endTimeMs < tok.endTimeMs) {
+                    times.add(o.endTimeMs);
+                }
+                if (o.kind == NintypeInputToken.Kind.SWIPE && o.keyContacts != null) {
+                    for (int ci = 0; ci < o.keyContacts.size(); ci++) {
+                        long tEnter = o.keyContacts.get(ci).tEnter;
+                        if (tEnter > tok.startTimeMs && tEnter < tok.endTimeMs) {
+                            times.add(tEnter);
+                        }
+                    }
+                }
+            }
+            if (times.isEmpty()) continue;
+            int n = Math.min(times.size(), KineticaConstants.MAX_SEARCH_CUT_TIMES);
+            long[] arr = new long[n];
+            int idx = 0;
+            for (Long t : times) {
+                if (idx >= n) break;
+                arr[idx++] = t;
+            }
+            out.put(tok, arr);
+        }
+        return out;
+    }
+
+    private KineticaMatcher.Segment segmentFromToken(NintypeInputToken t, NintypeGeometry geometry) {
+        List<DtwMatcher.Point2D> ptsKw = new ArrayList<>(t.points.size());
+        for (int j = 0; j < t.points.size(); j++) {
+            NintypeInputToken.TouchPoint tp = t.points.get(j);
+            ptsKw.add(new DtwMatcher.Point2D(
+                    tp.x / geometry.keyWidthPx,
+                    tp.y / geometry.keyWidthPx,
+                    tp.timeMs
+            ));
+        }
+        return KineticaMatcher.buildSegment(
+                ptsKw, t.startTimeMs, t.endTimeMs, geometry, t.streamId, dtw,
+                t.keyContacts, t.softStart, t.softEnd
+        );
     }
 
     private List<KineticaMatcher> buildPattern(List<NintypeInputToken> seq, NintypeGeometry geometry) {
@@ -225,20 +416,7 @@ public final class KineticaDtwDecoder {
         for (int i = 0; i < seq.size(); i++) {
             NintypeInputToken t = seq.get(i);
             if (t.kind == NintypeInputToken.Kind.SWIPE && t.points != null && !t.points.isEmpty()) {
-                List<DtwMatcher.Point2D> ptsKw = new ArrayList<>(t.points.size());
-                for (int j = 0; j < t.points.size(); j++) {
-                    NintypeInputToken.TouchPoint tp = t.points.get(j);
-                    ptsKw.add(new DtwMatcher.Point2D(
-                            tp.x / geometry.keyWidthPx,
-                            tp.y / geometry.keyWidthPx,
-                            tp.timeMs
-                    ));
-                }
-                KineticaMatcher.Segment seg = KineticaMatcher.buildSegment(
-                        ptsKw, t.startTimeMs, t.endTimeMs, geometry, t.streamId, dtw,
-                        t.keyContacts, t.softStart, t.softEnd
-                );
-                items.add(seg);
+                items.add(segmentFromToken(t, geometry));
             } else if (t.kind == NintypeInputToken.Kind.TAP) {
                 int code = NintypeGeometry.foldSupportedCharIndex(t.character);
                 if (code < 0 || !geometry.hasKey(code)) {
@@ -333,7 +511,8 @@ public final class KineticaDtwDecoder {
             float extraPenalty
     ) {
         Search search = new Search(
-                pattern, trie, bigrams, geometry, prevWord, heap, fuzzyAnchors, rescue, extraPenalty);
+                pattern, trie, bigrams, geometry, prevWord, heap, fuzzyAnchors, rescue, extraPenalty,
+                null, null, null, null);
         search.run();
     }
 
@@ -348,14 +527,47 @@ public final class KineticaDtwDecoder {
         private final boolean rescue;
         private final float extraPenalty;
 
+        private final long[] itemStart;
+        private final NintypeInputToken[] srcOf;
+        private final Map<NintypeInputToken, long[]> cuts;
+        private final StreamPlan plan;
+        private final boolean cutting;
+        private final boolean streaming;
+
         private final int maxAttempts;
         private final int stepBudget;
         private final int[] restMin;
+        private final int[][] streamRestMin;
         private final KineticaMatcher.Segment[] pieceSeg =
                 new KineticaMatcher.Segment[KineticaConstants.MAX_WORD_LEN + 1];
         private final int[] pieceFrom = new int[KineticaConstants.MAX_WORD_LEN + 1];
         private final int[] pieceTo = new int[KineticaConstants.MAX_WORD_LEN + 1];
         private final int[][] childOrder = new int[KineticaConstants.MAX_WORD_LEN + 1][26];
+
+        private final Map<NintypeInputToken, Map<Long, Halves>> cutCache = new IdentityHashMap<>();
+        private final Map<NintypeInputToken, Map<Long, Halves>> ownCache = new IdentityHashMap<>();
+        private final KineticaMatcher.Segment[] pendingTail =
+                new KineticaMatcher.Segment[KineticaConstants.MAX_SEARCH_CUTS + 1];
+        private final long[] pendingStart = new long[KineticaConstants.MAX_SEARCH_CUTS + 1];
+        private final NintypeInputToken[] pendingToken =
+                new NintypeInputToken[KineticaConstants.MAX_SEARCH_CUTS + 1];
+        private final NintypeInputToken[] pendingOrigin =
+                new NintypeInputToken[KineticaConstants.MAX_SEARCH_CUTS + 1];
+        private int cutsOpen = 0;
+
+        // Stream pass state (one cursor per thumb)
+        private final int[] sCursor = new int[2];
+        private final KineticaMatcher.Segment[] sParked = new KineticaMatcher.Segment[2];
+        private final NintypeInputToken[] sParkedToken = new NintypeInputToken[2];
+        private final NintypeInputToken[] sParkedOrigin = new NintypeInputToken[2];
+        private long sLastT = Long.MIN_VALUE;
+        private int sLastStream = -1;
+        private boolean sMustSwitch = false;
+        private int sCutsMade = 0;
+        private long openFloorT = Long.MIN_VALUE;
+        private int openCloseLetter = -1;
+        private long openCloseEnter = Long.MAX_VALUE;
+        private int ownFrom = 0;
 
         private int pieceCount = 0;
         private int emitted = 0;
@@ -372,7 +584,11 @@ public final class KineticaDtwDecoder {
                 CandidateHeap heap,
                 boolean fuzzyAnchors,
                 boolean rescue,
-                float extraPenalty
+                float extraPenalty,
+                long[] itemStart,
+                NintypeInputToken[] srcOf,
+                Map<NintypeInputToken, long[]> cuts,
+                StreamPlan plan
         ) {
             this.pattern = pattern;
             this.trie = trie;
@@ -383,6 +599,12 @@ public final class KineticaDtwDecoder {
             this.fuzzyAnchors = fuzzyAnchors;
             this.rescue = rescue;
             this.extraPenalty = extraPenalty;
+            this.itemStart = itemStart;
+            this.srcOf = srcOf;
+            this.cuts = cuts;
+            this.plan = plan;
+            this.cutting = (itemStart != null && srcOf != null && cuts != null);
+            this.streaming = (plan != null);
             this.maxAttempts = rescue
                     ? KineticaConstants.RESCUE_MAX_ATTEMPTS
                     : KineticaConstants.MAX_EMIT_ATTEMPTS;
@@ -390,28 +612,446 @@ public final class KineticaDtwDecoder {
                     ? KineticaConstants.RESCUE_STEP_BUDGET
                     : KineticaConstants.STREAM_SEARCH_STEP_BUDGET;
 
-            this.restMin = new int[pattern.size() + 1];
-            for (int j = pattern.size() - 1; j >= 0; j--) {
-                KineticaMatcher m = pattern.get(j);
-                int need = (m instanceof KineticaMatcher.Segment)
-                        ? Math.max(1, ((KineticaMatcher.Segment) m).minLetters)
-                        : 1;
-                this.restMin[j] = this.restMin[j + 1] + need;
+            this.restMin = suffixMin(pattern);
+            if (plan != null) {
+                this.streamRestMin = new int[2][];
+                this.streamRestMin[0] = suffixMin(plan.items[0]);
+                this.streamRestMin[1] = suffixMin(plan.items[1]);
+            } else {
+                this.streamRestMin = null;
             }
         }
 
+        private int[] suffixMin(List<KineticaMatcher> items) {
+            int[] out = new int[items.size() + 1];
+            for (int j = items.size() - 1; j >= 0; j--) {
+                KineticaMatcher m = items.get(j);
+                int need = (m instanceof KineticaMatcher.Segment)
+                        ? Math.max(1, ((KineticaMatcher.Segment) m).minLetters)
+                        : 1;
+                out[j] = out[j + 1] + need;
+            }
+            return out;
+        }
+
+        private int restNeededAfter(int nextTi) {
+            if (streamRestMin != null) {
+                int need = 0;
+                for (int s = 0; s < 2; s++) {
+                    int[] sr = streamRestMin[s];
+                    need += sr[Math.min(sCursor[s], sr.length - 1)];
+                    if (sParked[s] != null) need++;
+                }
+                return need;
+            }
+            int need = restMin[Math.min(nextTi, pattern.size())];
+            for (int i = 0; i < pendingTail.length; i++) {
+                if (pendingTail[i] != null) need++;
+            }
+            return need;
+        }
+
+        private boolean stepsExhausted() {
+            if (rescue) return steps >= KineticaConstants.RESCUE_STEP_BUDGET || attempts >= maxAttempts;
+            if (streaming) return steps >= KineticaConstants.STREAM_SEARCH_STEP_BUDGET;
+            return false;
+        }
+
         private boolean branchExhausted() {
-            return emitted >= emitCap || attempts >= maxAttempts || steps >= stepBudget;
+            return emitted >= emitCap || attempts >= maxAttempts || stepsExhausted();
         }
 
         private boolean passExhausted() {
             return emitted >= KineticaConstants.MAX_CANDIDATES
                     || attempts >= maxAttempts
-                    || steps >= stepBudget;
+                    || stepsExhausted();
         }
 
         void run() {
-            descend(0, 0, 0, 0, 0, -1, -1, 0f, 0f, 1.0f, 1.0f);
+            if (streaming) {
+                streamNext(0, 0, 0f, 1.0f);
+            } else {
+                dfs(0, 0, 0, 0f, 1.0f);
+            }
+        }
+
+        // ---- Two-thumb cursor stream pass -----------------------------------------
+
+        private void streamNext(int node, int depth, float tapPen, float contactKeep) {
+            if (branchExhausted()) return;
+            boolean done = true;
+            for (int s = 0; s < 2; s++) {
+                if (sParked[s] != null || sCursor[s] < plan.items[s].size()) {
+                    done = false;
+                    break;
+                }
+            }
+            if (done) {
+                if (depth > 0 && trie.isWord(node)) emit(node, depth, tapPen, contactKeep);
+                return;
+            }
+            int first = (nextStart(0) <= nextStart(1)) ? 0 : 1;
+            for (int k = 0; k < 2; k++) {
+                int s = (k == 0) ? first : (1 - first);
+                if (sMustSwitch && s == sLastStream) continue;
+                openOn(s, node, depth, tapPen, contactKeep);
+            }
+        }
+
+        private long nextStart(int s) {
+            if (sParkedToken[s] != null) return sParkedToken[s].startTimeMs;
+            int idx = sCursor[s];
+            return (idx < plan.tokens[s].size()) ? plan.tokens[s].get(idx).startTimeMs : Long.MAX_VALUE;
+        }
+
+        private void openOn(int s, int node, int depth, float tapPen, float contactKeep) {
+            long floor = (sLastStream >= 0 && sLastStream != s)
+                    ? (sLastT - KineticaConstants.HANDOVER_ALLOWANCE_MS)
+                    : Long.MIN_VALUE;
+            KineticaMatcher.Segment parked = sParked[s];
+            if (parked != null) {
+                NintypeInputToken token = sParkedToken[s];
+                NintypeInputToken origin = sParkedOrigin[s];
+                sParked[s] = null;
+                sParkedToken[s] = null;
+                sParkedOrigin[s] = null;
+                openPiece(s, node, depth, tapPen, contactKeep, parked, token, origin, floor);
+                sParked[s] = parked;
+                sParkedToken[s] = token;
+                sParkedOrigin[s] = origin;
+                return;
+            }
+            int i = sCursor[s];
+            if (i >= plan.items[s].size()) return;
+            sCursor[s] = i + 1;
+            KineticaMatcher item = plan.items[s].get(i);
+            if (item instanceof KineticaMatcher.Anchor) {
+                KineticaMatcher.Anchor anc = (KineticaMatcher.Anchor) item;
+                if (anc.t >= floor) {
+                    streamAnchor(node, s, anc, depth, tapPen, contactKeep);
+                }
+            } else if (item instanceof KineticaMatcher.Segment) {
+                NintypeInputToken token = plan.tokens[s].get(i);
+                openPiece(s, node, depth, tapPen, contactKeep,
+                        (KineticaMatcher.Segment) item, token, token, floor);
+            }
+            sCursor[s] = i;
+        }
+
+        private void openPiece(
+                int s,
+                int node,
+                int depth,
+                float tapPen,
+                float contactKeep,
+                KineticaMatcher.Segment seg,
+                NintypeInputToken token,
+                NintypeInputToken origin,
+                long floor
+        ) {
+            long savedFloor = openFloorT;
+            int savedClose = openCloseLetter;
+            long savedCloseEnter = openCloseEnter;
+            openFloorT = floor;
+            openCloseLetter = -1;
+            openCloseEnter = Long.MAX_VALUE;
+
+            descend(node, 0, depth, depth, 0, 0f, -KineticaConstants.MONOTONE_SLACK, -1,
+                    tapPen, contactKeep, seg, 0);
+
+            long[] times = streamCutTimes(token, origin);
+            int ownStart = ownFrom;
+            if (times.length > 0 && sCutsMade < KineticaConstants.STREAM_SEARCH_MAX_CUTS) {
+                for (int i = 0; i < times.length; i++) {
+                    if (passExhausted()) break;
+                    long t = times[i];
+                    if (t <= token.startTimeMs || t >= token.endTimeMs) continue;
+                    Halves halves = (i < ownStart) ? cutHalves(token, t) : ownHalves(token, t);
+                    if (halves == null) continue;
+
+                    sCutsMade++;
+                    sParked[s] = halves.tail;
+                    sParkedToken[s] = halves.tailToken;
+                    sParkedOrigin[s] = origin;
+
+                    NintypeInputToken.KeyContact left = null;
+                    if (i >= ownStart && KineticaConstants.STREAM_SEARCH_OWN_CUT_CLOSES_ON_KEY
+                            && token.keyContacts != null) {
+                        for (int ci = 0; ci < token.keyContacts.size(); ci++) {
+                            NintypeInputToken.KeyContact kc = token.keyContacts.get(ci);
+                            if (kc.tExit == t) {
+                                left = kc;
+                                break;
+                            }
+                        }
+                    }
+                    openCloseLetter = (left != null) ? left.code : -1;
+                    openCloseEnter = (left != null && KineticaConstants.STREAM_SEARCH_CLOSE_INSIDE_LAST_KEY)
+                            ? left.tEnter
+                            : Long.MAX_VALUE;
+
+                    descend(node, 0, depth, depth, 0, 0f, -KineticaConstants.MONOTONE_SLACK, -1,
+                            tapPen, contactKeep, halves.head, 0);
+
+                    sParked[s] = null;
+                    sParkedToken[s] = null;
+                    sParkedOrigin[s] = null;
+                    sCutsMade--;
+                }
+            }
+            openFloorT = savedFloor;
+            openCloseLetter = savedClose;
+            openCloseEnter = savedCloseEnter;
+        }
+
+        private long[] streamCutTimes(NintypeInputToken token, NintypeInputToken origin) {
+            long[] other = plan.cuts.get(origin);
+            if (other == null) other = new long[0];
+            ownFrom = other.length;
+            if (!KineticaConstants.STREAM_SEARCH_OWN_CUTS || token.keyContacts == null
+                    || token.keyContacts.isEmpty()) {
+                return other;
+            }
+            List<Long> own = new ArrayList<>(token.keyContacts.size());
+            for (int i = 0; i < token.keyContacts.size(); i++) {
+                long tExit = token.keyContacts.get(i).tExit;
+                if (tExit <= token.startTimeMs || tExit >= token.endTimeMs) continue;
+                boolean dup = false;
+                for (int j = 0; j < other.length; j++) {
+                    if (other[j] == tExit) {
+                        dup = true;
+                        break;
+                    }
+                }
+                if (!dup) own.add(tExit);
+            }
+            if (own.isEmpty()) return other;
+            long[] combined = Arrays.copyOf(other, other.length + own.size());
+            for (int i = 0; i < own.size(); i++) {
+                combined[other.length + i] = own.get(i);
+            }
+            return combined;
+        }
+
+        private void streamAnchor(
+                int node,
+                int s,
+                KineticaMatcher.Anchor anc,
+                int depth,
+                float tapPen,
+                float contactKeep
+        ) {
+            if (depth >= KineticaConstants.MAX_WORD_LEN) return;
+            int next = trie.child(node, anc.code);
+            if (next != -1) {
+                wordLetters[depth] = anc.code;
+                afterLetter(next, depth + 1, tapPen, contactKeep, s, anc.t, false);
+                if (KineticaConstants.DOUBLE_TAP_PEN_KW >= 0f && depth + 1 < KineticaConstants.MAX_WORD_LEN) {
+                    int twice = trie.child(next, anc.code);
+                    if (twice != -1) {
+                        wordLetters[depth + 1] = anc.code;
+                        afterLetter(twice, depth + 2, tapPen + KineticaConstants.DOUBLE_TAP_PEN_KW,
+                                contactKeep, s, anc.t, false);
+                    }
+                }
+            }
+        }
+
+        private void afterLetter(
+                int node,
+                int depth,
+                float tapPen,
+                float contactKeep,
+                int s,
+                long t,
+                boolean isHead
+        ) {
+            long savedT = sLastT;
+            int savedStream = sLastStream;
+            boolean savedSwitch = sMustSwitch;
+            sLastT = t;
+            sLastStream = s;
+            sMustSwitch = isHead;
+            streamNext(node, depth, tapPen, contactKeep);
+            sLastT = savedT;
+            sLastStream = savedStream;
+            sMustSwitch = savedSwitch;
+        }
+
+        // ---- Standard & Cutting DFS passes ---------------------------------------
+
+        private void dfs(int node, int ti, int depth, float tapPen, float contactKeep) {
+            if (branchExhausted()) return;
+
+            int due = earliestPending(ti);
+            if (due >= 0) {
+                KineticaMatcher.Segment tail = pendingTail[due];
+                long start = pendingStart[due];
+                NintypeInputToken token = pendingToken[due];
+                NintypeInputToken origin = pendingOrigin[due];
+                pendingTail[due] = null;
+                descend(node, ti, depth, depth, 0, 0f, -KineticaConstants.MONOTONE_SLACK, -1,
+                        tapPen, contactKeep, tail, ti);
+                if (token != null && origin != null) {
+                    offerCuts(node, ti, depth, tapPen, contactKeep, token, origin, ti);
+                }
+                pendingTail[due] = tail;
+                pendingStart[due] = start;
+                pendingToken[due] = token;
+                pendingOrigin[due] = origin;
+                return;
+            }
+
+            if (ti == pattern.size()) {
+                if (depth > 0 && trie.isWord(node)) emit(node, depth, tapPen, contactKeep);
+                return;
+            }
+
+            KineticaMatcher m = pattern.get(ti);
+            if (m instanceof KineticaMatcher.Anchor) {
+                anchorStep(node, ti, depth, tapPen, contactKeep, (KineticaMatcher.Anchor) m);
+            } else if (m instanceof KineticaMatcher.Segment) {
+                KineticaMatcher.Segment seg = (KineticaMatcher.Segment) m;
+                descend(node, ti, depth, depth, 0, 0f, -KineticaConstants.MONOTONE_SLACK, -1,
+                        tapPen, contactKeep, seg, ti + 1);
+                if (srcOf != null && srcOf[ti] != null) {
+                    offerCuts(node, ti, depth, tapPen, contactKeep, srcOf[ti], srcOf[ti], ti + 1);
+                }
+            }
+        }
+
+        private void offerCuts(
+                int node,
+                int ti,
+                int depth,
+                float tapPen,
+                float contactKeep,
+                NintypeInputToken token,
+                NintypeInputToken origin,
+                int nextTi
+        ) {
+            if (!cutting) return;
+            if (cutsOpen >= KineticaConstants.MAX_SEARCH_CUTS) return;
+            long[] times = cuts.get(origin);
+            if (times == null) return;
+            int slot = cutsOpen;
+            for (int i = 0; i < times.length; i++) {
+                if (passExhausted()) return;
+                long t = times[i];
+                if (t <= token.startTimeMs || t >= token.endTimeMs) continue;
+                Halves halves = cutHalves(token, t);
+                if (halves == null) continue;
+                cutsOpen++;
+                pendingTail[slot] = halves.tail;
+                pendingStart[slot] = t;
+                pendingToken[slot] = halves.tailToken;
+                pendingOrigin[slot] = origin;
+                descend(node, ti, depth, depth, 0, 0f, -KineticaConstants.MONOTONE_SLACK, -1,
+                        tapPen, contactKeep, halves.head, nextTi);
+                pendingTail[slot] = null;
+                pendingToken[slot] = null;
+                pendingOrigin[slot] = null;
+                cutsOpen--;
+            }
+        }
+
+        private int earliestPending(int ti) {
+            int best = -1;
+            for (int i = 0; i < pendingTail.length; i++) {
+                if (pendingTail[i] == null) continue;
+                if (best < 0 || pendingStart[i] < pendingStart[best]) best = i;
+            }
+            if (best < 0) return -1;
+            if (ti < pattern.size() && !(itemStart[ti] > pendingStart[best])) return -1;
+            return best;
+        }
+
+        private Halves cutHalves(NintypeInputToken src, long t) {
+            Map<Long, Halves> perSwipe = cutCache.get(src);
+            if (perSwipe == null) {
+                perSwipe = new HashMap<>();
+                cutCache.put(src, perSwipe);
+            } else if (perSwipe.containsKey(t)) {
+                return perSwipe.get(t);
+            }
+            MergeAlternatives.SplitVariant split = MergeAlternatives.splitSwipe(src, t, geometry.keyWidthPx);
+            Halves built = (split != null)
+                    ? new Halves(segmentFromToken(split.first, geometry),
+                    segmentFromToken(split.second, geometry), split.second)
+                    : null;
+            perSwipe.put(t, built);
+            return built;
+        }
+
+        private Halves ownHalves(NintypeInputToken src, long t) {
+            Map<Long, Halves> perSwipe = ownCache.get(src);
+            if (perSwipe == null) {
+                perSwipe = new HashMap<>();
+                ownCache.put(src, perSwipe);
+            } else if (perSwipe.containsKey(t)) {
+                return perSwipe.get(t);
+            }
+            MergeAlternatives.SplitVariant split = MergeAlternatives.splitAtOwnContact(src, t, geometry.keyWidthPx);
+            Halves built = (split != null)
+                    ? new Halves(segmentFromToken(split.first, geometry),
+                    segmentFromToken(split.second, geometry), split.second)
+                    : null;
+            perSwipe.put(t, built);
+            return built;
+        }
+
+        private void anchorStep(
+                int node,
+                int ti,
+                int depth,
+                float tapPen,
+                float contactKeep,
+                KineticaMatcher.Anchor anc
+        ) {
+            if (depth >= KineticaConstants.MAX_WORD_LEN) return;
+            if (!fuzzyAnchors) {
+                tryAnchor(node, anc.code, 0f, ti, depth, tapPen, contactKeep);
+                return;
+            }
+            int[] order = childOrder[depth];
+            int nChildren = sortedChildren(node, depth, order);
+            for (int ci = 0; ci < nChildren; ci++) {
+                if (branchExhausted()) break;
+                int c = order[ci];
+                float pen;
+                if (c == anc.code) {
+                    pen = 0f;
+                } else {
+                    float d = geometry.distToCenterKw(anc.xKw, anc.yKw, c);
+                    if (d > KineticaConstants.FUZZY_TAP_RADIUS_KW) continue;
+                    pen = KineticaConstants.FUZZY_TAP_LAMBDA * d;
+                }
+                tryAnchor(node, c, pen, ti, depth, tapPen, contactKeep);
+            }
+        }
+
+        private void tryAnchor(
+                int node,
+                int code,
+                float penalty,
+                int ti,
+                int depth,
+                float tapPen,
+                float contactKeep
+        ) {
+            int next = trie.child(node, code);
+            if (next == -1) return;
+            wordLetters[depth] = code;
+            dfs(next, ti + 1, depth + 1, tapPen + penalty, contactKeep);
+            if (KineticaConstants.DOUBLE_TAP_PEN_KW >= 0f && depth + 1 < KineticaConstants.MAX_WORD_LEN
+                    && !branchExhausted()) {
+                int twice = trie.child(next, code);
+                if (twice != -1) {
+                    wordLetters[depth + 1] = code;
+                    dfs(twice, ti + 1, depth + 2, tapPen + penalty + KineticaConstants.DOUBLE_TAP_PEN_KW,
+                            contactKeep);
+                }
+            }
         }
 
         private int sortedChildren(int node, int depth, int[] outOrder) {
@@ -437,183 +1077,145 @@ public final class KineticaDtwDecoder {
 
         private void descend(
                 int node,
-                int depth,
                 int ti,
+                int depth,
                 int segStartDepth,
-                int segConsumed,
-                int segPrevPass,
-                int segLastCode,
-                float segIdeal,
+                int lettersInSeg,
+                float idealLen,
+                int lastIdx,
+                int prevLetter,
                 float tapPen,
-                float keep,
-                float segKeep
+                float contactKeep,
+                KineticaMatcher.Segment seg,
+                int nextTi
         ) {
             if (branchExhausted()) return;
-            steps++;
-            if (steps >= stepBudget) return;
-
-            if (ti == pattern.size()) {
-                if (trie.isWord(node)) {
-                    emit(node, depth, tapPen, keep);
-                }
-                return;
-            }
-
             if (depth >= KineticaConstants.MAX_WORD_LEN) return;
-            KineticaMatcher m = pattern.get(ti);
+            if (streaming || rescue) steps++;
 
-            if (m instanceof KineticaMatcher.Anchor) {
-                KineticaMatcher.Anchor anc = (KineticaMatcher.Anchor) m;
-                if (depth + 1 + restMin[ti + 1] > KineticaConstants.MAX_WORD_LEN) return;
+            int[] order = childOrder[depth];
+            int count = sortedChildren(node, depth, order);
+            if (count == 0) return;
 
-                if (!fuzzyAnchors) {
-                    int ch = trie.child(node, anc.code);
-                    if (ch != -1) {
-                        wordLetters[depth] = anc.code;
-                        descend(ch, depth + 1, ti + 1, depth + 1, 0, -1, -1, 0f, tapPen, keep, 1.0f);
-                        // Doubled letter from a single tap
-                        int ch2 = trie.child(ch, anc.code);
-                        if (ch2 != -1 && depth + 2 + restMin[ti + 1] <= KineticaConstants.MAX_WORD_LEN
-                                && !branchExhausted()) {
-                            wordLetters[depth + 1] = anc.code;
-                            descend(
-                                    ch2, depth + 2, ti + 1, depth + 2, 0, -1, -1, 0f,
-                                    tapPen + KineticaConstants.DOUBLE_TAP_PEN_KW, keep, 1.0f);
-                        }
-                    }
-                    return;
-                }
-
-                int[] order = childOrder[depth];
-                int nChildren = sortedChildren(node, depth, order);
-                for (int ci = 0; ci < nChildren; ci++) {
-                    if (branchExhausted()) break;
-                    int c = order[ci];
-                    float pen;
-                    if (c == anc.code) {
-                        pen = 0f;
-                    } else {
-                        float d = geometry.distToCenterKw(anc.xKw, anc.yKw, c);
-                        if (d > KineticaConstants.FUZZY_TAP_RADIUS_KW) continue;
-                        pen = KineticaConstants.FUZZY_TAP_LAMBDA * d;
-                    }
-                    int ch = trie.child(node, c);
-                    wordLetters[depth] = c;
-                    descend(ch, depth + 1, ti + 1, depth + 1, 0, -1, -1, 0f, tapPen + pen, keep, 1.0f);
-                    if (c == anc.code && depth + 2 + restMin[ti + 1] <= KineticaConstants.MAX_WORD_LEN
-                            && !branchExhausted()) {
-                        int ch2 = trie.child(ch, c);
-                        if (ch2 != -1) {
-                            wordLetters[depth + 1] = c;
-                            descend(
-                                    ch2, depth + 2, ti + 1, depth + 2, 0, -1, -1, 0f,
-                                    tapPen + KineticaConstants.DOUBLE_TAP_PEN_KW, keep, 1.0f);
-                        }
-                    }
-                }
+            int restNeed = restNeededAfter(nextTi);
+            if (depth + 1 + Math.max(0, seg.minLetters - (lettersInSeg + 1)) + restNeed
+                    > KineticaConstants.MAX_WORD_LEN) {
                 return;
             }
 
-            if (!(m instanceof KineticaMatcher.Segment)) return;
-            KineticaMatcher.Segment seg = (KineticaMatcher.Segment) m;
+            boolean rootFairness = (ti == 0 && depth == 0 && lettersInSeg == 0);
+            int remainingStarts = 0;
+            if (rootFairness) {
+                for (int i = 0; i < count; i++) {
+                    int code = order[i];
+                    if (!geometry.hasKey(code)) continue;
+                    boolean ok = seg.softStart
+                            ? (seg.passAtOrAfter(code, lastIdx - KineticaConstants.MONOTONE_SLACK) != -1)
+                            : seg.isStart(code);
+                    if (ok) remainingStarts++;
+                }
+                int best = -1;
+                float bestD = Float.MAX_VALUE;
+                for (int i = 0; i < count; i++) {
+                    int code = order[i];
+                    if (!geometry.hasKey(code)) continue;
+                    float d = geometry.distToCenterKw(seg.resampled[0], seg.resampled[1], code);
+                    if (d < bestD) {
+                        bestD = d;
+                        best = i;
+                    }
+                }
+                if (best > 0) {
+                    int nearest = order[best];
+                    for (int j = best; j >= 1; j--) order[j] = order[j - 1];
+                    order[0] = nearest;
+                }
+            }
+            boolean firstStart = rootFairness;
 
-            if (segConsumed == 0) {
-                if (depth + seg.minLetters + restMin[ti + 1] > KineticaConstants.MAX_WORD_LEN) return;
-                int[] order = childOrder[depth];
-                int nChildren = sortedChildren(node, depth, order);
+            for (int i = 0; i < count; i++) {
+                if (passExhausted()) return;
+                if (rootFairness && remainingStarts > 0) {
+                    int share = firstStart
+                            ? (KineticaConstants.MAX_CANDIDATES / 2)
+                            : Math.max(1, (KineticaConstants.MAX_CANDIDATES - emitted) / remainingStarts);
+                    emitCap = Math.min(KineticaConstants.MAX_CANDIDATES, emitted + share);
+                }
 
-                // Count admissible root branches for start-subtree fairness slicing
-                boolean atRoot = (depth == 0);
-                int rootBranches = 0;
-                if (atRoot) {
-                    for (int ci = 0; ci < nChildren; ci++) {
-                        int c = order[ci];
-                        boolean okStart = seg.softStart ? seg.isNear(c) : (seg.isStart(c) || (rescue && seg.isNear(c)));
-                        if (okStart && seg.passAtOrAfter(c, -KineticaConstants.MONOTONE_SLACK) >= 0) {
-                            rootBranches++;
+                int code = order[i];
+                if (!geometry.hasKey(code)) continue;
+                int child = trie.child(node, code);
+                if (child == -1) continue;
+
+                int pass = seg.passAtOrAfter(code, lastIdx - KineticaConstants.MONOTONE_SLACK);
+                float startKeep = 1.0f;
+                if (lettersInSeg == 0) {
+                    if (seg.softStart) {
+                        if (pass == -1) continue;
+                    } else if (!seg.isStart(code)) {
+                        if (rescue && pass != -1) {
+                            startKeep = KineticaConstants.RESCUE_GATE_KEEP;
+                        } else {
+                            continue;
                         }
                     }
-                }
-
-                int remainingBranches = rootBranches;
-                for (int ci = 0; ci < nChildren; ci++) {
-                    if (atRoot ? passExhausted() : branchExhausted()) break;
-                    int c = order[ci];
-                    boolean naturalStart = seg.softStart || seg.isStart(c);
-                    if (!naturalStart && (!rescue || !seg.isNear(c))) continue;
-                    int pass = seg.passAtOrAfter(c, -KineticaConstants.MONOTONE_SLACK);
-                    if (pass < 0) continue;
-
-                    int prevCap = emitCap;
-                    if (atRoot && remainingBranches > 0) {
-                        int remBudget = KineticaConstants.MAX_CANDIDATES - emitted;
-                        int slice = Math.max(1, (remBudget + remainingBranches - 1) / remainingBranches);
-                        emitCap = Math.min(KineticaConstants.MAX_CANDIDATES, emitted + slice);
-                        remainingBranches--;
+                    if (streaming && openFloorT != Long.MIN_VALUE
+                            && seg.letterTime(code, Math.max(pass, 0)) < openFloorT) {
+                        continue;
                     }
+                } else {
+                    if (pass == -1) continue;
+                }
 
-                    int ch = trie.child(node, c);
-                    float nextKeep = naturalStart ? 1.0f : KineticaConstants.RESCUE_GATE_KEEP;
-                    if (!seg.isContacted(c)) {
-                        nextKeep *= KineticaConstants.UNCONTACTED_LETTER_KEEP;
-                    }
-                    wordLetters[depth] = c;
-                    descend(ch, depth + 1, ti, depth, 1, pass, c, 0f, tapPen, keep, nextKeep);
-                    emitCap = prevCap;
+                float step = (lettersInSeg == 0 || prevLetter == code)
+                        ? 0f
+                        : geometry.keyDist(prevLetter, code);
+                float len2 = idealLen + step;
+                if (len2 > KineticaConstants.LEN_BAND_HI * seg.arcLen + KineticaConstants.LEN_BAND_MARGIN_KW) {
+                    continue;
                 }
-                return;
-            }
 
-            // Segment already open: try closing if minLetters reached
-            if (segConsumed >= seg.minLetters && !branchExhausted()) {
-                int closeGates = 0;
-                if (!seg.softEnd && !seg.isEnd(segLastCode)) {
-                    closeGates++;
-                }
-                if (segIdeal < KineticaConstants.LEN_BAND_LO * seg.letterArcLen - KineticaConstants.LEN_BAND_MARGIN_KW) {
-                    closeGates++;
-                }
-                if (segIdeal > KineticaConstants.LEN_BAND_HI * seg.arcLen + KineticaConstants.LEN_BAND_MARGIN_KW) {
-                    closeGates++;
-                }
-                if (closeGates == 0 || rescue) {
-                    float closeKeep = segKeep;
-                    for (int g = 0; g < closeGates; g++) {
-                        closeKeep *= KineticaConstants.RESCUE_GATE_KEEP;
-                    }
+                wordLetters[depth] = code;
+                int consumed = lettersInSeg + 1;
+                float keep = seg.isContacted(code)
+                        ? contactKeep
+                        : (contactKeep * KineticaConstants.UNCONTACTED_LETTER_KEEP);
+
+                boolean closesStrict = seg.isEnd(code) || (seg.softEnd && pass >= 0);
+                boolean closes = closesStrict || (rescue && pass >= 0);
+                float k = keep * startKeep;
+                float closeKeep = closesStrict ? k : (k * KineticaConstants.RESCUE_GATE_KEEP);
+                boolean bandLoOk = len2 >= KineticaConstants.LEN_BAND_LO * seg.letterArcLen
+                        - KineticaConstants.LEN_BAND_MARGIN_KW;
+                int closeIdx = (pass >= 0) ? pass : Math.max(lastIdx, 0);
+                boolean closeLetterOk = !streaming || openCloseLetter < 0 || code == openCloseLetter
+                        || (seg.sampleT != null && seg.sampleT.length > 0
+                        && seg.sampleT[Math.max(0, Math.min(seg.sampleT.length - 1, closeIdx))] >= openCloseEnter);
+
+                if (consumed >= seg.minLetters && closes && bandLoOk && closeLetterOk) {
                     pieceSeg[pieceCount] = seg;
                     pieceFrom[pieceCount] = segStartDepth;
-                    pieceTo[pieceCount] = depth;
+                    pieceTo[pieceCount] = depth + 1;
                     pieceCount++;
-                    descend(node, depth, ti + 1, depth, 0, -1, -1, 0f, tapPen, keep * closeKeep, 1.0f);
+                    if (streaming) {
+                        int s = (seg.streamId == 1) ? 1 : 0;
+                        afterLetter(child, depth + 1, tapPen, closeKeep, s,
+                                seg.letterTime(code, closeIdx), sParked[s] != null);
+                    } else {
+                        dfs(child, nextTi, depth + 1, tapPen, closeKeep);
+                    }
                     pieceCount--;
                 }
-            }
 
-            // Or continue consuming inside the open segment
-            if (segConsumed < seg.maxLetters
-                    && depth + 1 + Math.max(0, seg.minLetters - segConsumed - 1) + restMin[ti + 1]
-                    <= KineticaConstants.MAX_WORD_LEN
-                    && !branchExhausted()) {
-                int[] order = childOrder[depth];
-                int nChildren = sortedChildren(node, depth, order);
-                for (int ci = 0; ci < nChildren; ci++) {
-                    if (branchExhausted()) break;
-                    int c = order[ci];
-                    if (!seg.isNear(c)) continue;
-                    int pass = seg.passAtOrAfter(c, segPrevPass - KineticaConstants.MONOTONE_SLACK);
-                    if (pass < 0) continue;
+                if (consumed < seg.maxLetters) {
+                    int nextLast = (pass >= 0) ? Math.max(lastIdx, pass) : lastIdx;
+                    descend(child, ti, depth + 1, segStartDepth, consumed, len2,
+                            nextLast, code, tapPen, k, seg, nextTi);
+                }
 
-                    float newIdeal = segIdeal + ((c != segLastCode) ? geometry.keyDist(segLastCode, c) : 0f);
-                    float nextKeep = segKeep;
-                    if (!seg.isContacted(c)) {
-                        nextKeep *= KineticaConstants.UNCONTACTED_LETTER_KEEP;
-                    }
-                    int ch = trie.child(node, c);
-                    wordLetters[depth] = c;
-                    descend(
-                            ch, depth + 1, ti, segStartDepth, segConsumed + 1,
-                            Math.max(segPrevPass, pass), c, newIdeal, tapPen, keep, nextKeep);
+                if (rootFairness) {
+                    firstStart = false;
+                    remainingStarts--;
                 }
             }
         }
@@ -622,7 +1224,7 @@ public final class KineticaDtwDecoder {
             if (attempts >= maxAttempts) return;
             attempts++;
 
-            int rawFreq = trie.getFrequency(node);
+            int rawFreq = Math.min(255, trie.getFrequency(node));
             float maxFw = KineticaConstants.FREQ_WEIGHT_FLOOR +
                     (1.0f - KineticaConstants.FREQ_WEIGHT_FLOOR) * (rawFreq / 255.0f);
             float maxBm = (prevWord != null && bigrams != null) ? 2.0f : 1.0f;
@@ -670,7 +1272,7 @@ public final class KineticaDtwDecoder {
                 for (int i = 0; i < forms.size(); i++) {
                     NintypeTrie.WordForm f = forms.get(i);
                     float fv = KineticaConstants.FREQ_WEIGHT_FLOOR +
-                            (1.0f - KineticaConstants.FREQ_WEIGHT_FLOOR) * (f.frequency / 255.0f);
+                            (1.0f - KineticaConstants.FREQ_WEIGHT_FLOOR) * (Math.min(255, f.frequency) / 255.0f);
                     heap.offer(new Candidate(f.displayWord, fv * geo * bmApplied * keep, dTotal, f.isProperNoun));
                 }
                 emitted++;

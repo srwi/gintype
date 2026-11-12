@@ -60,6 +60,8 @@ public final class GboardNintypeRuntime {
         float lastY;
         long lastTimeMs;
         float pathLengthPx = 0f;
+        float maxDispSqPx = 0f;
+        boolean overlapped = false;
         char currentKeyChar;
         int currentCode = -1;
         long currentEnterTimeMs;
@@ -115,6 +117,12 @@ public final class GboardNintypeRuntime {
             float dx = x - lastX;
             float dy = y - lastY;
             float dist = (float) Math.hypot(dx, dy);
+            float dStartX = x - startX;
+            float dStartY = y - startY;
+            float dispSq = dStartX * dStartX + dStartY * dStartY;
+            if (dispSq > maxDispSqPx) {
+                maxDispSqPx = dispSq;
+            }
             if (dist < 1.5f && !points.isEmpty()) {
                 if (ts > lastTimeMs) {
                     lastTimeMs = ts;
@@ -210,8 +218,13 @@ public final class GboardNintypeRuntime {
 
         boolean isSwipe(float swipeThresholdPx) {
             if (points.size() < 2) return false;
-            if (pathLengthPx >= swipeThresholdPx) return true;
-            return startedOnLetter && crossedKeyBoundary && pathLengthPx >= Math.max(20f, swipeThresholdPx * 0.75f);
+            return maxDispSqPx >= swipeThresholdPx * swipeThresholdPx;
+        }
+
+        boolean isRestingFinger(float swipeThresholdPx) {
+            return overlapped
+                    && !isSwipe(swipeThresholdPx)
+                    && (lastTimeMs - startTimeMs) >= KineticaConstants.RESTING_FINGER_MIN_MS;
         }
 
         NintypeInputToken toToken(float swipeThresholdPx) {
@@ -596,11 +609,13 @@ public final class GboardNintypeRuntime {
                                 session.geometry
                         );
                         track.finished = true;
-                        isSwipe = track.isSwipe(multiSwipeThreshold);
                         session.activePointers.remove(pid);
-                        NintypeInputToken token = track.toToken(multiSwipeThreshold);
-                        if (token != null) {
-                            session.completedTokens.add(token);
+                        if (!track.isRestingFinger(multiSwipeThreshold)) {
+                            isSwipe = track.isSwipe(multiSwipeThreshold);
+                            NintypeInputToken token = track.toToken(multiSwipeThreshold);
+                            if (token != null) {
+                                session.completedTokens.add(token);
+                            }
                         }
                     }
                     releasePointerSlot(session, pid);
@@ -645,6 +660,12 @@ public final class GboardNintypeRuntime {
                             );
                         }
                         track.finished = true;
+                        if (track.isRestingFinger(multiSwipeThreshold)) {
+                            if (isNintypeGesture) {
+                                finishTrailForPointer(handler, track.pointerId, false);
+                            }
+                            continue;
+                        }
                         boolean isSwipe = track.isSwipe(multiSwipeThreshold);
                         if (isSwipe) {
                             anySwipeThisSession = true;
@@ -1126,6 +1147,12 @@ public final class GboardNintypeRuntime {
         KeySpec nearest = session.geometry.nearestLetterKey(x, y);
         char keyChar = nearest != null ? nearest.character : '\0';
         PointerTrack track = new PointerTrack(pointerId, x, y, timeMs, keyChar, onLetter, slot, session.geometry);
+        if (session.activePointers.size() > 0) {
+            track.overlapped = true;
+            for (int i = 0; i < session.activePointers.size(); i++) {
+                session.activePointers.valueAt(i).overlapped = true;
+            }
+        }
         session.activePointers.put(pointerId, track);
         return track;
     }
