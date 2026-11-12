@@ -44,6 +44,10 @@ public final class GboardNintypeRuntime {
     private static final float SINGLE_FINGER_NEIGHBOR_SWIPE_THRESHOLD_PX = 30f;
     private static final long MAX_CHORD_GAP_MS = 420L;
     private static final long MAX_SEQUENTIAL_CHORD_GAP_MS = 180L;
+    private static final int TEXT_SNAPSHOT_CHARS = 256;
+    private static final int MAX_ROLLBACK_EXTRA_CHARS = 12;
+    private static final long MAX_PASSIVE_TAP_GAP_MS = 750L;
+    private static final int MAX_PASSIVE_TAP_TOKENS = 8;
 
     static final class PointerTrack {
         final int pointerId;
@@ -282,12 +286,14 @@ public final class GboardNintypeRuntime {
         boolean nintypeWordActive = false;
         boolean shortSwipeForceStarted = false;
         boolean decodedThisSession = false;
+        boolean sawNonLetterThisSession = false;
         String textSnapshotAtActionDown = null;
         NintypeInputToken pendingChordToken = null;
         String pendingChordBaselineText = null;
         float pendingChordAnchorX = 0f;
         String lastCommittedWord = null;
         long lastTouchUpTimeMs = 0L;
+        final PassiveTapBuffer passiveTapBuffer = new PassiveTapBuffer();
 
         // Auto-space & Live Composing (WordComposer) state
         String currentComposingWord = null;
@@ -313,6 +319,7 @@ public final class GboardNintypeRuntime {
             nintypeTakeoverActive = false;
             shortSwipeForceStarted = false;
             decodedThisSession = false;
+            sawNonLetterThisSession = false;
         }
 
         void clearPendingChord() {
@@ -517,7 +524,9 @@ public final class GboardNintypeRuntime {
 
                     if (!isWordContinuing) {
                         session.clearWordBuffer();
-                        session.textSnapshotAtActionDown = readTextBeforeCursorSnapshot(handler, context);
+                        String snapshotNow = readTextBeforeCursorSnapshot(handler, context);
+                        session.textSnapshotAtActionDown = snapshotNow;
+                        session.passiveTapBuffer.validateOnActionDown(snapshotNow, downOnLetter, eventTime);
                     }
 
                     registerPointerDown(session, pid, x, y, eventTime);
@@ -710,14 +719,24 @@ public final class GboardNintypeRuntime {
                     }
 
                     // Only run Nintype decoding for multi-touch gestures (or continuations of an active
-                    // Nintype word) that contain at least one swipe. Single-finger taps, single-finger
-                    // swipes, and pure rollover taps stay 100% on stock Gboard.
-                    boolean shouldDecodeNow = isNintypeGesture && hasSwipe;
+                    // Nintype word / multi-touch tap prefix) that contain at least one swipe.
+                    // Single-finger taps, single-finger swipes, and pure rollover taps stay 100% on stock Gboard.
+                    boolean promoteMultiTouchPassive = !session.nintypeWordActive
+                            && session.passiveTapBuffer.canPromoteMultiTouchSwipe(session.completedTokens);
+                    boolean shouldDecodeNow = (isNintypeGesture || promoteMultiTouchPassive) && hasSwipe;
 
                     if (shouldDecodeNow) {
+                        boolean wasNintypeWordActive = session.nintypeWordActive;
                         session.nintypeTakeoverActive = true;
                         session.nintypeWordActive = true;
                         activateNintypeTakeoverOnFinish(handler);
+
+                        if (!wasNintypeWordActive) {
+                            session.textSnapshotAtActionDown = session.passiveTapBuffer.promoteInto(
+                                    session.wordTokens, session.textSnapshotAtActionDown);
+                        } else {
+                            session.passiveTapBuffer.clear();
+                        }
 
                         // Accumulate all completed tokens into persistent word buffer
                         session.wordTokens.addAll(session.completedTokens);
@@ -732,10 +751,21 @@ public final class GboardNintypeRuntime {
                         session.autospaceRunnable = () -> finalizeComposingAndAutospace(handler, session, context, activeLang);
                         session.mainHandler.postDelayed(session.autospaceRunnable, 300L);
                     } else {
-                        // Single-finger input and pure multi-touch rollover taps stay on stock Gboard:
-                        // do not retain non-Nintype tokens or mark a Nintype word active.
+                        // Single-finger input and pure multi-touch rollover taps stay on stock Gboard,
+                        // while passively recording tap-only anchors in case a Nintype swipe continues the word.
+                        String tapBaselineAtDown = session.textSnapshotAtActionDown;
+                        boolean strokeHadMultiTouch = session.sawMultiTouch;
+                        boolean sawNonLetter = session.sawNonLetterThisSession;
+                        List<NintypeInputToken> completedCopy = new ArrayList<>(session.completedTokens);
                         session.clearWordBuffer();
                         session.completedTokens.clear();
+                        session.passiveTapBuffer.recordStroke(
+                                completedCopy,
+                                hasSwipe,
+                                sawNonLetter,
+                                strokeHadMultiTouch,
+                                tapBaselineAtDown,
+                                eventTime);
                     }
                     break;
                 }
@@ -743,6 +773,7 @@ public final class GboardNintypeRuntime {
                 case MotionEvent.ACTION_CANCEL: {
                     session.resetGestureState();
                     session.clearWordBuffer();
+                    session.passiveTapBuffer.clear();
                     for (int i = 0; i < 10; i++) {
                         finishTrailForPointer(handler, i, false);
                     }
@@ -1144,6 +1175,9 @@ public final class GboardNintypeRuntime {
         session.pointerBySlot[slot] = pointerId;
 
         boolean onLetter = session.geometry.isOnLetterArea(x, y);
+        if (!onLetter) {
+            session.sawNonLetterThisSession = true;
+        }
         KeySpec nearest = session.geometry.nearestLetterKey(x, y);
         char keyChar = nearest != null ? nearest.character : '\0';
         PointerTrack track = new PointerTrack(pointerId, x, y, timeMs, keyChar, onLetter, slot, session.geometry);
@@ -1309,15 +1343,13 @@ public final class GboardNintypeRuntime {
                 // If BasicMotionEventHandler committed any stray rollover tap characters after ACTION_DOWN,
                 // cleanly roll back to the pre-gesture baseline before displaying composing preview.
                 if (baselineBeforeText != null) {
-                    CharSequence currentSeq = ic.getTextBeforeCursor(64, 0);
+                    CharSequence currentSeq = ic.getTextBeforeCursor(TEXT_SNAPSHOT_CHARS, 0);
                     if (currentSeq != null) {
-                        String currentStr = currentSeq.toString();
-                        if (currentStr.length() > baselineBeforeText.length()
-                                && currentStr.startsWith(baselineBeforeText)) {
-                            int extraChars = currentStr.length() - baselineBeforeText.length();
-                            if (extraChars > 0 && extraChars <= 12) {
-                                ic.deleteSurroundingText(extraChars, 0);
-                            }
+                        int extraChars = computeExtraCharsAfterBaseline(
+                                baselineBeforeText, currentSeq.toString());
+                        if (extraChars > 0) {
+                            ic.finishComposingText();
+                            ic.deleteSurroundingText(extraChars, 0);
                         }
                     }
                 }
@@ -1373,6 +1405,7 @@ public final class GboardNintypeRuntime {
             }
 
             session.clearWordBuffer();
+            session.passiveTapBuffer.clear();
             session.resetGestureState();
         } catch (Throwable t) {
             Log.w(TAG, "finalizeComposingAndAutospace failed", t);
@@ -1383,11 +1416,146 @@ public final class GboardNintypeRuntime {
         InputConnection ic = resolveActiveInputConnection(handler, context);
         if (ic == null) return null;
         try {
-            CharSequence before = ic.getTextBeforeCursor(64, 0);
+            CharSequence before = ic.getTextBeforeCursor(TEXT_SNAPSHOT_CHARS, 0);
             return before != null ? before.toString() : "";
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    /**
+     * Pure-JVM passive pre-swipe tap buffer: retains tap-only prefix strokes and their pre-tap
+     * baseline so a subsequent Nintype swipe in the same word can roll back Stock Gboard's partial
+     * prefix (e.g. "fn", "in", "um") and decode the full multi-stroke word.
+     */
+    static final class PassiveTapBuffer {
+        final List<NintypeInputToken> tokens = new ArrayList<>();
+        String baselineText = null;
+        long lastUpTimeMs = 0L;
+        boolean hadMultiTouch = false;
+
+        void clear() {
+            tokens.clear();
+            baselineText = null;
+            lastUpTimeMs = 0L;
+            hadMultiTouch = false;
+        }
+
+        void validateOnActionDown(String snapshotNow, boolean downOnLetter, long eventTimeMs) {
+            if (tokens.isEmpty()) return;
+            long gapMs = (lastUpTimeMs > 0L) ? (eventTimeMs - lastUpTimeMs) : Long.MAX_VALUE;
+            String typedPrefix = (downOnLetter && gapMs <= MAX_PASSIVE_TAP_GAP_MS)
+                    ? extractTypedPrefixSinceBaseline(baselineText, snapshotNow)
+                    : null;
+            if (!isPureLetterPrefix(typedPrefix, tokens.size())) {
+                clear();
+            }
+        }
+
+        boolean canPromoteMultiTouchSwipe(List<NintypeInputToken> completedTokens) {
+            return hadMultiTouch
+                    && !tokens.isEmpty()
+                    && completedTokens != null
+                    && !completedTokens.isEmpty();
+        }
+
+        void recordStroke(
+                List<NintypeInputToken> completedTokens,
+                boolean hasSwipe,
+                boolean sawNonLetter,
+                boolean strokeHadMultiTouch,
+                String tapBaselineAtDown,
+                long eventTimeMs
+        ) {
+            List<NintypeInputToken> tapOnlyTokens = (!hasSwipe && !sawNonLetter)
+                    ? collectPureTapTokens(completedTokens)
+                    : null;
+            if (tapOnlyTokens == null || tapOnlyTokens.isEmpty() || tapBaselineAtDown == null) {
+                clear();
+                return;
+            }
+            if (tokens.isEmpty()) {
+                if (tapOnlyTokens.size() > MAX_PASSIVE_TAP_TOKENS) {
+                    clear();
+                    return;
+                }
+                baselineText = tapBaselineAtDown;
+                tokens.addAll(tapOnlyTokens);
+                lastUpTimeMs = eventTimeMs;
+                hadMultiTouch = strokeHadMultiTouch;
+                return;
+            }
+            if (tokens.size() + tapOnlyTokens.size() > MAX_PASSIVE_TAP_TOKENS) {
+                clear();
+                return;
+            }
+            tokens.addAll(tapOnlyTokens);
+            lastUpTimeMs = eventTimeMs;
+            hadMultiTouch |= strokeHadMultiTouch;
+        }
+
+        String promoteInto(List<NintypeInputToken> destWordTokens, String textSnapshotAtActionDown) {
+            if (tokens.isEmpty()) return textSnapshotAtActionDown;
+            String restoredSnapshot = textSnapshotAtActionDown;
+            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, textSnapshotAtActionDown);
+            if (isPureLetterPrefix(typedPrefix, tokens.size())) {
+                destWordTokens.addAll(tokens);
+                restoredSnapshot = baselineText;
+            }
+            clear();
+            return restoredSnapshot;
+        }
+    }
+
+    static int computeExtraCharsAfterBaseline(String baselineBeforeText, String currentStr) {
+        if (baselineBeforeText == null || currentStr == null) return 0;
+        if (currentStr.equals(baselineBeforeText)) return 0;
+        int baseLen = baselineBeforeText.length();
+        int curLen = currentStr.length();
+        if (curLen > baseLen && currentStr.startsWith(baselineBeforeText)) {
+            int extra = curLen - baseLen;
+            return (extra > 0 && extra <= MAX_ROLLBACK_EXTRA_CHARS) ? extra : 0;
+        }
+        if (curLen == baseLen && baseLen >= 32) {
+            for (int extra = 1; extra <= MAX_ROLLBACK_EXTRA_CHARS && extra < baseLen; extra++) {
+                if (baselineBeforeText.regionMatches(extra, currentStr, 0, baseLen - extra)) {
+                    return extra;
+                }
+            }
+        }
+        return 0;
+    }
+
+    static String extractTypedPrefixSinceBaseline(String baselineBeforeText, String currentStr) {
+        if (baselineBeforeText == null || currentStr == null) return null;
+        if (currentStr.equals(baselineBeforeText)) return "";
+        int extra = computeExtraCharsAfterBaseline(baselineBeforeText, currentStr);
+        if (extra <= 0) return null;
+        return currentStr.substring(currentStr.length() - extra);
+    }
+
+    static boolean isPureLetterPrefix(String prefix, int tapTokenCount) {
+        if (prefix == null) return false;
+        if (prefix.length() > tapTokenCount + 2) return false;
+        for (int i = 0; i < prefix.length(); i++) {
+            if (!Character.isLetter(prefix.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static List<NintypeInputToken> collectPureTapTokens(List<NintypeInputToken> tokens) {
+        if (tokens == null || tokens.isEmpty()) return null;
+        List<NintypeInputToken> out = new ArrayList<>(tokens.size());
+        for (int i = 0; i < tokens.size(); i++) {
+            NintypeInputToken t = tokens.get(i);
+            if (t == null || t.kind != NintypeInputToken.Kind.TAP) {
+                return null;
+            }
+            out.add(t);
+        }
+        return out;
     }
 
     private static String extractPreviousWord(

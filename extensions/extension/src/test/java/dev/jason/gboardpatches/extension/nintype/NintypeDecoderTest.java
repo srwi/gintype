@@ -478,4 +478,218 @@ public class NintypeDecoderTest {
         long finalEnd = pts.get(pts.size() - 1).timeMs;
         return NintypeInputToken.swipe(pointerId, streamId, pts, Math.max(60f, pathLen), startTimeMs, finalEnd);
     }
+
+    private NintypeInputToken buildTapToken(int pointerId, char ch, long startTimeMs, long endTimeMs) {
+        KeySpec k = geometry.keySpec(ch);
+        assertNotNull("Missing key: " + ch, k);
+        return NintypeInputToken.tap(pointerId, ch, k.centerX, k.centerY, startTimeMs, endTimeMs);
+    }
+
+    @Test
+    public void decodesRealGermanDictionaryFunktioniertAndUntersuchen() throws IOException {
+        java.io.File wordlist = new java.io.File(
+                "../../patches/src/main/resources/nintype-assets/de_wordlist.txt.gz");
+        if (!wordlist.exists()) {
+            wordlist = new java.io.File("patches/src/main/resources/nintype-assets/de_wordlist.txt.gz");
+        }
+        assertTrue("Expected de_wordlist.txt.gz at " + wordlist.getAbsolutePath(), wordlist.exists());
+
+        NintypeTrie deTrie;
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(wordlist)) {
+            deTrie = NintypeDictionaryLoader.loadTrieFromGzipStream(fis, "de", true);
+        }
+
+        // Pattern A: "funktioniert" - Left thumb taps 'f', 'u'/'n' transitions, or dual-swipe
+        // 1) Pure tap prefix 'f' + swipe "unktioniert" (single chord)
+        List<NintypeInputToken> funkTapSwipe = Arrays.asList(
+                buildTapToken(0, 'f', 100L, 140L),
+                buildSwipeTokenWithContacts(1, 1, "unktioniert", 130L, 480L)
+        );
+        List<WordCandidate> r1 = decoder.decode(funkTapSwipe, deTrie, bigrams, geometry, null);
+        assertFalse("r1 empty", r1.isEmpty());
+        assertEquals("funktioniert (tap f + swipe unktioniert), got=" + r1, "funktioniert", r1.get(0).word);
+
+        // 2) Tap 'f', tap 'u', dual-thumb "nkt" + "ioniert"
+        List<NintypeInputToken> funkMulti = Arrays.asList(
+                buildTapToken(0, 'f', 100L, 140L),
+                buildTapToken(1, 'u', 150L, 190L),
+                buildSwipeTokenWithContacts(0, 0, "nkt", 210L, 340L),
+                buildSwipeTokenWithContacts(1, 1, "ioniert", 310L, 560L)
+        );
+        List<WordCandidate> r2 = decoder.decode(funkMulti, deTrie, bigrams, geometry, null);
+        assertFalse("r2 empty", r2.isEmpty());
+        assertEquals("funktioniert (multi), got=" + r2, "funktioniert", r2.get(0).word);
+
+        // 3) Dual-swipe split around thumbs: "funkt" / "ioniert" or "fun" + "ktio" + "niert"
+        List<NintypeInputToken> funkDual = Arrays.asList(
+                buildSwipeTokenWithContacts(0, 0, "fun", 100L, 240L),
+                buildSwipeTokenWithContacts(1, 1, "ktio", 200L, 360L),
+                buildSwipeTokenWithContacts(0, 0, "niert", 330L, 520L)
+        );
+        List<WordCandidate> r3 = decoder.decode(funkDual, deTrie, bigrams, geometry, null);
+        assertFalse("r3 empty", r3.isEmpty());
+        assertEquals("funktioniert (dual), got=" + r3, "funktioniert", r3.get(0).word);
+
+        // Pattern B: "untersuchen"
+        // 1) Tap 'u' + tap 'n' + swipe "tersuchen"
+        List<NintypeInputToken> untTapSwipe = Arrays.asList(
+                buildTapToken(1, 'u', 100L, 140L),
+                buildTapToken(0, 'n', 160L, 200L),
+                buildSwipeTokenWithContacts(0, 0, "tersuchen", 230L, 560L)
+        );
+        List<WordCandidate> u1 = decoder.decode(untTapSwipe, deTrie, bigrams, geometry, null);
+        assertFalse("u1 empty", u1.isEmpty());
+        assertEquals("untersuchen (tap+swipe), got=" + u1, "untersuchen", u1.get(0).word);
+
+        // 2) Dual-thumb: "unter" + "suchen"
+        List<NintypeInputToken> untDual = Arrays.asList(
+                buildSwipeTokenWithContacts(1, 1, "unter", 100L, 310L),
+                buildSwipeTokenWithContacts(0, 0, "suchen", 270L, 510L)
+        );
+        List<WordCandidate> u2 = decoder.decode(untDual, deTrie, bigrams, geometry, null);
+        assertFalse("u2 empty", u2.isEmpty());
+        assertEquals("untersuchen (dual), got=" + u2, "untersuchen", u2.get(0).word);
+
+        // 3) Near-miss prefix taps preserved (as when user aims near u/n before swiping):
+        List<WordCandidate> nearMissF = decoder.decode(Arrays.asList(
+                buildTapToken(0, 'f', 100L, 140L),
+                buildTapToken(1, 'm', 160L, 200L),
+                buildSwipeTokenWithContacts(0, 0, "ktio", 220L, 360L),
+                buildSwipeTokenWithContacts(1, 1, "niert", 330L, 520L)
+        ), deTrie, bigrams, geometry, null);
+        assertFalse(nearMissF.isEmpty());
+        assertEquals("funktioniert (fm near-miss prefix + swipe), got=" + nearMissF,
+                "funktioniert", nearMissF.get(0).word);
+
+        List<WordCandidate> fnSkipU = decoder.decode(Arrays.asList(
+                buildTapToken(0, 'f', 100L, 140L),
+                buildTapToken(1, 'n', 160L, 200L),
+                buildSwipeTokenWithContacts(0, 0, "ktio", 220L, 360L),
+                buildSwipeTokenWithContacts(1, 1, "niert", 330L, 520L)
+        ), deTrie, bigrams, geometry, null);
+        assertFalse(fnSkipU.isEmpty());
+        assertEquals("funktioniert (fn prefix), got=" + wordsOf(fnSkipU),
+                "funktioniert", fnSkipU.get(0).word);
+
+        // Near-miss 'i' (left of u) + 'n' + "ter" + "suchen" -> "untersuchen"
+        List<WordCandidate> nearMissIn = decoder.decode(Arrays.asList(
+                buildTapToken(1, 'i', 100L, 140L),
+                buildTapToken(0, 'n', 160L, 200L),
+                buildSwipeTokenWithContacts(0, 0, "ter", 220L, 340L),
+                buildSwipeTokenWithContacts(1, 1, "suchen", 300L, 520L)
+        ), deTrie, bigrams, geometry, null);
+        assertFalse(nearMissIn.isEmpty());
+        assertEquals("untersuchen (in near-miss prefix + swipe), got=" + wordsOf(nearMissIn),
+                "untersuchen", nearMissIn.get(0).word);
+
+        // Near-miss 'u' + 'm' (right of n) + "ter" + "suchen" -> "untersuchen"
+        List<WordCandidate> nearMissUm = decoder.decode(Arrays.asList(
+                buildTapToken(1, 'u', 100L, 140L),
+                buildTapToken(0, 'm', 160L, 200L),
+                buildSwipeTokenWithContacts(0, 0, "ter", 220L, 340L),
+                buildSwipeTokenWithContacts(1, 1, "suchen", 300L, 520L)
+        ), deTrie, bigrams, geometry, null);
+        assertFalse(nearMissUm.isEmpty());
+        assertEquals("untersuchen (um near-miss prefix + swipe), got=" + wordsOf(nearMissUm),
+                "untersuchen", nearMissUm.get(0).word);
+
+        // Near-miss upper edge of 'j' (under 'u') + 'n' + "ter" + "suchen" -> "untersuchen"
+        KeySpec uKey = geometry.keySpec('u');
+        KeySpec jKey = geometry.keySpec('j');
+        NintypeInputToken jNearU = NintypeInputToken.tap(
+                1, 'j', (uKey.centerX + jKey.centerX) * 0.5f,
+                jKey.centerY - (jKey.centerY - uKey.centerY) * 0.45f, 100L, 140L);
+        List<WordCandidate> nearMissU = decoder.decode(Arrays.asList(
+                jNearU,
+                buildTapToken(0, 'n', 160L, 200L),
+                buildSwipeTokenWithContacts(0, 0, "ter", 220L, 340L),
+                buildSwipeTokenWithContacts(1, 1, "suchen", 300L, 520L)
+        ), deTrie, bigrams, geometry, null);
+        assertFalse(nearMissU.isEmpty());
+        assertEquals("untersuchen (jn upper-edge near-miss prefix + swipe), got=" + wordsOf(nearMissU),
+                "untersuchen", nearMissU.get(0).word);
+    }
+
+    private static List<String> wordsOf(List<WordCandidate> candidates) {
+        List<String> out = new ArrayList<>(candidates.size());
+        for (WordCandidate c : candidates) {
+            out.add(c.word);
+        }
+        return out;
+    }
+
+    @Test
+    public void passiveTapBufferPromotesTapPrefixAcrossLiftsAndRollsBackSlidingWindow() {
+        GboardNintypeRuntime.PassiveTapBuffer buf = new GboardNintypeRuntime.PassiveTapBuffer();
+
+        // Stroke 1: single tap 'f' -> Stock Gboard inserts "f"
+        buf.recordStroke(
+                Arrays.asList(buildTapToken(0, 'f', 100L, 130L)),
+                false, false, false, "das ", 130L);
+        assertEquals(1, buf.tokens.size());
+        assertFalse(buf.hadMultiTouch);
+
+        // Stroke 2: quick tap 'n' -> Stock Gboard now shows "das fn"
+        buf.validateOnActionDown("das f", true, 220L);
+        assertEquals(1, buf.tokens.size());
+        buf.recordStroke(
+                Arrays.asList(buildTapToken(1, 'n', 220L, 250L)),
+                false, false, false, "das f", 250L);
+        assertEquals(2, buf.tokens.size());
+
+        // Stroke 3: Nintype swipe arrives within gap; baseline restores to "das " and deletes "fn"
+        buf.validateOnActionDown("das fn", true, 340L);
+        assertEquals(2, buf.tokens.size());
+        List<NintypeInputToken> dest = new ArrayList<>();
+        String restored = buf.promoteInto(dest, "das fn");
+        assertEquals("das ", restored);
+        assertEquals(2, dest.size());
+        assertTrue(buf.tokens.isEmpty());
+        assertEquals(2, GboardNintypeRuntime.computeExtraCharsAfterBaseline("das ", "das fn"));
+
+        // Rollover multi-touch tap prefix enables subsequent swipe promotion
+        buf.recordStroke(
+                Arrays.asList(
+                        buildTapToken(1, 'u', 100L, 140L),
+                        buildTapToken(0, 'n', 120L, 160L)),
+                false, false, true, "ich ", 160L);
+        assertTrue(buf.canPromoteMultiTouchSwipe(
+                Arrays.asList(buildSwipeToken(0, "tersuchen", 240L, 500L))));
+
+        // Space, non-letter (Backspace), 1-thumb swipe, or >750ms pause clears buffer (Stock Gboard untouched)
+        buf.validateOnActionDown("ich in ", false, 200L);
+        assertTrue(buf.tokens.isEmpty());
+
+        buf.recordStroke(
+                Arrays.asList(buildTapToken(0, 'u', 100L, 130L)),
+                false, true, false, "ich ", 130L);
+        assertTrue(buf.tokens.isEmpty());
+
+        buf.recordStroke(
+                Arrays.asList(buildSwipeToken(0, "und", 100L, 250L)),
+                true, false, false, "ich ", 250L);
+        assertTrue(buf.tokens.isEmpty());
+
+        buf.recordStroke(
+                Arrays.asList(buildTapToken(0, 'f', 100L, 130L)),
+                false, false, false, "ich ", 130L);
+        buf.validateOnActionDown("ich f", true, 950L);
+        assertTrue(buf.tokens.isEmpty());
+
+        // Sliding-window >=256-char rollback detection
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 256; i++) {
+            sb.append((char) ('a' + (i % 20)));
+        }
+        String longBaseline = sb.toString();
+        String shiftedAfterFn = longBaseline.substring(2) + "fn";
+        assertEquals(2, GboardNintypeRuntime.computeExtraCharsAfterBaseline(longBaseline, shiftedAfterFn));
+
+        StringBuilder repeated = new StringBuilder();
+        for (int i = 0; i < 256; i++) {
+            repeated.append('a');
+        }
+        assertEquals(0, GboardNintypeRuntime.computeExtraCharsAfterBaseline(
+                repeated.toString(), repeated.toString()));
+    }
 }
