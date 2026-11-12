@@ -1,5 +1,6 @@
 package dev.jason.gboardpatches.extension.nintype;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -21,6 +22,32 @@ public final class NintypeInputToken {
         }
     }
 
+    public static final class KeyContact {
+        public final int code;
+        public final long tEnter;
+        public final long tExit;
+
+        public KeyContact(int code, long tEnter, long tExit) {
+            this.code = code;
+            this.tEnter = tEnter;
+            this.tExit = tExit;
+        }
+    }
+
+    public static final class Dwell {
+        public final int enterIdx;
+        public final int exitIdx;
+        public final long tEnter;
+        public final long tExit;
+
+        public Dwell(int enterIdx, int exitIdx, long tEnter, long tExit) {
+            this.enterIdx = enterIdx;
+            this.exitIdx = exitIdx;
+            this.tEnter = tEnter;
+            this.tExit = tExit;
+        }
+    }
+
     public enum Kind {
         TAP,
         SWIPE
@@ -38,6 +65,10 @@ public final class NintypeInputToken {
     // For SWIPE:
     public final List<TouchPoint> points;
     public final float pathLengthPx;
+    public final List<KeyContact> keyContacts;
+    public final List<Dwell> dwells;
+    public final boolean softStart;
+    public final boolean softEnd;
 
     private NintypeInputToken(
             Kind kind,
@@ -49,7 +80,11 @@ public final class NintypeInputToken {
             float tapX,
             float tapY,
             List<TouchPoint> points,
-            float pathLengthPx
+            float pathLengthPx,
+            List<KeyContact> keyContacts,
+            List<Dwell> dwells,
+            boolean softStart,
+            boolean softEnd
     ) {
         this.kind = kind;
         this.pointerId = pointerId;
@@ -61,6 +96,10 @@ public final class NintypeInputToken {
         this.tapY = tapY;
         this.points = points;
         this.pathLengthPx = pathLengthPx;
+        this.keyContacts = (keyContacts != null) ? keyContacts : Collections.emptyList();
+        this.dwells = (dwells != null) ? dwells : Collections.emptyList();
+        this.softStart = softStart;
+        this.softEnd = softEnd;
     }
 
     public static NintypeInputToken tap(
@@ -73,7 +112,8 @@ public final class NintypeInputToken {
             long endTimeMs
     ) {
         return new NintypeInputToken(
-                Kind.TAP, pointerId, streamId, startTimeMs, endTimeMs, character, x, y, null, 0f);
+                Kind.TAP, pointerId, streamId, startTimeMs, endTimeMs, character, x, y,
+                null, 0f, Collections.emptyList(), Collections.emptyList(), false, false);
     }
 
     public static NintypeInputToken tap(
@@ -93,10 +133,28 @@ public final class NintypeInputToken {
             List<TouchPoint> points,
             float pathLengthPx,
             long startTimeMs,
-            long endTimeMs
+            long endTimeMs,
+            List<KeyContact> keyContacts,
+            List<Dwell> dwells,
+            boolean softStart,
+            boolean softEnd
     ) {
         return new NintypeInputToken(
-                Kind.SWIPE, pointerId, streamId, startTimeMs, endTimeMs, '\0', 0f, 0f, points, pathLengthPx);
+                Kind.SWIPE, pointerId, streamId, startTimeMs, endTimeMs, '\0', 0f, 0f,
+                points, pathLengthPx, keyContacts, dwells, softStart, softEnd);
+    }
+
+    public static NintypeInputToken swipe(
+            int pointerId,
+            int streamId,
+            List<TouchPoint> points,
+            float pathLengthPx,
+            long startTimeMs,
+            long endTimeMs
+    ) {
+        return swipe(
+                pointerId, streamId, points, pathLengthPx, startTimeMs, endTimeMs,
+                Collections.emptyList(), Collections.emptyList(), false, false);
     }
 
     public static NintypeInputToken swipe(

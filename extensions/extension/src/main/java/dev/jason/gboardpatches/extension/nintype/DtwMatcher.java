@@ -77,6 +77,50 @@ public final class DtwMatcher {
     }
 
     /**
+     * Interpolates point timestamps at the exact N (32) arc-length positions used by resample().
+     */
+    public void resampleTimes(List<Point2D> path, long[] out) {
+        int count = path.size();
+        if (count == 0) return;
+        if (count == 1) {
+            Arrays.fill(out, path.get(0).t);
+            return;
+        }
+        float arc = 0f;
+        for (int i = 1; i < count; i++) {
+            Point2D p0 = path.get(i - 1);
+            Point2D p1 = path.get(i);
+            arc += dist(p0.x, p0.y, p1.x, p1.y);
+        }
+        if (arc <= 1e-6f) {
+            long t0 = path.get(0).t;
+            long span = path.get(count - 1).t - t0;
+            for (int k = 0; k < n; k++) {
+                out[k] = t0 + Math.round((double) span * k / (n - 1));
+            }
+            return;
+        }
+        float step = arc / (n - 1);
+        out[0] = path.get(0).t;
+        int seg = 1;
+        float segStartAcc = 0f;
+        float segLen = dist(path.get(0).x, path.get(0).y, path.get(1).x, path.get(1).y);
+        for (int k = 1; k < n - 1; k++) {
+            float target = k * step;
+            while (segStartAcc + segLen < target && seg < count - 1) {
+                segStartAcc += segLen;
+                seg++;
+                segLen = dist(path.get(seg - 1).x, path.get(seg - 1).y, path.get(seg).x, path.get(seg).y);
+            }
+            float f = (segLen <= 1e-6f) ? 0f : (target - segStartAcc) / segLen;
+            long tA = path.get(seg - 1).t;
+            long tB = path.get(seg).t;
+            out[k] = tA + Math.round((double) f * (tB - tA));
+        }
+        out[n - 1] = path.get(count - 1).t;
+    }
+
+    /**
      * Ideal path for letters[from until to]: polyline through key centers with
      * consecutive duplicate keys removed (a doubled letter adds zero length, so
      * "hello" and "helo" share one ideal path and the dictionary disambiguates).

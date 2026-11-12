@@ -39,6 +39,30 @@ public final class KineticaConstants {
 
     public static final int TOP_K = 10;
     public static final int MAX_WORD_LEN = 24;
+    public static final int MAX_CANDIDATES = 800;
+    public static final int MAX_EMIT_ATTEMPTS = 4000;
+    public static final int STREAM_SEARCH_STEP_BUDGET = 100_000;
+    public static final int RESCUE_STEP_BUDGET = 15_000;
+
+    public static final float TRANSPOSE_PENALTY = 0.15f;
+    public static final long ORDER_AMBIG_MS = 120L;
+    public static final long SPLIT_MARGIN_MS = 80L;
+    public static final float MIN_SPLIT_HALF_ARC_KW = 0.5f;
+    public static final float SPLIT_HEAD_TRIM_KW = 0.6f;
+    public static final float SPLIT_RESUME_TAIL_KW = 1.2f;
+    public static final int MAX_ALT_SEQUENCES = 14;
+    public static final int MAX_SPLIT_ANCHORS = 3;
+    public static final float HANDOVER_CONTACT_FRACTION = 1.0f;
+
+    public static final float RESCUE_MIN_LEAD_D = 1.0f;
+    public static final float RESCUE_GATE_KEEP = 0.6f;
+    public static final int RESCUE_MAX_ATTEMPTS = 200;
+    public static final int BEAM_MAX_NEW = 2;
+
+    public static final float STICKY_INFLATE_KW = 0.2f;
+    public static final long DWELL_MIN_MS = 150L;
+    public static final float DWELL_RADIUS_KW = 0.3f;
+    public static final int MAX_DWELL_SEGMENTS = 4;
 
     public static final float MIN_SWIPE_ARC_KW = 1.8f;
     public static final float KW_PER_LETTER = 1.5f;
@@ -55,6 +79,17 @@ public final class KineticaConstants {
 
     public static float geometricTermUnsaturated(float dTotal) {
         return (float) (1.0 / Math.pow(1.0 + dTotal, GEO_EXPONENT));
+    }
+
+    /**
+     * Exact inverse of geometricTerm for DTW early-abandon.
+     */
+    public static float maxDTotalForScore(float numerator, float minScore) {
+        if (minScore <= 0f) return Float.POSITIVE_INFINITY;
+        float ratio = numerator / minScore;
+        if (ratio <= 1f) return 0f;
+        float d = (float) Math.pow(ratio, 1.0 / GEO_EXPONENT) - 1.0f;
+        return (d >= GEO_SATURATION_KW) ? Float.POSITIVE_INFINITY : d;
     }
 
     public static float boostWeight(float dGeometric) {

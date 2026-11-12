@@ -54,24 +54,26 @@ public final class ThumbBeam {
 
         List<Integer> left = new ArrayList<>();
         List<Integer> right = new ArrayList<>();
+        float midX = geometry.midlinePx();
 
         for (int i = 0; i < tokens.size(); i++) {
             NintypeInputToken t = tokens.get(i);
-            if (t.streamId == 0) {
+            int s = t.streamId;
+            if (s != 0 && s != 1) {
+                float refX;
+                if (t.kind == NintypeInputToken.Kind.TAP) {
+                    refX = t.tapX;
+                } else if (t.points != null && !t.points.isEmpty()) {
+                    refX = t.points.get(0).x;
+                } else {
+                    refX = midX;
+                }
+                s = (refX < midX) ? 0 : 1;
+            }
+            if (s == 0) {
                 left.add(i);
             } else {
                 right.add(i);
-            }
-        }
-
-        // If all tokens landed on one stream but there are multiple tokens with distinct pointers,
-        // split across streams so dual thumb alternation can activate
-        if (tokens.size() >= 2 && (left.isEmpty() || right.isEmpty())) {
-            left.clear();
-            right.clear();
-            for (int i = 0; i < tokens.size(); i++) {
-                if (i % 2 == 0) left.add(i);
-                else right.add(i);
             }
         }
 
@@ -296,7 +298,9 @@ public final class ThumbBeam {
             if (!timeOk(h, s, t)) return;
 
             float c = h.cost + passCost(seg, code, pass);
-            float keep = h.keep;
+            float keep = seg.isContacted(code)
+                    ? h.keep
+                    : (h.keep * KineticaConstants.UNCONTACTED_LETTER_KEEP);
 
             int n0 = h.n[0], n1 = h.n[1];
             int l0 = h.last[0], l1 = h.last[1];
@@ -390,6 +394,9 @@ public final class ThumbBeam {
             int startGate = (seg.softStart || seg.isStart(code)) ? 0 : 1;
             int gates = closeGates + startGate;
             float c = h.cost + passCost(seg, code, pass) + gates * KineticaConstants.BEAM_GATE_COST;
+            float keep = seg.isContacted(code)
+                    ? h.keep
+                    : (h.keep * KineticaConstants.UNCONTACTED_LETTER_KEEP);
 
             int nx0 = (s == 0) ? h.nx[0] + 1 : h.nx[0];
             int nx1 = (s == 1) ? h.nx[1] + 1 : h.nx[1];
@@ -405,7 +412,7 @@ public final class ThumbBeam {
             float id1 = (s == 1) ? 0f : h.ideal[1];
 
             out.add(next(
-                    h, child, code, nextItem, c, h.tapPen, h.keep, h.gates + gates,
+                    h, child, code, nextItem, c, h.tapPen, keep, h.gates + gates,
                     t, s, nx0, nx1, op0, op1, n0, n1, l0, l1, c0, c1, id0, id1
             ));
         }
@@ -600,7 +607,7 @@ public final class ThumbBeam {
     }
 
     public static boolean applies(List<NintypeInputToken> tokens, List<KineticaMatcher> items) {
-        if (tokens == null || items == null || tokens.isEmpty()) return false;
+        if (tokens == null || items == null || tokens.size() < 2) return false;
         for (int i = 0; i < tokens.size(); i++) {
             if (tokens.get(i).kind == NintypeInputToken.Kind.SWIPE) {
                 return true;

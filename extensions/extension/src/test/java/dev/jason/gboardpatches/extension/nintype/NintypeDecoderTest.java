@@ -43,6 +43,7 @@ public class NintypeDecoderTest {
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "wie", 96000, false, "de", false);
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "nochmal", 91000, false, "de", false);
         NintypeDictionaryLoader.insertWordIntoTrie(trie, "Monica", 20000, true, "de", false);
+        NintypeDictionaryLoader.insertWordIntoTrie(trie, "sempre", 84000, false, "it", false);
 
         bigrams.put("wir", "müssen", 1200);
         bigrams.put("wir", "schreiben", 900);
@@ -235,6 +236,99 @@ public class NintypeDecoderTest {
         // Verify row Y offset from suggestion bar is preserved
         assertEquals(220f, geo.keySpec('q').centerY, 0.1f);
         assertEquals(geo.keySpec('q').centerX, extracted.get(0).centerX, 0.1f);
+    }
+
+    @Test
+    public void decodesSimultaneousDualThumbEvenWhenArrivalOrderSwapped() {
+        // Right thumb ("lo") arrives slightly earlier than left thumb ("hal") inside ORDER_AMBIG_MS (120ms)
+        NintypeInputToken rightEarly = buildSwipeToken(1, "lo", 100L, 260L);
+        NintypeInputToken leftSlightlyLater = buildSwipeToken(0, "hal", 145L, 290L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(rightEarly, leftSlightlyLater), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("hallo", results.get(0).word);
+    }
+
+    @Test
+    public void decodesTapInterruptingSwipeMidGesture() {
+        // Right thumb swipes h -> l -> o while left thumb interrupts with tap 'a'
+        NintypeInputToken rightSwipe = buildSwipeToken(1, "hlo", 100L, 420L);
+        KeySpec aKey = geometry.keySpec('a');
+        assertNotNull(aKey);
+        NintypeInputToken leftTapA = NintypeInputToken.tap(
+                0, 0, 'a', aKey.centerX, aKey.centerY, 220L, 250L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(rightSwipe, leftTapA), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("hallo", results.get(0).word);
+    }
+
+    @Test
+    public void decodesSwipeAroundSwipeInterleaveForSempre() {
+        // Left thumb swipes s->e->r->e around right thumb swiping m->p
+        NintypeInputToken leftOuter = buildSwipeToken(0, "sere", 100L, 520L);
+        NintypeInputToken rightInner = buildSwipeToken(1, "mp", 240L, 380L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(leftOuter, rightInner), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("sempre", results.get(0).word);
+    }
+
+    @Test
+    public void pointerTrackExtractsStickyKeyContactsAndDwellRuns() {
+        KeySpec hKey = geometry.keySpec('h');
+        KeySpec aKey = geometry.keySpec('a');
+        KeySpec lKey = geometry.keySpec('l');
+        KeySpec oKey = geometry.keySpec('o');
+        assertNotNull(hKey);
+        assertNotNull(aKey);
+        assertNotNull(lKey);
+        assertNotNull(oKey);
+
+        GboardNintypeRuntime.PointerTrack track = new GboardNintypeRuntime.PointerTrack(
+                0, hKey.centerX, hKey.centerY, 100L, 'h', true, 0, geometry);
+        // Dwell inside DWELL_RADIUS_KW for >= 150ms without large displacement
+        track.addPoint(hKey.centerX + 0.5f, hKey.centerY, 180L, geometry);
+        track.addPoint(hKey.centerX + 0.8f, hKey.centerY, 270L, geometry);
+        // Move to 'a', linger slightly inside STICKY_INFLATE_KW, then 'l' -> 'o'
+        track.addPoint(aKey.centerX, aKey.centerY, 330L, geometry);
+        track.addPoint(aKey.centerX + geometry.keyWidthPx * 0.55f, aKey.centerY, 360L, geometry);
+        track.addPoint(lKey.centerX, lKey.centerY, 410L, geometry);
+        track.addPoint(oKey.centerX, oKey.centerY, 470L, geometry);
+
+        NintypeInputToken tok = track.toToken(geometry.keyWidthPx * 0.38f);
+        assertNotNull(tok);
+        assertEquals(NintypeInputToken.Kind.SWIPE, tok.kind);
+        assertFalse("Expected stationary dwell run to be recorded", tok.dwells.isEmpty());
+        assertTrue("Dwell must span >= 150ms",
+                tok.dwells.get(0).tExit - tok.dwells.get(0).tEnter >= KineticaConstants.DWELL_MIN_MS);
+        assertTrue("Expected key contacts along h-a-l-o", tok.keyContacts.size() >= 4);
+    }
+
+    @Test
+    public void rescuePassFindsWordWhenEndpointStartsFarOutsideRadius() {
+        // Build swipe for "hallo" whose first point starts 1.9 kw away above 'q' instead of 'h'
+        KeySpec qKey = geometry.keySpec('q');
+        KeySpec hKey = geometry.keySpec('h');
+        KeySpec aKey = geometry.keySpec('a');
+        KeySpec lKey = geometry.keySpec('l');
+        KeySpec oKey = geometry.keySpec('o');
+        List<TouchPoint> pts = Arrays.asList(
+                new TouchPoint(qKey.centerX, qKey.centerY - geometry.keyWidthPx * 1.1f, 100L, 0),
+                new TouchPoint(hKey.centerX, hKey.centerY, 160L, 0),
+                new TouchPoint(aKey.centerX, aKey.centerY, 240L, 0),
+                new TouchPoint(lKey.centerX, lKey.centerY, 310L, 0),
+                new TouchPoint(oKey.centerX, oKey.centerY, 380L, 0)
+        );
+        NintypeInputToken noisy = NintypeInputToken.swipe(0, 0, pts, 600f, 100L, 380L);
+
+        List<WordCandidate> results = decoder.decode(
+                Arrays.asList(noisy), trie, bigrams, geometry, null);
+        assertFalse(results.isEmpty());
+        assertEquals("hallo", results.get(0).word);
     }
 
     private NintypeInputToken buildSwipeToken(

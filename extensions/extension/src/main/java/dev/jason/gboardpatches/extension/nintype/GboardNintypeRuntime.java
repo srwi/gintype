@@ -45,7 +45,7 @@ public final class GboardNintypeRuntime {
     private static final long MAX_CHORD_GAP_MS = 420L;
     private static final long MAX_SEQUENTIAL_CHORD_GAP_MS = 180L;
 
-    private static final class PointerTrack {
+    static final class PointerTrack {
         final int pointerId;
         final float startX;
         final float startY;
@@ -54,11 +54,23 @@ public final class GboardNintypeRuntime {
         final boolean startedOnLetter;
         final int slot; // 0 = LEFT, 1 = RIGHT
         final List<TouchPoint> points = new ArrayList<>(48);
+        final List<NintypeInputToken.KeyContact> contacts = new ArrayList<>(12);
+        final List<NintypeInputToken.Dwell> dwells = new ArrayList<>(KineticaConstants.MAX_DWELL_SEGMENTS);
         float lastX;
         float lastY;
         long lastTimeMs;
         float pathLengthPx = 0f;
         char currentKeyChar;
+        int currentCode = -1;
+        long currentEnterTimeMs;
+        int runAnchorIdx = 0;
+        float runAnchorXKw;
+        float runAnchorYKw;
+        long runAnchorTimeMs;
+        int runLastIdx = 0;
+        long runLastTimeMs;
+        boolean dwellInitialized = false;
+        boolean contactsFinalized = false;
         boolean crossedKeyBoundary = false;
         boolean finished = false;
 
@@ -69,7 +81,8 @@ public final class GboardNintypeRuntime {
                 long timeMs,
                 char startKeyChar,
                 boolean startedOnLetter,
-                int slot
+                int slot,
+                NintypeGeometry geometry
         ) {
             this.pointerId = pointerId;
             this.startX = x;
@@ -83,20 +96,56 @@ public final class GboardNintypeRuntime {
             this.startedOnLetter = startedOnLetter;
             this.slot = slot;
             this.points.add(new TouchPoint(x, y, timeMs, pointerId));
+
+            if (geometry != null && geometry.isValid() && geometry.keyWidthPx > 0f) {
+                float xKw = x / geometry.keyWidthPx;
+                float yKw = y / geometry.keyWidthPx;
+                this.runAnchorXKw = xKw;
+                this.runAnchorYKw = yKw;
+                this.runAnchorTimeMs = timeMs;
+                this.runLastTimeMs = timeMs;
+                this.dwellInitialized = true;
+                this.currentCode = geometry.keyAtKw(xKw, yKw);
+                this.currentEnterTimeMs = timeMs;
+            }
         }
 
         void addPoint(float x, float y, long timeMs, NintypeGeometry geometry) {
+            long ts = Math.max(lastTimeMs, timeMs);
             float dx = x - lastX;
             float dy = y - lastY;
             float dist = (float) Math.hypot(dx, dy);
             if (dist < 1.5f && !points.isEmpty()) {
+                if (ts > lastTimeMs) {
+                    lastTimeMs = ts;
+                    trackDwell(points.size() - 1, x, y, ts, geometry);
+                }
                 return;
             }
             pathLengthPx += dist;
             lastX = x;
             lastY = y;
-            lastTimeMs = Math.max(lastTimeMs, timeMs);
-            points.add(new TouchPoint(x, y, this.lastTimeMs, pointerId));
+            lastTimeMs = ts;
+            points.add(new TouchPoint(x, y, ts, pointerId));
+
+            int idx = points.size() - 1;
+            trackDwell(idx, x, y, ts, geometry);
+
+            if (geometry != null && geometry.isValid() && geometry.keyWidthPx > 0f) {
+                float xKw = x / geometry.keyWidthPx;
+                float yKw = y / geometry.keyWidthPx;
+                if (currentCode == -1
+                        || !geometry.insideInflatedKw(xKw, yKw, currentCode, KineticaConstants.STICKY_INFLATE_KW)) {
+                    int newCode = geometry.keyAtKw(xKw, yKw);
+                    if (newCode != -1 && newCode != currentCode) {
+                        if (currentCode != -1) {
+                            contacts.add(new NintypeInputToken.KeyContact(currentCode, currentEnterTimeMs, ts));
+                        }
+                        currentCode = newCode;
+                        currentEnterTimeMs = ts;
+                    }
+                }
+            }
 
             if (geometry != null && startedOnLetter) {
                 KeySpec nearest = geometry.nearestLetterKey(x, y);
@@ -115,6 +164,50 @@ public final class GboardNintypeRuntime {
             }
         }
 
+        private void trackDwell(int idx, float xPx, float yPx, long ts, NintypeGeometry geometry) {
+            if (geometry == null || !geometry.isValid() || geometry.keyWidthPx <= 0f) return;
+            float xKw = xPx / geometry.keyWidthPx;
+            float yKw = yPx / geometry.keyWidthPx;
+            if (!dwellInitialized) {
+                runAnchorIdx = idx;
+                runAnchorXKw = xKw;
+                runAnchorYKw = yKw;
+                runAnchorTimeMs = ts;
+                runLastIdx = idx;
+                runLastTimeMs = ts;
+                dwellInitialized = true;
+                return;
+            }
+            float dx = xKw - runAnchorXKw;
+            float dy = yKw - runAnchorYKw;
+            float rSq = KineticaConstants.DWELL_RADIUS_KW * KineticaConstants.DWELL_RADIUS_KW;
+            if (dx * dx + dy * dy <= rSq) {
+                runLastIdx = idx;
+                runLastTimeMs = ts;
+                return;
+            }
+            closeDwellRun();
+            runAnchorIdx = idx;
+            runAnchorXKw = xKw;
+            runAnchorYKw = yKw;
+            runAnchorTimeMs = ts;
+            runLastIdx = idx;
+            runLastTimeMs = ts;
+        }
+
+        private void closeDwellRun() {
+            if (runLastTimeMs - runAnchorTimeMs < KineticaConstants.DWELL_MIN_MS) return;
+            dwells.add(new NintypeInputToken.Dwell(runAnchorIdx, runLastIdx, runAnchorTimeMs, runLastTimeMs));
+            if (dwells.size() < KineticaConstants.MAX_DWELL_SEGMENTS) return;
+            int shortest = 0;
+            for (int i = 1; i < dwells.size(); i++) {
+                long dCur = dwells.get(i).tExit - dwells.get(i).tEnter;
+                long dBest = dwells.get(shortest).tExit - dwells.get(shortest).tEnter;
+                if (dCur < dBest) shortest = i;
+            }
+            dwells.remove(shortest);
+        }
+
         boolean isSwipe(float swipeThresholdPx) {
             if (points.size() < 2) return false;
             if (pathLengthPx >= swipeThresholdPx) return true;
@@ -122,6 +215,12 @@ public final class GboardNintypeRuntime {
         }
 
         NintypeInputToken toToken(float swipeThresholdPx) {
+            if (!contactsFinalized) {
+                contactsFinalized = true;
+                if (currentCode != -1) {
+                    contacts.add(new NintypeInputToken.KeyContact(currentCode, currentEnterTimeMs, lastTimeMs));
+                }
+            }
             if (isSwipe(swipeThresholdPx)) {
                 return NintypeInputToken.swipe(
                         pointerId,
@@ -129,7 +228,11 @@ public final class GboardNintypeRuntime {
                         new ArrayList<>(points),
                         pathLengthPx,
                         startTimeMs,
-                        lastTimeMs
+                        lastTimeMs,
+                        new ArrayList<>(contacts),
+                        new ArrayList<>(dwells),
+                        false,
+                        false
                 );
             }
             if (startedOnLetter && startKeyChar != '\0') {
@@ -1000,7 +1103,7 @@ public final class GboardNintypeRuntime {
         boolean onLetter = session.geometry.isOnLetterArea(x, y);
         KeySpec nearest = session.geometry.nearestLetterKey(x, y);
         char keyChar = nearest != null ? nearest.character : '\0';
-        PointerTrack track = new PointerTrack(pointerId, x, y, timeMs, keyChar, onLetter, slot);
+        PointerTrack track = new PointerTrack(pointerId, x, y, timeMs, keyChar, onLetter, slot, session.geometry);
         session.activePointers.put(pointerId, track);
         return track;
     }
