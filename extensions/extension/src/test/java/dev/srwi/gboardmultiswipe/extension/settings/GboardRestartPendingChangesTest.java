@@ -77,9 +77,9 @@ public final class GboardRestartPendingChangesTest {
 
     @Test
     public void languageChangeKeepsPendingKeysAndRebaselinesOthers() {
-        GboardRestartPendingChanges.observe("mode", "四角", ZH);
-        GboardRestartPendingChanges.observe("other", "上方", ZH);
-        GboardRestartPendingChanges.observe("mode", "上方", ZH);
+        GboardRestartPendingChanges.observe("mode", "Corners", "en");
+        GboardRestartPendingChanges.observe("other", "Top", "en");
+        GboardRestartPendingChanges.observe("mode", "Top", "en");
         Assert.assertEquals(1, GboardRestartPendingChanges.pendingCount());
 
         GboardRestartPendingChanges.observe("mode", "All corners", "en");

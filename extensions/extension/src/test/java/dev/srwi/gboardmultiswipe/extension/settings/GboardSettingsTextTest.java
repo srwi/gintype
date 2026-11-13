@@ -17,7 +17,7 @@ import dev.srwi.gboardmultiswipe.extension.R;
 public final class GboardSettingsTextTest {
     @Test
     public void nullContextRemainsSafeForStaticFeatureInitialization() {
-        Assert.assertEquals("Patch settings", GboardSettingsText.get(
+        Assert.assertEquals("Multiswipe settings", GboardSettingsText.get(
                 null, R.string.gboard_patches_header_title));
     }
 
@@ -29,52 +29,28 @@ public final class GboardSettingsTextTest {
                         GboardSettingsLocaleManager.LANGUAGE_ENGLISH)
                 .commit();
 
-        Assert.assertEquals("Choose theme source", GboardSettingsText.get(context,
-                R.string.gboard_patches_custom_theme_source_chooser_title));
-        Assert.assertEquals("Create from photo", GboardSettingsText.get(context,
-                R.string.gboard_patches_custom_theme_source_photo));
-        Assert.assertEquals("Import theme (.zip)", GboardSettingsText.get(context,
-                R.string.gboard_patches_custom_theme_source_zip));
-        Assert.assertEquals("Choose a theme to import", GboardSettingsText.get(context,
-                R.string.gboard_patches_custom_theme_choose_import));
-
-        GboardPatchesSettings.preferences(context).edit()
-                .putString(GboardPatchesSettings.PREF_KEY_SETTINGS_UI_LANGUAGE,
-                        GboardSettingsLocaleManager.LANGUAGE_TRADITIONAL_CHINESE)
-                .commit();
-        Assert.assertEquals("選擇主題來源", GboardSettingsText.get(context,
-                R.string.gboard_patches_custom_theme_source_chooser_title));
-        Assert.assertEquals("選擇要匯入的主題", GboardSettingsText.get(context,
-                R.string.gboard_patches_custom_theme_choose_import));
+        Assert.assertEquals("Nintype Multi-Touch", GboardSettingsText.get(context,
+                R.string.gboard_patches_nintype_title));
+        Assert.assertEquals("Matrix Word Suggestions", GboardSettingsText.get(context,
+                R.string.gboard_patches_matrix_suggestions_title));
     }
 
     @Test
-    public void authoritativeCopyResolvesBothLocalesWithoutCallerFallback() {
+    public void authoritativeCopyResolvesEnglishWithoutCallerFallback() {
         Assert.assertEquals(
-                "Patch settings",
+                "Multiswipe settings",
                 GboardSettingsText.resolveStableTextForTesting(
                         R.string.gboard_patches_header_title,
                         "en"));
-        Assert.assertEquals(
-                "Patch 設定",
-                GboardSettingsText.resolveStableTextForTesting(
-                        R.string.gboard_patches_header_title,
-                        "zh-Hant"));
     }
 
     @Test
     public void localeNormalizationAndFormattingStayBehindTheSeam() {
         Assert.assertEquals(
-                "跟隨系統（繁體中文）",
-                GboardSettingsText.resolveStableTextForTesting(
-                        R.string.gboard_patches_language_system_value,
-                        "zh-TW",
-                        "繁體中文"));
-        Assert.assertEquals(
                 "System default (English)",
                 GboardSettingsText.resolveStableTextForTesting(
                         R.string.gboard_patches_language_system_value,
-                        "fr-FR",
+                        "en",
                         "English"));
     }
 
@@ -83,13 +59,7 @@ public final class GboardSettingsTextTest {
         Assert.assertEquals(
                 "",
                 GboardSettingsText.resolveStableTextForTesting(
-                        R.string.gboard_patches_group_keyboard_header_summary,
-                        "en"));
-        Assert.assertEquals(
-                "Controls Gboard AI Writing Tools availability, keyboard support, "
-                        + "and backend routing.",
-                GboardSettingsText.resolveStableTextForTesting(
-                        R.string.gboard_patches_ai_writing_tools_summary,
+                        R.string.gboard_patches_header_summary,
                         "en"));
     }
 
@@ -107,16 +77,10 @@ public final class GboardSettingsTextTest {
                         R.plurals.gboard_patches_minutes,
                         "en",
                         2));
-        Assert.assertEquals(
-                "2 分鐘",
-                GboardSettingsText.resolveStableQuantityForTesting(
-                        R.plurals.gboard_patches_minutes,
-                        "zh-Hant",
-                        2));
     }
 
     @Test
-    public void everyGeneratedSettingsStringHasEnglishAndTraditionalChineseCoverage()
+    public void everyGeneratedSettingsStringHasEnglishCoverage()
             throws Exception {
         for (Field field : R.string.class.getDeclaredFields()) {
             if (!Modifier.isStatic(field.getModifiers()) || field.getType() != int.class) {
@@ -124,11 +88,8 @@ public final class GboardSettingsTextTest {
             }
             int resId = field.getInt(null);
             Assert.assertNotNull(
-                    field.getName() + " missing English settings text",
-                    GboardSettingsText.resolveStableTextForTesting(resId, "en"));
-            Assert.assertNotNull(
-                    field.getName() + " missing zh-Hant settings text",
-                    GboardSettingsText.resolveStableTextForTesting(resId, "zh-Hant"));
+                field.getName() + " missing English settings text",
+                GboardSettingsText.resolveStableTextForTesting(resId, "en"));
         }
     }
 }

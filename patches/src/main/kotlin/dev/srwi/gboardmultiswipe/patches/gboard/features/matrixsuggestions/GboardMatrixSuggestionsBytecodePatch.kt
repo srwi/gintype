@@ -13,7 +13,7 @@ import dev.srwi.gboardmultiswipe.patches.gboard.shared.runtimeabi.RuntimeCallId
 import dev.srwi.gboardmultiswipe.patches.shared.Constants.COMPATIBILITY_GBOARD
 
 internal val gboardMatrixSuggestionsBytecodePatch = bytecodePatch(
-    description = "Injiziert den Matrix Word Suggestions Hook in LatinFixedCountCandidatesHolderView.",
+    description = "Injects the Matrix Word Suggestions hook into LatinFixedCountCandidatesHolderView.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
     dependsOn(gboardPatchesExtensionCarrierPatch)

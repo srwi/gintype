@@ -91,8 +91,6 @@ public final class GboardPatchesRestartSourceTest {
 
         Assert.assertTrue(settingsText.contains(
                 "<translation locale=\"en\">Restart Gboard</translation>"));
-        Assert.assertTrue(settingsText.contains(
-                "<translation locale=\"zh-Hant\">重新啟動 Gboard</translation>"));
         Assert.assertTrue(settingsText.contains("gboard_patches_restart_failed"));
     }
 

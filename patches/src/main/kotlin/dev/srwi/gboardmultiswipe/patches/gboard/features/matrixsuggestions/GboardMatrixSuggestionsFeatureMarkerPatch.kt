@@ -5,7 +5,7 @@ import dev.srwi.gboardmultiswipe.patches.gboard.shared.applyFeatureMarker
 import dev.srwi.gboardmultiswipe.patches.shared.Constants.COMPATIBILITY_GBOARD
 
 internal val gboardMatrixSuggestionsFeatureMarkerPatch = resourcePatch(
-    description = "Markiert Matrix Word Suggestions (vertikales Scrollen & Wortverlauf) als aktiv in der target APK.",
+    description = "Marks Matrix word suggestions patch availability in AndroidManifest metadata.",
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 

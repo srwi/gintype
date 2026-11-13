@@ -7,7 +7,7 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 
 internal val gboardPatchesSettingsPatch = resourcePatch(
-    description = "在 Gboard 設定底部加入 Patches 入口。"
+    description = "Adds the Multiswipe & Matrix settings entry to Gboard settings."
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 

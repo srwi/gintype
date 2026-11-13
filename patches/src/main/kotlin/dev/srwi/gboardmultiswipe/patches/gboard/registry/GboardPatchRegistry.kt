@@ -37,8 +37,7 @@ private fun gboardPublicResourcePatch(
 val gboardMatrixSuggestionsPatch = gboardPublicResourcePatch(
     featureId = "matrix_word_suggestions",
     name = "Matrix Word Suggestions",
-    description = "Vertikale Wortvorschläge mit Up/Down-Swipe und 2D-Satzverlauf.\n" +
-        "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
+    description = "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
@@ -54,8 +53,7 @@ val gboardMatrixSuggestionsPatch = gboardPublicResourcePatch(
 val gboardNintypePatch = gboardPublicResourcePatch(
     featureId = "nintype_multi_touch",
     name = "Nintype Multi-Touch Swipe",
-    description = "Zwei-Finger-Swipe und Tap+Swipe-Eingabe nach dem Nintype-Algorithmus mit Gboard-Wörterbuch.\n" +
-        "Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.",
+    description = "Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)

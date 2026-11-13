@@ -3,8 +3,6 @@ package dev.srwi.gboardmultiswipe.extension.matrixsuggestions;
 import android.content.Context;
 import android.content.SharedPreferences;
 
-import java.util.Locale;
-
 import dev.srwi.gboardmultiswipe.extension.R;
 import dev.srwi.gboardmultiswipe.extension.flagsettings.GboardBooleanFlagSettingsFeature;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesFeatureAvailability;
@@ -55,31 +53,19 @@ public final class GboardMatrixSuggestionsSettingsFeature
         return "blue";
     }
 
-    private static boolean isGerman() {
-        try {
-            return "de".equalsIgnoreCase(Locale.getDefault().getLanguage());
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
     private static String getTitle(Context context) {
-        if (isGerman()) return "Matrix-Wortvorschläge";
         return GboardSettingsText.get(context, R.string.gboard_patches_matrix_suggestions_title);
     }
 
     private static String getSummary(Context context) {
-        if (isGerman()) return "2D-Vorschläge mit vertikalem Wischen und Satzverlauf in der Topbar.";
         return GboardSettingsText.get(context, R.string.gboard_patches_matrix_suggestions_summary);
     }
 
     private static String getEnableTitle(Context context) {
-        if (isGerman()) return "Matrix-Wortvorschläge aktivieren";
         return GboardSettingsText.get(context, R.string.gboard_patches_matrix_suggestions_enable_title);
     }
 
     private static String getSection(Context context) {
-        if (isGerman()) return "Vorschläge & Satzverlauf";
         return GboardSettingsText.get(context, R.string.gboard_patches_matrix_suggestions_section);
     }
 }

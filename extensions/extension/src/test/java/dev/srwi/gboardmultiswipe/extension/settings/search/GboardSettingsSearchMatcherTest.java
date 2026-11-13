@@ -23,18 +23,18 @@ public final class GboardSettingsSearchMatcherTest {
 
     @Test
     public void foldsWidthCaseAndPunctuation() {
-        assertEquals(Arrays.asList("ocr", "引擎"),
-                GboardSettingsSearchMatcher.terms("  ＯＣＲ　引擎 "));
+        assertEquals(Arrays.asList("matrix", "wheel"),
+                GboardSettingsSearchMatcher.terms("  ＭＡＴＲＩＸ　wheel "));
         assertEquals("wificlipboard",
                 GboardSettingsSearchMatcher.prepare("Wi-Fi Clipboard").normalized);
     }
 
     @Test
     public void exactPrefixAndSubstringRankInOrder() {
-        int exact = title("磨砂玻璃", "磨砂玻璃");
-        int prefix = title("磨砂", "磨砂玻璃");
-        int wordStart = title("glass", "Frosted Glass");
-        int substring = title("玻璃", "磨砂玻璃");
+        int exact = title("Nintype", "Nintype");
+        int prefix = title("Nin", "Nintype");
+        int wordStart = title("touch", "Multi Touch");
+        int substring = title("type", "Nintype");
         assertEquals(GboardSettingsSearchMatcher.EXACT, exact);
         assertEquals(GboardSettingsSearchMatcher.PREFIX, prefix);
         assertEquals(GboardSettingsSearchMatcher.SUBSTRING
@@ -43,15 +43,9 @@ public final class GboardSettingsSearchMatcherTest {
     }
 
     @Test
-    public void lettersInOrderMatchAcrossWordsAndNearbyHan() {
-        assertTrue(title("frgl", "Frosted Glass") > GboardSettingsSearchMatcher.TYPO);
-        assertTrue(title("磨玻", "磨砂玻璃") > GboardSettingsSearchMatcher.TYPO);
-        assertTrue(title("磨玻", "磨砂玻璃") < GboardSettingsSearchMatcher.SUBSTRING);
-    }
-
-    @Test
-    public void scatteredHanCharactersDoNotMatch() {
-        assertEquals(0, title("鍵模", "長按鍵盤上的地球鍵切換到其他輸入法模式"));
+    public void lettersInOrderMatchAcrossWords() {
+        assertTrue(title("ntyp", "Nintype") > GboardSettingsSearchMatcher.TYPO);
+        assertTrue(title("mtx", "Matrix Suggestions") > GboardSettingsSearchMatcher.TYPO);
     }
 
     @Test
@@ -71,7 +65,7 @@ public final class GboardSettingsSearchMatcherTest {
 
     @Test
     public void singleCharacterOnlyMatchesAsSubstring() {
-        assertEquals(GboardSettingsSearchMatcher.SUBSTRING, title("砂", "磨砂玻璃"));
+        assertEquals(GboardSettingsSearchMatcher.SUBSTRING, title("x", "Matrix"));
         assertEquals(0, title("z", "Frosted Glass"));
     }
 
@@ -84,11 +78,10 @@ public final class GboardSettingsSearchMatcherTest {
     @Test
     public void summariesOnlyMatchSubstrings() {
         GboardSettingsSearchMatcher.Text summary =
-                GboardSettingsSearchMatcher.prepare("為鍵盤面板加入即時背景模糊。");
+                GboardSettingsSearchMatcher.prepare("Two-finger swipe and tap+swipe gesture typing.");
         assertEquals(GboardSettingsSearchMatcher.SUMMARY,
-                GboardSettingsSearchMatcher.scoreSummary("模糊", summary));
-        assertEquals(0, GboardSettingsSearchMatcher.scoreSummary("鍵糊", summary));
-        assertEquals(0, GboardSettingsSearchMatcher.scoreSummary("糊", summary));
+                GboardSettingsSearchMatcher.scoreSummary("gesture", summary));
+        assertEquals(0, GboardSettingsSearchMatcher.scoreSummary("invalid", summary));
     }
 
     @Test

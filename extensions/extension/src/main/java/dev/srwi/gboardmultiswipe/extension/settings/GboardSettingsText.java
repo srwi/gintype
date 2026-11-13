@@ -1,14 +1,11 @@
 package dev.srwi.gboardmultiswipe.extension.settings;
 
 import android.content.Context;
-import android.content.res.Configuration;
-import android.os.Build;
 
 import java.util.Locale;
 
 public final class GboardSettingsText {
     private static final String LANGUAGE_ENGLISH = "en";
-    private static final String LANGUAGE_TRADITIONAL_CHINESE = "zh-Hant";
 
     private GboardSettingsText() {
     }
@@ -84,80 +81,15 @@ public final class GboardSettingsText {
         if (args == null || args.length == 0) {
             return template;
         }
-        Locale formatLocale = LANGUAGE_TRADITIONAL_CHINESE.equals(languageTag)
-                ? Locale.TRADITIONAL_CHINESE
-                : Locale.US;
-        return String.format(formatLocale, template, args);
+        return String.format(Locale.US, template, args);
     }
 
     private static String resolveLanguageTag(Context context) {
-        Locale locale = extractLocale(context);
-        if (context != null) {
-            try {
-                String preference = GboardSettingsLocaleManager.readLanguagePreference(
-                        GboardPatchesSettings.preferences(context));
-                return GboardSettingsLocaleManager.resolveEffectiveLanguageTag(
-                        preference, locale);
-            } catch (Throwable ignored) {
-                // Static feature initialization can request stable text without a usable context.
-            }
-        }
-        return isTraditionalChinese(locale)
-                ? LANGUAGE_TRADITIONAL_CHINESE
-                : LANGUAGE_ENGLISH;
-    }
-
-    private static Locale extractLocale(Context context) {
-        if (context == null) {
-            return Locale.getDefault();
-        }
-        Configuration configuration;
-        try {
-            if (context.getResources() == null) {
-                return Locale.getDefault();
-            }
-            configuration = context.getResources().getConfiguration();
-        } catch (Throwable ignored) {
-            return Locale.getDefault();
-        }
-        if (configuration == null) {
-            return Locale.getDefault();
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
-                && configuration.getLocales() != null
-                && !configuration.getLocales().isEmpty()) {
-            Locale locale = configuration.getLocales().get(0);
-            return locale != null ? locale : Locale.getDefault();
-        }
-        Locale locale = configuration.locale;
-        return locale != null ? locale : Locale.getDefault();
-    }
-
-    private static String normalizeLanguageTag(String languageTag) {
-        if (LANGUAGE_TRADITIONAL_CHINESE.equals(languageTag)) {
-            return LANGUAGE_TRADITIONAL_CHINESE;
-        }
-        if (languageTag != null && !languageTag.isBlank()) {
-            Locale locale = Locale.forLanguageTag(languageTag);
-            if (isTraditionalChinese(locale)) {
-                return LANGUAGE_TRADITIONAL_CHINESE;
-            }
-        }
         return LANGUAGE_ENGLISH;
     }
 
-    private static boolean isTraditionalChinese(Locale locale) {
-        if (locale == null || !"zh".equalsIgnoreCase(locale.getLanguage())) {
-            return false;
-        }
-        String script = locale.getScript();
-        if ("Hant".equalsIgnoreCase(script)) {
-            return true;
-        }
-        String country = locale.getCountry();
-        return "TW".equalsIgnoreCase(country)
-                || "HK".equalsIgnoreCase(country)
-                || "MO".equalsIgnoreCase(country);
+    private static String normalizeLanguageTag(String languageTag) {
+        return LANGUAGE_ENGLISH;
     }
 
     private static Context requireContext(Context context) {

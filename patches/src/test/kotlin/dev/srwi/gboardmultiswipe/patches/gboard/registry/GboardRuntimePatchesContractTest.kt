@@ -48,13 +48,11 @@ class GboardRuntimePatchesContractTest {
     @Test
     fun `public descriptions match the requested bilingual product copy`() {
         assertEquals(
-            "Vertikale Wortvorschläge mit Up/Down-Swipe und 2D-Satzverlauf.\n" +
-                "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
+            "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
             gboardMatrixSuggestionsPatch.description,
         )
         assertEquals(
-            "Zwei-Finger-Swipe und Tap+Swipe-Eingabe nach dem Nintype-Algorithmus mit Gboard-Wörterbuch.\n" +
-                "Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.",
+            "Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.",
             gboardNintypePatch.description,
         )
     }

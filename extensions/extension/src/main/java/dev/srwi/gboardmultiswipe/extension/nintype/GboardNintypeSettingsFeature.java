@@ -107,121 +107,57 @@ public final class GboardNintypeSettingsFeature implements GboardPatchesSettings
     private final String errorSummary;
 
     public GboardNintypeSettingsFeature(Context context) {
-        boolean de = isGerman();
-        title = de ? "Nintype Zwei-Finger-Swipe"
-                : text(context, R.string.gboard_patches_nintype_title);
-        summary = de
-                ? "Zwei-Finger-Swipe und Tap+Swipe-Eingabe nach dem Nintype-Algorithmus mit Gboard-Wörterbuch."
-                : text(context, R.string.gboard_patches_nintype_summary);
+        title = text(context, R.string.gboard_patches_nintype_title);
+        summary = text(context, R.string.gboard_patches_nintype_summary);
         headerBadge = text(context, R.string.gboard_patches_header_badge);
-        sectionBehavior = de ? "Zwei-Finger-Gesteneingabe"
-                : text(context, R.string.gboard_patches_nintype_section_behavior);
-        sectionTuning = de ? "Decoder-Abstimmung (Kinetica)"
-                : text(context, R.string.gboard_patches_nintype_section_tuning);
-        enabledTitle = de ? "Nintype Zwei-Finger-Swipe aktivieren"
-                : text(context, R.string.gboard_patches_nintype_enabled_title);
-        enabledSummary = de
-                ? "Übernimmt automatisch bei Zwei-Finger-Swipes oder Tap+Swipe auf der Tastatur; Einzel-Taps und normales Swipen bleiben bei Gboard."
-                : text(context, R.string.gboard_patches_nintype_enabled_summary);
-        autoSpaceTitle = de ? "Automatisches Leerzeichen"
-                : text(context, R.string.gboard_patches_nintype_auto_space_title);
-        autoSpaceSummary = de
-                ? "Vor und nach Nintype-Wörtern automatisch ein Leerzeichen einfügen."
-                : text(context, R.string.gboard_patches_nintype_auto_space_summary);
-        delayTitle = de ? "Autospace-Verzögerung"
-                : text(context, R.string.gboard_patches_nintype_auto_space_delay_title);
-        delaySummary = de
-                ? "Wartezeit nach dem Abheben aller Finger, bevor das Wort bestätigt und ein Leerzeichen eingefügt wird."
-                : text(context, R.string.gboard_patches_nintype_auto_space_delay_summary);
-        delayValueTemplate = de ? "%d ms"
-                : text(context, R.string.gboard_patches_nintype_auto_space_delay_value);
-        delayValueDefaultTemplate = de ? "%d ms (Standard)"
-                : text(context, R.string.gboard_patches_nintype_auto_space_delay_value_default);
-        delayCustomLabel = de ? "Benutzerdefiniert…"
-                : text(context, R.string.gboard_patches_nintype_auto_space_delay_custom);
-        combineDelayTitle = de ? "Single-Touch-Kombinationszeit"
-                : text(context, R.string.gboard_patches_nintype_combine_delay_title);
-        combineDelaySummary = de
-                ? "Folgt nach einem Gboard-Einzelfinger-Swipe/Tap innerhalb dieser Zeit ein weiterer Swipe oder Tap, kombiniert Nintype beide rückwirkend (0 = aus)."
-                : text(context, R.string.gboard_patches_nintype_combine_delay_summary);
-        combineDelayOffLabel = de ? "0 ms (Aus)"
-                : text(context, R.string.gboard_patches_nintype_combine_delay_off);
-        defaultValueTemplate = de ? "%s (Standard)"
-                : text(context, R.string.gboard_patches_nintype_value_default);
-        beamWidthTitle = de ? "Beam-Breite (BEAM_WIDTH)"
-                : text(context, R.string.gboard_patches_nintype_beam_width_title);
-        beamWidthSummary = de
-                ? "Wie viele Wort-Anfänge pro Buchstabe bei parallelen Swipes behalten werden (höher = bessere Treffer im großen deutschen Wörterbuch)."
-                : text(context, R.string.gboard_patches_nintype_beam_width_summary);
-        freqWeightFloorTitle = de ? "Häufigkeits-Untergrenze (FREQ_WEIGHT_FLOOR)"
-                : text(context, R.string.gboard_patches_nintype_freq_weight_floor_title);
-        freqWeightFloorSummary = de
-                ? "Mindestfaktor für seltene Wörter (kleiner = häufige/bekannte Wörter bevorzugen; größer = geometrisch exakten Match bevorzugen)."
-                : text(context, R.string.gboard_patches_nintype_freq_weight_floor_summary);
-        geoExponentTitle = de ? "Geometrie-Exponent (GEO_EXPONENT)"
-                : text(context, R.string.gboard_patches_nintype_geo_exponent_title);
-        geoExponentSummary = de
-                ? "Wie stark Formabweichungen bestraft werden (höher = exakterer Match schlägt Worthäufigkeit/Bigramm)."
-                : text(context, R.string.gboard_patches_nintype_geo_exponent_summary);
-        beamFreqWeightTitle = de ? "Beam-Frequenzgewicht (BEAM_FREQ_WEIGHT)"
-                : text(context, R.string.gboard_patches_nintype_beam_freq_weight_title);
-        beamFreqWeightSummary = de
-                ? "Wie stark bekannte Wörter beim Beam-Pruning bevorzugt werden (0.0 = rein geometrisch, höher = bekannte Wörter bleiben länger erhalten)."
-                : text(context, R.string.gboard_patches_nintype_beam_freq_weight_summary);
-        sliderDefaultLabel = de ? "Standard"
-                : text(context, R.string.gboard_patches_nintype_slider_default);
-        sectionDiagnostics = de ? "Diagnose & Debugging"
-                : text(context, R.string.gboard_patches_nintype_section_diagnostics);
-        traceLoggingTitle = de ? "Debug-Trace-Logging"
-                : text(context, R.string.gboard_patches_nintype_trace_logging_title);
-        traceLoggingSummary = de
-                ? "Zeichnet Touch-Pfade, Timings und Decoder-Kandidaten lokal zur Fehlersuche auf (Standard: Aus)."
-                : text(context, R.string.gboard_patches_nintype_trace_logging_summary);
-        traceExportTitle = de ? "Debug-Trace exportieren…"
-                : text(context, R.string.gboard_patches_nintype_trace_export_title);
-        traceExportSummary = de
-                ? "Wähle einen Zeitraum in Minuten, um aufgezeichnete JSONL-Traces zu exportieren."
-                : text(context, R.string.gboard_patches_nintype_trace_export_summary);
-        traceExportDialogTitle = de ? "Export-Zeitraum wählen"
-                : text(context, R.string.gboard_patches_nintype_trace_export_dialog_title);
-        traceExportMinutesTemplate = de ? "Letzte %d Minuten"
-                : text(context, R.string.gboard_patches_nintype_trace_export_minutes_item);
-        traceExportHoursTemplate = de ? "Letzte %d Stunden"
-                : text(context, R.string.gboard_patches_nintype_trace_export_hours_item);
-        traceExportAllLabel = de ? "Alles (gesamtes Log)"
-                : text(context, R.string.gboard_patches_nintype_trace_export_all);
-        traceExportHint = de ? "Minuten (1–1440)"
-                : text(context, R.string.gboard_patches_nintype_trace_export_hint);
-        traceExportError = de ? "Bitte eine Dauer zwischen 1 und 1440 Minuten eingeben."
-                : text(context, R.string.gboard_patches_nintype_trace_export_error);
-        traceExportEmpty = de ? "Keine Trace-Einträge im gewählten Zeitraum gefunden."
-                : text(context, R.string.gboard_patches_nintype_trace_export_empty);
-        traceExportDone = de ? "Trace-Log exportiert."
-                : text(context, R.string.gboard_patches_nintype_trace_export_done);
-        traceClearTitle = de ? "Debug-Trace-Logs löschen"
-                : text(context, R.string.gboard_patches_nintype_trace_clear_title);
-        traceClearSummary = de ? "Alle lokal gespeicherten Nintype-Trace-Dateien entfernen."
-                : text(context, R.string.gboard_patches_nintype_trace_clear_summary);
-        traceClearConfirmTitle = de ? "Trace-Logs löschen?"
-                : text(context, R.string.gboard_patches_nintype_trace_clear_confirm_title);
-        traceClearConfirmMessage = de ? "Alle aufgezeichneten Nintype-Trace-Dateien unwiderruflich löschen?"
-                : text(context, R.string.gboard_patches_nintype_trace_clear_confirm_message);
-        traceClearDone = de ? "Trace-Logs gelöscht."
-                : text(context, R.string.gboard_patches_nintype_trace_clear_done);
-        sectionReset = de ? "Zurücksetzen"
-                : text(context, R.string.gboard_patches_nintype_section_reset);
-        resetTitle = de ? "Auf Standardwerte zurücksetzen"
-                : text(context, R.string.gboard_patches_nintype_reset_title);
-        resetSummary = de
-                ? "Setzt Nintype-Verhalten, Timings, Decoder-Werte und Debug-Logging auf die Standardwerte zurück."
-                : text(context, R.string.gboard_patches_nintype_reset_summary);
-        resetConfirmTitle = de ? "Standardwerte wiederherstellen?"
-                : text(context, R.string.gboard_patches_nintype_reset_confirm_title);
-        resetConfirmMessage = de
-                ? "Alle angepassten Timings und Kinetica-Decoder-Werte werden auf die Standardwerte zurückgesetzt."
-                : text(context, R.string.gboard_patches_nintype_reset_confirm_message);
-        resetDone = de ? "Nintype-Einstellungen auf Standardwerte zurückgesetzt."
-                : text(context, R.string.gboard_patches_nintype_reset_done);
+        sectionBehavior = text(context, R.string.gboard_patches_nintype_section_behavior);
+        sectionTuning = text(context, R.string.gboard_patches_nintype_section_tuning);
+        enabledTitle = text(context, R.string.gboard_patches_nintype_enabled_title);
+        enabledSummary = text(context, R.string.gboard_patches_nintype_enabled_summary);
+        autoSpaceTitle = text(context, R.string.gboard_patches_nintype_auto_space_title);
+        autoSpaceSummary = text(context, R.string.gboard_patches_nintype_auto_space_summary);
+        delayTitle = text(context, R.string.gboard_patches_nintype_auto_space_delay_title);
+        delaySummary = text(context, R.string.gboard_patches_nintype_auto_space_delay_summary);
+        delayValueTemplate = text(context, R.string.gboard_patches_nintype_auto_space_delay_value);
+        delayValueDefaultTemplate = text(context, R.string.gboard_patches_nintype_auto_space_delay_value_default);
+        delayCustomLabel = text(context, R.string.gboard_patches_nintype_auto_space_delay_custom);
+        combineDelayTitle = text(context, R.string.gboard_patches_nintype_combine_delay_title);
+        combineDelaySummary = text(context, R.string.gboard_patches_nintype_combine_delay_summary);
+        combineDelayOffLabel = text(context, R.string.gboard_patches_nintype_combine_delay_off);
+        defaultValueTemplate = text(context, R.string.gboard_patches_nintype_value_default);
+        beamWidthTitle = text(context, R.string.gboard_patches_nintype_beam_width_title);
+        beamWidthSummary = text(context, R.string.gboard_patches_nintype_beam_width_summary);
+        freqWeightFloorTitle = text(context, R.string.gboard_patches_nintype_freq_weight_floor_title);
+        freqWeightFloorSummary = text(context, R.string.gboard_patches_nintype_freq_weight_floor_summary);
+        geoExponentTitle = text(context, R.string.gboard_patches_nintype_geo_exponent_title);
+        geoExponentSummary = text(context, R.string.gboard_patches_nintype_geo_exponent_summary);
+        beamFreqWeightTitle = text(context, R.string.gboard_patches_nintype_beam_freq_weight_title);
+        beamFreqWeightSummary = text(context, R.string.gboard_patches_nintype_beam_freq_weight_summary);
+        sliderDefaultLabel = text(context, R.string.gboard_patches_nintype_slider_default);
+        sectionDiagnostics = text(context, R.string.gboard_patches_nintype_section_diagnostics);
+        traceLoggingTitle = text(context, R.string.gboard_patches_nintype_trace_logging_title);
+        traceLoggingSummary = text(context, R.string.gboard_patches_nintype_trace_logging_summary);
+        traceExportTitle = text(context, R.string.gboard_patches_nintype_trace_export_title);
+        traceExportSummary = text(context, R.string.gboard_patches_nintype_trace_export_summary);
+        traceExportDialogTitle = text(context, R.string.gboard_patches_nintype_trace_export_dialog_title);
+        traceExportMinutesTemplate = text(context, R.string.gboard_patches_nintype_trace_export_minutes_item);
+        traceExportHoursTemplate = text(context, R.string.gboard_patches_nintype_trace_export_hours_item);
+        traceExportAllLabel = text(context, R.string.gboard_patches_nintype_trace_export_all);
+        traceExportHint = text(context, R.string.gboard_patches_nintype_trace_export_hint);
+        traceExportError = text(context, R.string.gboard_patches_nintype_trace_export_error);
+        traceExportEmpty = text(context, R.string.gboard_patches_nintype_trace_export_empty);
+        traceExportDone = text(context, R.string.gboard_patches_nintype_trace_export_done);
+        traceClearTitle = text(context, R.string.gboard_patches_nintype_trace_clear_title);
+        traceClearSummary = text(context, R.string.gboard_patches_nintype_trace_clear_summary);
+        traceClearConfirmTitle = text(context, R.string.gboard_patches_nintype_trace_clear_confirm_title);
+        traceClearConfirmMessage = text(context, R.string.gboard_patches_nintype_trace_clear_confirm_message);
+        traceClearDone = text(context, R.string.gboard_patches_nintype_trace_clear_done);
+        sectionReset = text(context, R.string.gboard_patches_nintype_section_reset);
+        resetTitle = text(context, R.string.gboard_patches_nintype_reset_title);
+        resetSummary = text(context, R.string.gboard_patches_nintype_reset_summary);
+        resetConfirmTitle = text(context, R.string.gboard_patches_nintype_reset_confirm_title);
+        resetConfirmMessage = text(context, R.string.gboard_patches_nintype_reset_confirm_message);
+        resetDone = text(context, R.string.gboard_patches_nintype_reset_done);
         errorTitle = text(context, R.string.gboard_patches_nintype_error_title);
         errorSummary = text(context, R.string.gboard_patches_nintype_error_summary);
     }
@@ -817,14 +753,6 @@ public final class GboardNintypeSettingsFeature implements GboardPatchesSettings
                         errorSummary,
                         GboardPatchesSettingsContract.StatusTone.WARNING)),
                 Collections.emptyList());
-    }
-
-    private static boolean isGerman() {
-        try {
-            return "de".equalsIgnoreCase(Locale.getDefault().getLanguage());
-        } catch (Throwable ignored) {
-            return false;
-        }
     }
 
     private static String text(Context context, int id) {

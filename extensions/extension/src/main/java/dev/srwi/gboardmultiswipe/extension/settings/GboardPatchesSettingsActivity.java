@@ -3737,11 +3737,7 @@ public final class GboardPatchesSettingsActivity extends Activity
         TextView titleView = new TextView(this);
         String title = rowModel.getTitle() == null ? "" : rowModel.getTitle().toString();
         String screenName = screenTitle == null ? "" : screenTitle;
-        if (title.equals("啟用") || title.length() <= 2) {
-            title = "使用" + screenName;
-        } else if (title.startsWith("啟用")) {
-            title = "使用" + title.substring(2);
-        } else if (title.equalsIgnoreCase("Enable")) {
+        if (title.equalsIgnoreCase("Enable")) {
             title = "Use " + screenName;
         } else if (title.startsWith("Enable ")) {
             title = "Use " + title.substring(7);
@@ -4129,14 +4125,11 @@ public final class GboardPatchesSettingsActivity extends Activity
                         GboardSettingsText.get(context,
                                 R.string.gboard_patches_language_system_label),
                         GboardSettingsText.get(context,
-                                R.string.gboard_patches_language_english_label),
-                        GboardSettingsText.get(context,
-                                R.string.gboard_patches_language_traditional_chinese_label)
+                                R.string.gboard_patches_language_english_label)
                 },
                 new String[] {
                         GboardSettingsLocaleManager.LANGUAGE_SYSTEM,
-                        GboardSettingsLocaleManager.LANGUAGE_ENGLISH,
-                        GboardSettingsLocaleManager.LANGUAGE_TRADITIONAL_CHINESE
+                        GboardSettingsLocaleManager.LANGUAGE_ENGLISH
                 },
                 context == null
                         ? GboardSettingsLocaleManager.LANGUAGE_SYSTEM
@@ -4159,30 +4152,7 @@ public final class GboardPatchesSettingsActivity extends Activity
     }
 
     private static String currentLanguageLabel(Context context) {
-        SharedPreferences preferences = context == null
-                ? null
-                : GboardPatchesSettings.preferences(context);
-        String preference = GboardSettingsLocaleManager.readLanguagePreference(preferences);
-        if (GboardSettingsLocaleManager.LANGUAGE_TRADITIONAL_CHINESE.equals(preference)) {
-            return GboardSettingsText.get(context,
-                    R.string.gboard_patches_language_traditional_chinese_label);
-        }
-        if (GboardSettingsLocaleManager.LANGUAGE_ENGLISH.equals(preference)) {
-            return GboardSettingsText.get(context,
-                    R.string.gboard_patches_language_english_label);
-        }
-        String effectiveLanguage = GboardSettingsLocaleManager.resolveEffectiveLanguageTag(
-                preference,
-                Locale.getDefault());
-        String effectiveLabel =
-                GboardSettingsLocaleManager.LANGUAGE_TRADITIONAL_CHINESE.equals(effectiveLanguage)
-                        ? GboardSettingsText.get(context,
-                                R.string.gboard_patches_language_traditional_chinese_label)
-                        : GboardSettingsText.get(context,
-                                R.string.gboard_patches_language_english_label);
-        return GboardSettingsText.format(context,
-                R.string.gboard_patches_language_system_value,
-                effectiveLabel);
+        return GboardSettingsText.get(context, R.string.gboard_patches_language_english_label);
     }
 
     private GboardPatchesSettingsContract.Screen buildFeatureErrorScreen(

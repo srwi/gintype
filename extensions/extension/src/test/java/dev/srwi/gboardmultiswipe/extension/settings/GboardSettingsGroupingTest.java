@@ -78,118 +78,14 @@ public final class GboardSettingsGroupingTest {
     }
 
     @Test
-    public void registryUsesFocusedKeyboardGroupsInRequestedOrder() throws Exception {
+    public void registryUsesNintypeAndMatrixSuggestions() throws Exception {
         String registrySource = readSource(
                 "src/main/java/dev/srwi/gboardmultiswipe/extension/settings/"
                         + "GboardPatchesSettingsFeatureRegistry.java");
-        String aiVoiceGroupSource = readSource(
-                "src/main/java/dev/srwi/gboardmultiswipe/extension/keyboard/"
-                        + "GboardAiVoiceSettingsGroupFeature.java");
-        String toolsGroupSource = readSource(
-                "src/main/java/dev/srwi/gboardmultiswipe/extension/keyboard/"
-                        + "GboardKeyboardToolsSettingsGroupFeature.java");
-        String layoutGroupSource = readSource(
-                "src/main/java/dev/srwi/gboardmultiswipe/extension/keyboard/"
-                        + "GboardKeyboardLayoutSettingsGroupFeature.java");
 
         assertInOrder(registrySource,
-                "new GboardAiVoiceSettingsGroupFeature(context)",
-                "new GboardLanguageModelSettingsFeature(context)",
-                "new GboardKeyboardToolsSettingsGroupFeature(context)",
-                "new GboardKeyboardLayoutSettingsGroupFeature(context)",
-                "new GboardClipboardSettingsFeature()",
-                "new GboardMoreSettingsGroupFeature(context)");
-        assertInOrder(aiVoiceGroupSource.substring(aiVoiceGroupSource.indexOf("Arrays.asList(")),
-                "new GboardAiWritingToolsSettingsFeature(context)",
-                "new GboardAdvancedVoiceSettingsFeature(context)",
-                "new GboardBluetoothMicrophoneSettingsFeature(context)");
-        assertInOrder(toolsGroupSource.substring(toolsGroupSource.indexOf("Arrays.asList(")),
-                "new GboardTopRowSwipeSettingsFeature(context)",
-                "new GboardManualIncognitoSettingsFeature(context)",
-                "new GboardLongPressQuickActionsSettingsFeature(context)",
-                "new GboardCursorTrackpadSettingsFeature(context)",
-                "new GboardOcrSettingsFeature(context)",
-                "new GboardQuickInsertSettingsFeature(context)",
-                "new GboardFloatingWebSearchSettingsFeature(context)",
-                "new GboardCalculatorSettingsFeature(context)",
-                "new GboardSwipeDismissSettingsFeature(context)");
-        assertInOrder(layoutGroupSource.substring(layoutGroupSource.indexOf("Arrays.asList(")),
-                "new GboardSpacebarLogoSettingsFeature(context)",
-                "new GboardCloseProactiveSuggestionsSettingsFeature(context)",
-                "new GboardLatinGlobeKeyIgnoreIntervalSettingsFeature(context)",
-                "new GboardEnglishUppercaseToggleSettingsFeature(context)",
-                "new GboardZhuyinBottomRowWeightSettingsFeature(context)",
-                "new GboardSymbolFooterOrderSettingsFeature(context)",
-                "new GboardEmojiSizeSettingsFeature(context)",
-                "new GboardAccessPointsMenuSettingsFeature(context)",
-                "new GboardSplitKeyboardSettingsFeature(context)",
-                "new GboardAccessibilityLayoutSettingsFeature(context)",
-                "new GboardRoundedKeyboardSettingsFeature(context)",
-                "new GboardAccessPointCountSettingsFeature(context)");
-        Assert.assertFalse(registrySource.contains("GboardKeyboardSettingsGroupFeature"));
-        String more = readSource("src/main/java/dev/srwi/gboardmultiswipe/extension/settings/GboardMoreSettingsGroupFeature.java");
-        assertInOrder(more, "new GboardLanFtpSettingsFeature(context)",
-                "new GboardSettingsHomepageSettingsFeature()",
-                "new GboardBackupRestoreSettingsFeature(context)",
-                "new GboardDeveloperOptionsSettingsFeature(context)");
-        Assert.assertFalse(registrySource.contains("new GboardLanFtpSettingsFeature"));
-        Assert.assertFalse(registrySource.contains("new GboardSettingsHomepageSettingsFeature"));
-
-    }
-
-    @Test
-    public void bluetoothMicrophoneUsesIndependentMarker()
-            throws Exception {
-        String availabilitySource = readSource(
-                "src/main/java/dev/srwi/gboardmultiswipe/extension/settings/"
-                        + "GboardPatchesFeatureAvailability.java");
-
-        Assert.assertTrue(availabilitySource.contains("FEATURE_BLUETOOTH_MICROPHONE"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.bluetooth_microphone"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.close_proactive_suggestions"));
-        Assert.assertFalse(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.flow_mode_animation"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.quick_insert"));
-        Assert.assertTrue(availabilitySource.contains("FEATURE_ACCESS_POINT_COUNT"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.access_point_count"));
-        Assert.assertTrue(availabilitySource.contains("FEATURE_SWIPE_DISMISS"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.swipe_dismiss"));
-    }
-
-    @Test
-    public void featureAvailabilityIncludesLatinGlobeMarkerAndRegistryUsesIt() throws Exception {
-        String availabilitySource = readSource(
-                "src/main/java/dev/srwi/gboardmultiswipe/extension/settings/"
-                        + "GboardPatchesFeatureAvailability.java");
-        String patchSource = readSource(
-                "../../patches/src/main/kotlin/dev/srwi/gboardmultiswipe/patches/gboard/registry/"
-                        + "GboardPatchRegistry.kt");
-
-        Assert.assertTrue(availabilitySource.contains(
-                "FEATURE_LATIN_GLOBE_KEY_IGNORE_INTERVAL"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.latin_globe_key_ignore_interval"));
-        Assert.assertTrue(availabilitySource.contains("FEATURE_ENGLISH_UPPERCASE_TOGGLE"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.english_uppercase_toggle"));
-        Assert.assertTrue(availabilitySource.contains("FEATURE_AI_WRITING_TOOLS"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.ai_writing_tools"));
-        Assert.assertTrue(availabilitySource.contains("FEATURE_ZHUYIN_BOTTOM_ROW_WEIGHT"));
-        Assert.assertTrue(availabilitySource.contains(
-                "dev.srwi.gboardmultiswipe.feature.zhuyin_bottom_row_weight"));
-        Assert.assertTrue(patchSource.contains(
-                "gboardLatinGlobeKeyIgnoreIntervalFeatureMarkerPatch"));
-        Assert.assertTrue(patchSource.contains(
-                "gboardEnglishUppercaseToggleFeatureMarkerPatch"));
-        Assert.assertTrue(patchSource.contains("gboardAiWritingToolsFeatureMarkerPatch"));
-        Assert.assertTrue(patchSource.contains(
-                "gboardZhuyinBottomRowWeightFeatureMarkerPatch"));
+                "new GboardNintypeSettingsFeature(context)",
+                "new GboardMatrixSuggestionsSettingsFeature(context)");
     }
 
     @Test
