@@ -1,36 +1,214 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$DIR"
+# ==============================================================================
+# Gboard Multiswipe Patcher
+# Streamlined script to build patches and patch a target Gboard APK/XAPK.
+# ==============================================================================
 
-echo "=== 1. Building patches bundle ==="
-./gradlew :extensions:extension:compileReleaseJavaWithJavac :patches:buildAndroid
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-MPP_FILE="$DIR/patches/build/libs/patches-4.2.0.mpp"
-XAPK_FILE="/data/data/com.termux/files/home/storage/downloads/gboard-18-5-4-993608717-release-arm64-v8a.xapk"
-BASE_APK="/data/data/com.termux/files/home/.gemini/antigravity-cli/brain/e0fcb8d4-3444-408d-bb0b-37867b8c8ffb/scratch/apk/gboard-base.apk"
-INPUT_BUNDLE="${XAPK_FILE}"
-if [ ! -f "$INPUT_BUNDLE" ]; then
-  INPUT_BUNDLE="$BASE_APK"
+show_help() {
+  cat <<'EOF'
+Usage: ./patch-gboard.sh [options] [INPUT_APK] [OUTPUT_APK] [MORPHE_CLI]
+
+Options:
+  -i, --input <path>      Input Gboard APK or XAPK file
+  -o, --output <path>     Output patched APK path (default: ./gboard-multiswipe-patched.apk)
+  -m, --morphe <path>     Path to Morphe CLI JAR or executable
+  -p, --patches <path>    Path to built .mpp patches bundle
+  -b, --build             Force rebuild of extension and patches bundle
+  --skip-build            Skip building patches bundle if .mpp already exists
+  -h, --help              Show this help message
+
+Environment Variables:
+  INPUT_APK               Default input APK/XAPK if not passed as argument
+  OUTPUT_APK              Default output APK path
+  MORPHE_CLI              Path to Morphe CLI JAR or executable
+  JAVA_HOME               Path to JDK 21+ installation
+
+Examples:
+  ./patch-gboard.sh
+  ./patch-gboard.sh base.apk
+  ./patch-gboard.sh -i ~/Downloads/gboard.apk -o ./gboard-patched.apk -m morphe-cli.jar
+EOF
+}
+
+# Parse options
+INPUT_ARG=""
+OUTPUT_ARG=""
+MORPHE_ARG=""
+PATCHES_ARG=""
+FORCE_BUILD=false
+SKIP_BUILD=false
+
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -i|--input)
+      INPUT_ARG="$2"
+      shift 2
+      ;;
+    -o|--output)
+      OUTPUT_ARG="$2"
+      shift 2
+      ;;
+    -m|--morphe)
+      MORPHE_ARG="$2"
+      shift 2
+      ;;
+    -p|--patches)
+      PATCHES_ARG="$2"
+      shift 2
+      ;;
+    -b|--build)
+      FORCE_BUILD=true
+      shift
+      ;;
+    --skip-build)
+      SKIP_BUILD=true
+      shift
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# Map positional arguments if options were not explicitly given
+if [[ -z "$INPUT_ARG" && ${#POSITIONAL_ARGS[@]} -ge 1 ]]; then
+  INPUT_ARG="${POSITIONAL_ARGS[0]}"
 fi
-OUT_APK="/data/data/com.termux/files/home/storage/downloads/GboardPatched.apk"
-MORPHE_JAR="/data/data/com.termux/files/home/.gemini/antigravity-cli/brain/e0fcb8d4-3444-408d-bb0b-37867b8c8ffb/scratch/morphe-desktop.jar"
+if [[ -z "$OUTPUT_ARG" && ${#POSITIONAL_ARGS[@]} -ge 2 ]]; then
+  OUTPUT_ARG="${POSITIONAL_ARGS[1]}"
+fi
+if [[ -z "$MORPHE_ARG" && ${#POSITIONAL_ARGS[@]} -ge 3 ]]; then
+  MORPHE_ARG="${POSITIONAL_ARGS[2]}"
+fi
 
-echo "=== 2. Copying MPP bundle to Downloads ==="
-mkdir -p ~/storage/downloads 2>/dev/null || true
-cp "$MPP_FILE" ~/storage/downloads/gboard-multiswipe-patches.mpp 2>/dev/null || true
-
-echo "=== 3. Patching bundle ($INPUT_BUNDLE) with Matrix Word Suggestions + Nintype Multi-Touch Swipe ==="
-if [ -f "$MORPHE_JAR" ]; then
-  java -jar "$MORPHE_JAR" patch \
-    --patches="$MPP_FILE" \
-    --exclusive \
-    -e "Matrix Word Suggestions" \
-    -e "Nintype Multi-Touch Swipe" \
-    -o "$OUT_APK" \
-    "$INPUT_BUNDLE"
-  echo "=== Done! Patched APK ready at $OUT_APK ==="
+# Locate Java binary
+if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]; then
+  JAVA_BIN="$JAVA_HOME/bin/java"
+elif command -v java >/dev/null 2>&1; then
+  JAVA_BIN="java"
 else
-  echo "Morphe CLI not found at $MORPHE_JAR, bundle is ready at $MPP_FILE"
+  echo "Error: Java 21+ is required but not found in PATH or JAVA_HOME." >&2
+  exit 1
 fi
+
+# Find or build MPP bundle
+find_mpp() {
+  find "$SCRIPT_DIR/patches/build/libs" -maxdepth 1 -name "patches-*.mpp" ! -name "*-sources.mpp" ! -name "*-javadoc.mpp" 2>/dev/null | sort -V | tail -n 1
+}
+
+MPP_FILE="${PATCHES_ARG:-}"
+if [[ -z "$MPP_FILE" ]]; then
+  EXISTING_MPP="$(find_mpp)"
+  if [[ "$FORCE_BUILD" == true || -z "$EXISTING_MPP" || "$SKIP_BUILD" == false ]]; then
+    echo "=== Building Gboard Multiswipe patches bundle ==="
+    ./gradlew :extensions:extension:compileReleaseJavaWithJavac :patches:buildAndroid
+    EXISTING_MPP="$(find_mpp)"
+  fi
+  MPP_FILE="$EXISTING_MPP"
+fi
+
+if [[ -z "$MPP_FILE" || ! -f "$MPP_FILE" ]]; then
+  echo "Error: Patches bundle (.mpp) not found. Run ./gradlew :patches:buildAndroid first." >&2
+  exit 1
+fi
+echo "Patches bundle: $MPP_FILE"
+
+# Auto-detect input APK/XAPK if not provided
+INPUT_APK="${INPUT_ARG:-${INPUT_APK:-}}"
+if [[ -z "$INPUT_APK" ]]; then
+  # Search order: current dir, Downloads, Termux storage/downloads
+  CANDIDATES=(
+    "$SCRIPT_DIR"/*gboard*.apk "$SCRIPT_DIR"/*gboard*.xapk "$SCRIPT_DIR"/*gboard*.apkm
+    "$PWD"/*gboard*.apk "$PWD"/*gboard*.xapk "$PWD"/*gboard*.apkm
+    "${HOME}/Downloads"/*gboard*.apk "${HOME}/Downloads"/*gboard*.xapk "${HOME}/Downloads"/*gboard*.apkm
+    "${HOME}/storage/downloads"/*gboard*.apk "${HOME}/storage/downloads"/*gboard*.xapk
+  )
+  for candidate in "${CANDIDATES[@]}"; do
+    if [[ -f "$candidate" ]]; then
+      INPUT_APK="$candidate"
+      break
+    fi
+  done
+fi
+
+# Determine output APK path
+OUTPUT_APK="${OUTPUT_ARG:-${OUTPUT_APK:-"$SCRIPT_DIR/gboard-multiswipe-patched.apk"}}"
+
+# Auto-detect Morphe CLI
+MORPHE_CLI="${MORPHE_ARG:-${MORPHE_CLI:-}}"
+if [[ -z "$MORPHE_CLI" ]]; then
+  if command -v morphe-cli >/dev/null 2>&1; then
+    MORPHE_CLI="$(command -v morphe-cli)"
+  elif command -v morphe >/dev/null 2>&1; then
+    MORPHE_CLI="$(command -v morphe)"
+  else
+    JAR_CANDIDATES=(
+      "$SCRIPT_DIR"/morphe-cli*.jar "$SCRIPT_DIR"/morphe*.jar
+      "$PWD"/morphe-cli*.jar "$PWD"/morphe*.jar
+      "${HOME}/.local/bin"/morphe*.jar
+      "${HOME}/bin"/morphe*.jar
+      "${HOME}/Downloads"/morphe*.jar
+      "${HOME}/storage/downloads"/morphe*.jar
+    )
+    for candidate in "${JAR_CANDIDATES[@]}"; do
+      if [[ -f "$candidate" ]]; then
+        MORPHE_CLI="$candidate"
+        break
+      fi
+    done
+  fi
+fi
+
+if [[ -z "$INPUT_APK" || ! -f "$INPUT_APK" ]]; then
+  echo ""
+  echo "=== Bundle ready, but no target Gboard APK found ==="
+  echo "Patches bundle (.mpp): $MPP_FILE"
+  echo "To patch an APK, specify the input file:"
+  echo "  ./patch-gboard.sh /path/to/gboard-base.apk"
+  echo "or place a Gboard APK in this directory or ~/Downloads."
+  exit 0
+fi
+
+if [[ -z "$MORPHE_CLI" ]]; then
+  echo ""
+  echo "=== Input APK found ($INPUT_APK), but Morphe CLI was not found ==="
+  echo "Patches bundle (.mpp): $MPP_FILE"
+  echo "Please download Morphe CLI (e.g. morphe-cli.jar) and run:"
+  echo "  ./patch-gboard.sh -m /path/to/morphe-cli.jar -i \"$INPUT_APK\" -o \"$OUTPUT_APK\""
+  exit 0
+fi
+
+echo "=== Patching Gboard ==="
+echo "Input APK:      $INPUT_APK"
+echo "Patches Bundle: $MPP_FILE"
+echo "Output APK:     $OUTPUT_APK"
+echo "Morphe CLI:     $MORPHE_CLI"
+
+if [[ "$MORPHE_CLI" == *.jar ]]; then
+  MORPHE_CMD=("$JAVA_BIN" -jar "$MORPHE_CLI")
+else
+  MORPHE_CMD=("$MORPHE_CLI")
+fi
+
+"${MORPHE_CMD[@]}" patch \
+  --patches="$MPP_FILE" \
+  --exclusive \
+  -e "Matrix Word Suggestions" \
+  -e "Nintype Multi-Touch Swipe" \
+  -o "$OUTPUT_APK" \
+  "$INPUT_APK"
+
+echo ""
+echo "=== Patching Complete! ==="
+echo "Patched APK ready at: $OUTPUT_APK"
