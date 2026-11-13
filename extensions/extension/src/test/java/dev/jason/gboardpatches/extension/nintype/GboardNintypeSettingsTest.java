@@ -110,11 +110,27 @@ public class GboardNintypeSettingsTest {
 
         GboardNintypeSettings.syncDecoderConstants(prefs);
         assertEquals(384, KineticaConstants.BEAM_WIDTH);
+        assertEquals(900, KineticaConstants.BEAM_MAX_ATTEMPTS);
         assertEquals(0.60f, KineticaConstants.FREQ_WEIGHT_FLOOR, 0.0001f);
         assertEquals(5.25f, KineticaConstants.GEO_EXPONENT, 0.0001f);
         assertEquals(0.20f, KineticaConstants.BEAM_FREQ_WEIGHT, 0.0001f);
         assertEquals(1.0f, KineticaConstants.boostWeight(0.5f), 0.0001f);
         assertEquals(0.0f, KineticaConstants.boostWeight(1.5f), 0.0001f);
+
+        assertEquals(300, KineticaConstants.beamMaxAttemptsForWidth(32));
+        assertEquals(300, KineticaConstants.beamMaxAttemptsForWidth(64));
+        assertEquals(300, KineticaConstants.beamMaxAttemptsForWidth(128));
+        assertEquals(600, KineticaConstants.beamMaxAttemptsForWidth(256));
+        assertEquals(900, KineticaConstants.beamMaxAttemptsForWidth(384));
+        assertEquals(1200, KineticaConstants.beamMaxAttemptsForWidth(512));
+        assertEquals(2400, KineticaConstants.beamMaxAttemptsForWidth(1024));
+        assertEquals(KineticaConstants.MAX_EMIT_ATTEMPTS,
+                KineticaConstants.beamMaxAttemptsForWidth(4096));
+
+        KineticaConstants.applyRuntimeTuning(1024, 0.25f, 3.75f, 0.50f);
+        assertEquals(2400, KineticaConstants.BEAM_MAX_ATTEMPTS);
+        KineticaConstants.applyRuntimeTuning(128, 0.25f, 3.75f, 0.50f);
+        assertEquals(300, KineticaConstants.BEAM_MAX_ATTEMPTS);
     }
 
     @Test

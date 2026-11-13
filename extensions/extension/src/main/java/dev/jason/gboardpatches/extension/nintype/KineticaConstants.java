@@ -51,8 +51,10 @@ public final class KineticaConstants {
 
     public static final float UNCONTACTED_LETTER_KEEP = 0.85f;
 
-    public static volatile int BEAM_WIDTH = 128;
-    public static final int BEAM_MAX_ATTEMPTS = 300;
+    private static final int BASELINE_BEAM_WIDTH = 128;
+    private static final int BASELINE_BEAM_MAX_ATTEMPTS = 300;
+    public static volatile int BEAM_WIDTH = BASELINE_BEAM_WIDTH;
+    public static volatile int BEAM_MAX_ATTEMPTS = BASELINE_BEAM_MAX_ATTEMPTS;
     public static volatile float BEAM_FREQ_WEIGHT = 0.5f;
     public static final float BEAM_GATE_COST = 0.5f;
     public static final float BEAM_GATE_KEEP = 0.6f;
@@ -122,6 +124,17 @@ public final class KineticaConstants {
     }
 
     /**
+     * Scales {@link #BEAM_MAX_ATTEMPTS} linearly with {@code beamWidth} to preserve upstream's
+     * {@code 300 / 128} (~2.34) emission-attempts-per-slot ratio once the frontier saturates,
+     * floored at upstream's 300 attempts and capped at {@link #MAX_EMIT_ATTEMPTS}.
+     */
+    public static int beamMaxAttemptsForWidth(int beamWidth) {
+        int scaled = Math.round(
+                BASELINE_BEAM_MAX_ATTEMPTS * (beamWidth / (float) BASELINE_BEAM_WIDTH));
+        return Math.min(MAX_EMIT_ATTEMPTS, Math.max(BASELINE_BEAM_MAX_ATTEMPTS, scaled));
+    }
+
+    /**
      * Applies user-configured runtime tuning values without altering upstream algorithm logic.
      */
     public static void applyRuntimeTuning(
@@ -131,6 +144,7 @@ public final class KineticaConstants {
             float beamFreqWeight
     ) {
         BEAM_WIDTH = beamWidth;
+        BEAM_MAX_ATTEMPTS = beamMaxAttemptsForWidth(beamWidth);
         FREQ_WEIGHT_FLOOR = freqWeightFloor;
         GEO_EXPONENT = geoExponent;
         saturatedTerm = computeSaturatedTerm(geoExponent);
