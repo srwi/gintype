@@ -1,4 +1,4 @@
-rootProject.name = "gboard-patches"
+rootProject.name = "gboard-multiswipe"
 
 dependencyResolutionManagement {
     repositories {

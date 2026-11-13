@@ -143,7 +143,7 @@ In Kinetica (`../kinetica/app/src/main/java/com/kinetica/input/`) besteht die Wo
     ```smali
     .method public gu()Z
         .registers 2
-        invoke-static {}, Ldev/jason/gboardpatches/extension/nintype/GboardNintypeRuntime;->isNintypeActive()Z
+        invoke-static {}, Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->isNintypeActive()Z
         move-result v0
         return v0
     .end method

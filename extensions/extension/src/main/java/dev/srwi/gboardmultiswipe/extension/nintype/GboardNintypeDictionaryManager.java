@@ -1,0 +1,622 @@
+package dev.srwi.gboardmultiswipe.extension.nintype;
+
+import android.content.ContentResolver;
+import android.content.Context;
+import android.database.Cursor;
+import android.net.Uri;
+import android.provider.UserDictionary;
+import android.util.Log;
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * Manages Nintype prefix Tries and BigramTables extracted at runtime directly from
+ * Gboard's installed/downloaded Delight5 {@code .lm} language models, layered with
+ * Android's UserDictionary and per-session committed words.
+ */
+public final class GboardNintypeDictionaryManager {
+
+    private static final String TAG = "GboardNintypeDict";
+    private static final long MISS_RETRY_COOLDOWN_MS = 1500L;
+    private static final long REFRESH_PROBE_INTERVAL_MS = 10_000L;
+    private static final int MAX_DIR_SCAN_DEPTH = 5;
+
+    public static final class LanguagePack {
+        public final String lang;
+        public final NintypeTrie trie;
+        public final NintypeBigramTable bigrams;
+        public final boolean hasDedicatedUmlauts;
+        public final String sourcePath;
+        public final long sourceLastModified;
+        public final long sourceLength;
+
+        public LanguagePack(String lang, NintypeTrie trie, NintypeBigramTable bigrams) {
+            this(lang, trie, bigrams, false, "", 0L, 0L);
+        }
+
+        public LanguagePack(
+                String lang,
+                NintypeTrie trie,
+                NintypeBigramTable bigrams,
+                boolean hasDedicatedUmlauts,
+                String sourcePath,
+                long sourceLastModified,
+                long sourceLength
+        ) {
+            this.lang = lang;
+            this.trie = trie;
+            this.bigrams = bigrams;
+            this.hasDedicatedUmlauts = hasDedicatedUmlauts;
+            this.sourcePath = sourcePath != null ? sourcePath : "";
+            this.sourceLastModified = sourceLastModified;
+            this.sourceLength = sourceLength;
+        }
+
+        boolean matches(File file, boolean umlauts) {
+            if (this.hasDedicatedUmlauts != umlauts || file == null) {
+                return false;
+            }
+            return this.sourcePath.equals(file.getAbsolutePath())
+                    && this.sourceLastModified == file.lastModified()
+                    && this.sourceLength == file.length();
+        }
+    }
+
+    private static final String DELIGHT5_FACILITATOR_CLASS =
+            "com.google.android.apps.inputmethod.libs.delight5.Delight5Facilitator";
+
+    private static final Map<String, LanguagePack> PACKS = new ConcurrentHashMap<>();
+    private static final Map<String, Boolean> LOADING = new ConcurrentHashMap<>();
+    private static final Map<String, Long> LAST_MISS_MS = new ConcurrentHashMap<>();
+    private static final Map<String, Long> LAST_REFRESH_PROBE_MS = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> COMMIT_COUNTS = new ConcurrentHashMap<>();
+    private static final ExecutorService LOADER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "GboardNintypeDictLoader");
+        t.setDaemon(true);
+        return t;
+    });
+
+    private static volatile Method getFacilitatorNoArgMethod;
+    private static volatile Method getFacilitatorContextMethod;
+    private static volatile Method getLocaleMethod;
+    private static volatile List<Method> facilitatorLmListMethods;
+    private static volatile Field lmDescFileField;
+    private static volatile Field lmDescLangField;
+    private static volatile Field lmDescTypeField;
+    private static volatile boolean reflectionProbed = false;
+
+    private GboardNintypeDictionaryManager() {}
+
+    public static String detectActiveLanguage(Context context) {
+        try {
+            Object facilitator = getDelight5Facilitator(context);
+            if (facilitator != null && getLocaleMethod != null) {
+                Object localeObj = getLocaleMethod.invoke(facilitator);
+                if (localeObj instanceof Locale) {
+                    String lang = ((Locale) localeObj).getLanguage();
+                    if (lang != null && !lang.isEmpty()) {
+                        return normalizeLanguageKey(lang);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            Locale def = Locale.getDefault();
+            if (def != null && def.getLanguage() != null && !def.getLanguage().isEmpty()) {
+                return normalizeLanguageKey(def.getLanguage());
+            }
+        } catch (Throwable ignored) {
+        }
+        return "de";
+    }
+
+    public static LanguagePack getOrScheduleLoad(Context context, String lang, boolean hasDedicatedUmlauts) {
+        String key = normalizeLanguageKey(lang);
+        LanguagePack existing = PACKS.get(key);
+        long now = System.currentTimeMillis();
+
+        if (existing != null) {
+            boolean needsRefresh = existing.hasDedicatedUmlauts != hasDedicatedUmlauts;
+            if (!needsRefresh) {
+                Long lastProbe = LAST_REFRESH_PROBE_MS.get(key);
+                if (lastProbe == null || now - lastProbe >= REFRESH_PROBE_INTERVAL_MS) {
+                    LAST_REFRESH_PROBE_MS.put(key, now);
+                    File liveLm = resolveLmFile(context, key);
+                    if (liveLm != null && !existing.matches(liveLm, hasDedicatedUmlauts)) {
+                        needsRefresh = true;
+                    }
+                }
+            }
+            if (!needsRefresh) {
+                return existing;
+            }
+        } else {
+            Long lastMiss = LAST_MISS_MS.get(key);
+            if (lastMiss != null && now - lastMiss < MISS_RETRY_COOLDOWN_MS) {
+                return null;
+            }
+        }
+
+        if (context == null) return existing;
+
+        final Context appContext = context.getApplicationContext() != null
+                ? context.getApplicationContext()
+                : context;
+        if (Boolean.TRUE.equals(LOADING.putIfAbsent(key, Boolean.TRUE))) {
+            return existing;
+        }
+
+        LOADER_EXECUTOR.execute(() -> {
+            try {
+                LanguagePack loaded = buildLanguagePack(appContext, key, hasDedicatedUmlauts);
+                if (loaded != null) {
+                    PACKS.put(key, loaded);
+                    LAST_MISS_MS.remove(key);
+                    LAST_REFRESH_PROBE_MS.put(key, System.currentTimeMillis());
+                } else {
+                    LAST_MISS_MS.put(key, System.currentTimeMillis());
+                }
+            } catch (Throwable t) {
+                LAST_MISS_MS.put(key, System.currentTimeMillis());
+                Log.w(TAG, "Async Gboard LM load failed for " + key, t);
+            } finally {
+                LOADING.remove(key);
+            }
+        });
+        return existing;
+    }
+
+    public static LanguagePack loadBlockingIfNeeded(Context context, String lang, boolean hasDedicatedUmlauts) {
+        String key = normalizeLanguageKey(lang);
+        LanguagePack existing = PACKS.get(key);
+        if (existing != null && existing.hasDedicatedUmlauts == hasDedicatedUmlauts) {
+            return existing;
+        }
+        if (context == null) return existing;
+
+        Long lastMiss = LAST_MISS_MS.get(key);
+        if (existing == null && lastMiss != null && System.currentTimeMillis() - lastMiss < MISS_RETRY_COOLDOWN_MS) {
+            return null;
+        }
+
+        synchronized (GboardNintypeDictionaryManager.class) {
+            existing = PACKS.get(key);
+            if (existing != null && existing.hasDedicatedUmlauts == hasDedicatedUmlauts) {
+                return existing;
+            }
+            try {
+                LanguagePack pack = buildLanguagePack(context, key, hasDedicatedUmlauts);
+                if (pack != null) {
+                    PACKS.put(key, pack);
+                    LAST_MISS_MS.remove(key);
+                    LAST_REFRESH_PROBE_MS.put(key, System.currentTimeMillis());
+                    return pack;
+                }
+                LAST_MISS_MS.put(key, System.currentTimeMillis());
+                return existing;
+            } catch (Throwable t) {
+                LAST_MISS_MS.put(key, System.currentTimeMillis());
+                Log.w(TAG, "Blocking Gboard LM load failed for " + key, t);
+                return existing;
+            }
+        }
+    }
+
+    private static LanguagePack buildLanguagePack(
+            Context context,
+            String key,
+            boolean hasDedicatedUmlauts
+    ) throws IOException {
+        File lmFile = resolveLmFile(context, key);
+        if (lmFile == null) {
+            return null;
+        }
+        long startNs = System.nanoTime();
+        GboardLmReader.LmDictionaries dicts = GboardLmReader.read(lmFile, key, hasDedicatedUmlauts);
+        loadUserDictionaryIntoTrie(context, dicts.trie, key);
+        applyRecordedCommits(dicts.trie, key, hasDedicatedUmlauts);
+        long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+        Log.i(TAG, "Loaded Gboard LM for '" + key + "' from " + lmFile.getName()
+                + " in " + elapsedMs + " ms (words=" + dicts.cleanWordCount
+                + ", bigrams=" + dicts.bigramCount + ")");
+        return new LanguagePack(
+                key,
+                dicts.trie,
+                dicts.bigrams,
+                hasDedicatedUmlauts,
+                lmFile.getAbsolutePath(),
+                lmFile.lastModified(),
+                lmFile.length());
+    }
+
+    private static File resolveLmFile(Context context, String langKey) {
+        if (context == null) return null;
+
+        // 1. Primary: query Delight5Facilitator's live loaded main LM descriptors.
+        File fromFacilitator = findLmFromFacilitator(context, langKey);
+        if (fromFacilitator != null) {
+            return fromFacilitator;
+        }
+
+        // 2. Fallback: scan Gboard app storage (superpacks / delight) for an unpacked main .lm.
+        return scanDiskForMainLm(context, langKey);
+    }
+
+    private static File findLmFromFacilitator(Context context, String langKey) {
+        try {
+            Object facilitator = getDelight5Facilitator(context);
+            if (facilitator == null || facilitatorLmListMethods == null) {
+                return null;
+            }
+            for (Method listMethod : facilitatorLmListMethods) {
+                Object listObj;
+                try {
+                    listObj = listMethod.invoke(facilitator);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (!(listObj instanceof List<?>)) continue;
+                List<?> descriptors = (List<?>) listObj;
+                File match = pickMatchingDescriptorFile(descriptors, langKey);
+                if (match != null) {
+                    return match;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static File pickMatchingDescriptorFile(List<?> descriptors, String langKey) {
+        if (descriptors == null || descriptors.isEmpty()) return null;
+        File fallbackAnyMainLm = null;
+        for (Object desc : descriptors) {
+            if (desc == null) continue;
+            File file = extractDescriptorFile(desc);
+            if (file == null || !GboardLmReader.isLmFile(file)) {
+                continue;
+            }
+            Integer type = extractDescriptorType(desc);
+            // Type 1 == Lyxi.MAIN; ignore user history / contacts / shortcuts if present.
+            if (type != null && type != 1) {
+                continue;
+            }
+            String descLang = extractDescriptorLanguage(desc);
+            if (languageMatches(descLang, langKey) || filenameMatchesLanguage(file.getName(), langKey)) {
+                return file;
+            }
+            if (fallbackAnyMainLm == null && descLang == null) {
+                fallbackAnyMainLm = file;
+            }
+        }
+        return fallbackAnyMainLm;
+    }
+
+    private static File extractDescriptorFile(Object desc) {
+        try {
+            Field cached = lmDescFileField;
+            if (cached != null && cached.getDeclaringClass().isInstance(desc)) {
+                Object v = cached.get(desc);
+                if (v instanceof String) {
+                    File f = new File((String) v);
+                    if (f.isFile()) return f;
+                }
+            }
+            for (Field f : desc.getClass().getDeclaredFields()) {
+                if (f.getType() != String.class || Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                Object val = f.get(desc);
+                if (!(val instanceof String)) continue;
+                String s = (String) val;
+                if (s.startsWith("/")) {
+                    File file = new File(s);
+                    if (file.isFile()) {
+                        lmDescFileField = f;
+                        return file;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static String extractDescriptorLanguage(Object desc) {
+        try {
+            Field cached = lmDescLangField;
+            if (cached != null && cached.getDeclaringClass().isInstance(desc)) {
+                Object v = cached.get(desc);
+                if (v instanceof String && !((String) v).isEmpty()) {
+                    return (String) v;
+                }
+            }
+            // In Lyxj proto: fields are (f=path, i=language, j=country). Pick shortest lowercase tag [2..3] chars or BCP47 tag.
+            String candidate = null;
+            Field candidateField = null;
+            for (Field f : desc.getClass().getDeclaredFields()) {
+                if (f.getType() != String.class || Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                Object val = f.get(desc);
+                if (!(val instanceof String)) continue;
+                String s = (String) val;
+                if (s.isEmpty() || s.startsWith("/")) continue;
+                boolean allLower = true;
+                for (int i = 0; i < s.length(); i++) {
+                    char c = s.charAt(i);
+                    if (!(c >= 'a' && c <= 'z') && c != '-') {
+                        allLower = false;
+                        break;
+                    }
+                }
+                if (allLower && s.length() >= 2 && s.length() <= 8) {
+                    candidate = s;
+                    candidateField = f;
+                    break;
+                }
+            }
+            if (candidateField != null) {
+                lmDescLangField = candidateField;
+            }
+            return candidate;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static Integer extractDescriptorType(Object desc) {
+        try {
+            Field cached = lmDescTypeField;
+            if (cached != null && cached.getDeclaringClass().isInstance(desc)) {
+                return cached.getInt(desc);
+            }
+            // Prefer int field equal to 1 when path exists, or inspect named 'e' as hint.
+            Field fallbackField = null;
+            for (Field f : desc.getClass().getDeclaredFields()) {
+                if (f.getType() != int.class || Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                if ("e".equals(f.getName())) {
+                    lmDescTypeField = f;
+                    return f.getInt(desc);
+                }
+                int v = f.getInt(desc);
+                if (v >= 1 && v <= 20 && !"b".equals(f.getName()) && !"c".equals(f.getName())) {
+                    fallbackField = f;
+                }
+            }
+            if (fallbackField != null) {
+                lmDescTypeField = fallbackField;
+                return fallbackField.getInt(desc);
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static File scanDiskForMainLm(Context context, String langKey) {
+        List<File> roots = new ArrayList<>(6);
+        File filesDir = context.getFilesDir();
+        if (filesDir != null) {
+            roots.add(new File(filesDir, "superpacks"));
+            roots.add(new File(filesDir, "delight"));
+            roots.add(new File(filesDir, "delight5"));
+            roots.add(filesDir);
+        }
+        try {
+            File noBackup = context.getNoBackupFilesDir();
+            if (noBackup != null) {
+                roots.add(noBackup);
+            }
+        } catch (Throwable ignored) {
+        }
+
+        File bestExact = null;
+        File bestMain = null;
+        for (File root : roots) {
+            if (root == null || !root.isDirectory()) continue;
+            Deque<File> stack = new ArrayDeque<>();
+            Deque<Integer> depths = new ArrayDeque<>();
+            stack.push(root);
+            depths.push(0);
+            while (!stack.isEmpty()) {
+                File dir = stack.pop();
+                int depth = depths.pop();
+                File[] children = dir.listFiles();
+                if (children == null) continue;
+                for (File child : children) {
+                    if (child.isDirectory()) {
+                        if (depth < MAX_DIR_SCAN_DEPTH) {
+                            String dn = child.getName().toLowerCase(Locale.ROOT);
+                            if (dn.contains("delight") || dn.contains("superpacks") || depth < 2
+                                    || dn.contains("lm") || dn.contains("fst") || dn.contains("lang")) {
+                                stack.push(child);
+                                depths.push(depth + 1);
+                            }
+                        }
+                    } else if (child.isFile()) {
+                        String name = child.getName().toLowerCase(Locale.ROOT);
+                        if (!name.endsWith(".lm") && !name.contains("main")) continue;
+                        if (name.contains("userhistory") || name.contains("contacts")
+                                || name.contains("shortcut") || name.contains("blocklist")) {
+                            continue;
+                        }
+                        if (child.length() < 100_000L || !GboardLmReader.isLmFile(child)) {
+                            continue;
+                        }
+                        if (filenameMatchesLanguage(name, langKey)) {
+                            if (bestExact == null || child.lastModified() > bestExact.lastModified()) {
+                                bestExact = child;
+                            }
+                        } else if (name.contains("main") && bestMain == null) {
+                            bestMain = child;
+                        }
+                    }
+                }
+            }
+            if (bestExact != null) {
+                return bestExact;
+            }
+        }
+        return bestMain;
+    }
+
+    private static boolean languageMatches(String candidate, String targetKey) {
+        if (candidate == null || candidate.isEmpty()) return false;
+        String norm = normalizeLanguageKey(candidate);
+        return targetKey.equals(norm);
+    }
+
+    private static boolean filenameMatchesLanguage(String filename, String targetKey) {
+        String lower = filename.toLowerCase(Locale.ROOT);
+        return lower.startsWith(targetKey + "-")
+                || lower.startsWith(targetKey + "_")
+                || lower.contains("/" + targetKey + "-")
+                || lower.contains("/" + targetKey + "_")
+                || lower.contains("-" + targetKey + "-")
+                || lower.contains("_" + targetKey + "_");
+    }
+
+    private static void applyRecordedCommits(NintypeTrie trie, String key, boolean hasDedicatedUmlauts) {
+        String prefix = key + "|";
+        for (Map.Entry<String, Integer> entry : COMMIT_COUNTS.entrySet()) {
+            if (!entry.getKey().startsWith(prefix)) continue;
+            if (entry.getValue() < KineticaConstants.PERSONAL_MERGE_MIN_COUNT) continue;
+            String word = entry.getKey().substring(prefix.length());
+            int existingFreq = trie.lookupFrequency(word);
+            int freqByte = Math.min(255, Math.max(128, existingFreq + 8));
+            NintypeDictionaryLoader.insertWordIntoTrie(
+                    trie, word, freqByte, false, key, hasDedicatedUmlauts);
+        }
+    }
+
+    public static void loadUserDictionaryIntoTrie(Context context, NintypeTrie trie, String lang) {
+        if (context == null || trie == null) return;
+        try {
+            ContentResolver cr = context.getContentResolver();
+            if (cr == null) return;
+            Uri uri = UserDictionary.Words.CONTENT_URI;
+            String[] projection = new String[] {
+                    UserDictionary.Words.WORD,
+                    UserDictionary.Words.FREQUENCY,
+                    UserDictionary.Words.LOCALE
+            };
+            try (Cursor cursor = cr.query(uri, projection, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int wordCol = cursor.getColumnIndex(UserDictionary.Words.WORD);
+                    int freqCol = cursor.getColumnIndex(UserDictionary.Words.FREQUENCY);
+                    do {
+                        String word = (wordCol >= 0) ? cursor.getString(wordCol) : null;
+                        if (word != null && word.length() >= 2) {
+                            int rawFreq = (freqCol >= 0) ? cursor.getInt(freqCol) : 128;
+                            int freqByte = Math.max(120, Math.min(255, rawFreq > 0 ? rawFreq : 128));
+                            boolean isProper = Character.isUpperCase(word.charAt(0));
+                            NintypeDictionaryLoader.insertWordIntoTrie(
+                                    trie, word, freqByte, isProper, lang, false);
+                        }
+                    } while (cursor.moveToNext());
+                }
+            }
+        } catch (Throwable t) {
+            Log.w("GboardNintypeDict", "UserDictionary query skipped: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Learns a committed word into the active NintypeTrie & BigramTable so user-typed
+     * vocabulary is immediately available for subsequent 2-finger swipes.
+     */
+    public static void recordCommittedWord(String prevWord, String committedWord, String lang) {
+        if (committedWord == null || committedWord.length() < 2) return;
+        String key = normalizeLanguageKey(lang);
+        LanguagePack pack = PACKS.get(key);
+
+        String countKey = key + "|" + committedWord.toLowerCase(Locale.ROOT);
+        int commits = COMMIT_COUNTS.merge(countKey, 1, Integer::sum);
+        if (pack == null) return;
+
+        if (commits >= KineticaConstants.PERSONAL_MERGE_MIN_COUNT) {
+            int existingFreq = pack.trie.lookupFrequency(committedWord);
+            int freqByte = Math.min(255, Math.max(128, existingFreq + 8));
+            NintypeDictionaryLoader.insertWordIntoTrie(
+                    pack.trie, committedWord, freqByte, false, key, pack.hasDedicatedUmlauts);
+        }
+        if (prevWord != null && !prevWord.isEmpty()) {
+            pack.bigrams.put(prevWord, committedWord, 50);
+        }
+    }
+
+    static String normalizeLanguageKey(String lang) {
+        if (lang == null || lang.trim().isEmpty()) return "de";
+        String lower = lang.trim().toLowerCase(Locale.ROOT);
+        int sep = lower.indexOf('-');
+        if (sep < 0) sep = lower.indexOf('_');
+        String base = (sep > 0) ? lower.substring(0, sep) : lower;
+        return base.isEmpty() ? "de" : base;
+    }
+
+    private static Object getDelight5Facilitator(Context context) {
+        probeFacilitatorReflection(context);
+        try {
+            if (getFacilitatorNoArgMethod != null) {
+                Object inst = getFacilitatorNoArgMethod.invoke(null);
+                if (inst != null) return inst;
+            }
+            if (getFacilitatorContextMethod != null && context != null) {
+                return getFacilitatorContextMethod.invoke(null, context);
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static void probeFacilitatorReflection(Context context) {
+        if (reflectionProbed) return;
+        synchronized (GboardNintypeDictionaryManager.class) {
+            if (reflectionProbed) return;
+            try {
+                ClassLoader cl = context != null
+                        ? context.getClassLoader()
+                        : GboardNintypeDictionaryManager.class.getClassLoader();
+                Class<?> cls = Class.forName(DELIGHT5_FACILITATOR_CLASS, false, cl);
+                List<Method> lmListMethods = new ArrayList<>();
+                for (Method m : cls.getDeclaredMethods()) {
+                    int mods = m.getModifiers();
+                    if (Modifier.isStatic(mods) && m.getReturnType() == cls) {
+                        Class<?>[] params = m.getParameterTypes();
+                        if (params.length == 0) {
+                            m.setAccessible(true);
+                            getFacilitatorNoArgMethod = m;
+                        } else if (params.length == 1 && Context.class.isAssignableFrom(params[0])) {
+                            m.setAccessible(true);
+                            getFacilitatorContextMethod = m;
+                        }
+                    } else if (!Modifier.isStatic(mods) && m.getParameterCount() == 0) {
+                        if (m.getReturnType() == Locale.class) {
+                            m.setAccessible(true);
+                            getLocaleMethod = m;
+                        } else if (List.class.isAssignableFrom(m.getReturnType())) {
+                            m.setAccessible(true);
+                            lmListMethods.add(m);
+                        }
+                    }
+                }
+                facilitatorLmListMethods = lmListMethods;
+            } catch (Throwable ignored) {
+            } finally {
+                reflectionProbed = true;
+            }
+        }
+    }
+}

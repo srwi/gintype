@@ -101,8 +101,8 @@
         <translation locale="zh-Hant">讓磨砂玻璃延伸到底部導覽區並調整導覽按鈕顏色；若導覽按鈕看不清楚或底部顯示異常，可關閉。</translation>
     </string>
     <string name="gboard_patches_activity_title">
-        <translation locale="en">Patches</translation>
-        <translation locale="zh-Hant">Patches</translation>
+        <translation locale="en">Multiswipe</translation>
+        <translation locale="zh-Hant">Multiswipe</translation>
     </string>
     <string name="gboard_patches_navigation_back">
         <translation locale="en">Back</translation>
@@ -113,8 +113,8 @@
         <translation locale="zh-Hant">Gboard</translation>
     </string>
     <string name="gboard_patches_header_title">
-        <translation locale="en">Patch settings</translation>
-        <translation locale="zh-Hant">Patch 設定</translation>
+        <translation locale="en">Multiswipe settings</translation>
+        <translation locale="zh-Hant">Multiswipe 設定</translation>
     </string>
     <string name="gboard_patches_header_summary">
         <translation locale="en"></translation>

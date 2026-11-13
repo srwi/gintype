@@ -1,0 +1,583 @@
+package dev.srwi.gboardmultiswipe.extension.nintype;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import dev.srwi.gboardmultiswipe.extension.nintype.NintypeInputToken.WordCandidate;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+
+/**
+ * Pure-JVM tests for {@link GboardLmReader} covering MARISA LOUDS symbol decoding,
+ * 16-byte alignment, CompactLmFst unigram/bigram extraction, filtering, and decoding.
+ */
+public class GboardLmReaderTest {
+
+    @Rule
+    public TemporaryFolder tempFolder = new TemporaryFolder();
+
+    @Test
+    public void parsesUnigramsBigramsAndFiltersInternalTokens() throws Exception {
+        List<LmSymbolSpec> symbols = Arrays.asList(
+                new LmSymbolSpec("<epsilon>".getBytes(StandardCharsets.UTF_8), 255, false),
+                new LmSymbolSpec("<UNK>".getBytes(StandardCharsets.UTF_8), 255, false),
+                new LmSymbolSpec(new byte[] {(byte) 0x86}, 80, false),
+                new LmSymbolSpec(new byte[] {(byte) 0x99, 'a'}, 90, false),
+                new LmSymbolSpec("_compound".getBytes(StandardCharsets.UTF_8), 75, true),
+                new LmSymbolSpec("1234".getBytes(StandardCharsets.UTF_8), 95, false),
+                new LmSymbolSpec("und".getBytes(StandardCharsets.UTF_8), 60, true),
+                new LmSymbolSpec("ich".getBytes(StandardCharsets.UTF_8), 64, true),
+                new LmSymbolSpec("habe".getBytes(StandardCharsets.UTF_8), 72, true),
+                new LmSymbolSpec("vielleicht".getBytes(StandardCharsets.UTF_8), 113, true),
+                new LmSymbolSpec("auch".getBytes(StandardCharsets.UTF_8), 70, true),
+                new LmSymbolSpec("funktioniert".getBytes(StandardCharsets.UTF_8), 136, true),
+                new LmSymbolSpec("nicht".getBytes(StandardCharsets.UTF_8), 78, true),
+                new LmSymbolSpec("müssen".getBytes(StandardCharsets.UTF_8), 118, true),
+                new LmSymbolSpec("Welt".getBytes(StandardCharsets.UTF_8), 131, true),
+                new LmSymbolSpec("don't".getBytes(StandardCharsets.UTF_8), 90, true),
+                new LmSymbolSpec("untersuchen".getBytes(StandardCharsets.UTF_8), 175, false),
+                new LmSymbolSpec("rareword".getBytes(StandardCharsets.UTF_8), 240, false)
+        );
+
+        List<LmBigramSpec> bigrams = Arrays.asList(
+                new LmBigramSpec("ich", "habe", 38),
+                new LmBigramSpec("ich", "nicht", 55),
+                new LmBigramSpec("vielleicht", "auch", 45),
+                new LmBigramSpec("funktioniert", "nicht", 38),
+                new LmBigramSpec("_compound", "und", 10) // must be filtered out
+        );
+
+        byte[] lmBytes = buildSyntheticLm(symbols, bigrams, 0.0676536f, 5);
+        File file = tempFolder.newFile("de-de_test_main.lm");
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            fos.write(lmBytes);
+        }
+
+        assertTrue(GboardLmReader.isLmFile(file));
+        File notLm = tempFolder.newFile("not_an_lm.bin");
+        try (FileOutputStream fos = new FileOutputStream(notLm)) {
+            fos.write(new byte[64]);
+        }
+        assertFalse(GboardLmReader.isLmFile(notLm));
+
+        GboardLmReader.LmDictionaries dicts = GboardLmReader.read(file, "de", true);
+        assertEquals(12, dicts.cleanWordCount);
+        assertEquals(4, dicts.bigramCount);
+
+        assertTrue(dicts.trie.lookupFrequency("und") > dicts.trie.lookupFrequency("vielleicht"));
+        assertTrue(dicts.trie.lookupFrequency("vielleicht") > dicts.trie.lookupFrequency("funktioniert"));
+        assertTrue(dicts.trie.lookupFrequency("funktioniert") > dicts.trie.lookupFrequency("untersuchen"));
+        assertTrue(dicts.trie.lookupFrequency("untersuchen") > dicts.trie.lookupFrequency("rareword"));
+        assertTrue(dicts.trie.lookupFrequency("müssen") > 0);
+        assertTrue(dicts.trie.lookupFrequency("Welt") > 0);
+        assertTrue(dicts.trie.lookupFrequency("dont") > 0); // "don't" indexed under folded letters
+
+        // Filtered tokens must not appear
+        assertEquals(0, dicts.trie.lookupFrequency("_compound"));
+        assertEquals(0, dicts.trie.lookupFrequency("epsilon"));
+        assertEquals(0, dicts.trie.lookupFrequency("UNK"));
+
+        // Bigrams extracted cleanly
+        assertEquals(1.0f, dicts.bigrams.score("ich", "habe"), 1e-4f);
+        assertTrue(dicts.bigrams.score("ich", "nicht") > 0f);
+        assertTrue(dicts.bigrams.score("ich", "nicht") < 1.0f);
+        assertEquals(1.0f, dicts.bigrams.score("vielleicht", "auch"), 1e-4f);
+        assertEquals(1.0f, dicts.bigrams.score("funktioniert", "nicht"), 1e-4f);
+        assertEquals(0.0f, dicts.bigrams.score("_compound", "und"), 1e-4f);
+    }
+
+    @Test
+    public void capsBigramsByStrengthAndSupportsNestedMarisaTailTrie() throws Exception {
+        List<LmSymbolSpec> symbols = Arrays.asList(
+                new LmSymbolSpec("<epsilon>".getBytes(StandardCharsets.UTF_8), 255, false),
+                new LmSymbolSpec("alpha".getBytes(StandardCharsets.UTF_8), 70, true),
+                new LmSymbolSpec("beta".getBytes(StandardCharsets.UTF_8), 80, true),
+                new LmSymbolSpec("gamma".getBytes(StandardCharsets.UTF_8), 90, true),
+                new LmSymbolSpec("delta".getBytes(StandardCharsets.UTF_8), 100, true)
+        );
+        List<LmBigramSpec> bigrams = Arrays.asList(
+                new LmBigramSpec("alpha", "beta", 20),
+                new LmBigramSpec("beta", "gamma", 50),
+                new LmBigramSpec("gamma", "delta", 90),
+                new LmBigramSpec("delta", "alpha", 120)
+        );
+
+        byte[] lmBytes = buildSyntheticLm(symbols, bigrams, 0.08f, 3);
+        GboardLmReader.LmDictionaries dicts = GboardLmReader.readFromBytes(lmBytes, "en", false, 2);
+
+        assertEquals(4, dicts.cleanWordCount);
+        assertEquals(2, dicts.bigramCount);
+        assertTrue(dicts.bigrams.score("alpha", "beta") > 0f);
+        assertTrue(dicts.bigrams.score("beta", "gamma") > 0f);
+        assertEquals(0f, dicts.bigrams.score("gamma", "delta"), 1e-4f);
+        assertEquals(0f, dicts.bigrams.score("delta", "alpha"), 1e-4f);
+    }
+
+    @Test
+    public void normalizesLanguageTagsConsistently() {
+        assertEquals("de", GboardNintypeDictionaryManager.normalizeLanguageKey("de-DE"));
+        assertEquals("en", GboardNintypeDictionaryManager.normalizeLanguageKey("en_US"));
+        assertEquals("fr", GboardNintypeDictionaryManager.normalizeLanguageKey("fr"));
+        assertEquals("de", GboardNintypeDictionaryManager.normalizeLanguageKey(null));
+    }
+
+    @Test
+    public void filtersInternalVocabularyTokensAsExpected() {
+        assertTrue(GboardLmReader.isUsableVocabularyWord("vielleicht"));
+        assertTrue(GboardLmReader.isUsableVocabularyWord("don't"));
+        assertTrue(GboardLmReader.isUsableVocabularyWord("E-Mail"));
+        assertFalse(GboardLmReader.isUsableVocabularyWord("<epsilon>"));
+        assertFalse(GboardLmReader.isUsableVocabularyWord("<UNK>"));
+        assertFalse(GboardLmReader.isUsableVocabularyWord("_Mann"));
+        assertFalse(GboardLmReader.isUsableVocabularyWord("weiter_"));
+        assertFalse(GboardLmReader.isUsableVocabularyWord("2026"));
+        assertFalse(GboardLmReader.isUsableVocabularyWord("\u0099closure"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Binary Gboard .lm builder for hermetic unit tests
+    // -------------------------------------------------------------------------
+
+    static final class LmSymbolSpec {
+        final byte[] raw;
+        final int qWeight;
+        final boolean compressed;
+
+        LmSymbolSpec(byte[] raw, int qWeight, boolean compressed) {
+            this.raw = raw;
+            this.qWeight = qWeight;
+            this.compressed = compressed;
+        }
+    }
+
+    static final class LmBigramSpec {
+        final String prev;
+        final String next;
+        final int qWeight;
+
+        LmBigramSpec(String prev, String next, int qWeight) {
+            this.prev = prev;
+            this.next = next;
+            this.qWeight = qWeight;
+        }
+    }
+
+    static NintypeTrie loadGermanTestTrieFromSyntheticLm() throws IOException {
+        List<LmSymbolSpec> symbols = Arrays.asList(
+                new LmSymbolSpec("<epsilon>".getBytes(StandardCharsets.UTF_8), 255, false),
+                new LmSymbolSpec("funktioniert".getBytes(StandardCharsets.UTF_8), 115, true),
+                new LmSymbolSpec("funktioniere".getBytes(StandardCharsets.UTF_8), 150, false),
+                new LmSymbolSpec("funktionieren".getBytes(StandardCharsets.UTF_8), 130, true),
+                new LmSymbolSpec("funktion".getBytes(StandardCharsets.UTF_8), 140, false),
+                new LmSymbolSpec("fromme".getBytes(StandardCharsets.UTF_8), 190, false),
+                new LmSymbolSpec("frommer".getBytes(StandardCharsets.UTF_8), 205, false),
+                new LmSymbolSpec("untersuchen".getBytes(StandardCharsets.UTF_8), 120, true),
+                new LmSymbolSpec("untersuche".getBytes(StandardCharsets.UTF_8), 165, false),
+                new LmSymbolSpec("in".getBytes(StandardCharsets.UTF_8), 65, true),
+                new LmSymbolSpec("Freund".getBytes(StandardCharsets.UTF_8), 135, true),
+                new LmSymbolSpec("Freunde".getBytes(StandardCharsets.UTF_8), 132, true),
+                new LmSymbolSpec("vielleicht".getBytes(StandardCharsets.UTF_8), 105, true),
+                new LmSymbolSpec("heute".getBytes(StandardCharsets.UTF_8), 90, true),
+                new LmSymbolSpec("müssen".getBytes(StandardCharsets.UTF_8), 95, true)
+        );
+        byte[] lm = buildSyntheticLm(
+                symbols,
+                Collections.singletonList(new LmBigramSpec("funktioniert", "heute", 40)),
+                0.0676536f,
+                7);
+        return GboardLmReader.readFromBytes(lm, "de", true, GboardLmReader.DEFAULT_MAX_BIGRAMS).trie;
+    }
+
+    /**
+     * Builds a syntactically faithful Gboard v3 {@code .lm} binary containing a dummy leading chunk
+     * (testing unaligned chunk file offsets), a {@code 0x2} {@code CompactLmFst} chunk, and a
+     * {@code 0x20} {@code MarisaSymbolTable} chunk (testing 2-level nested Marisa tries + relabeling).
+     */
+    static byte[] buildSyntheticLm(
+            List<LmSymbolSpec> symbols,
+            List<LmBigramSpec> bigrams,
+            float scale,
+            int oddPaddingLen
+    ) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        writeLeInt(out, GboardLmReader.LM_MAGIC);
+        writeLeInt(out, 3);
+        writeLeLong(out, 0L);
+
+        // Leading dummy chunk to shift offsets off 16-byte boundaries
+        byte[] dummy = new byte[oddPaddingLen];
+        writeChunk(out, 0x40L, dummy);
+
+        // Assign compressed IDs (for compressed == true)
+        int numWords = symbols.size();
+        Map<String, Integer> wordToCompId = new LinkedHashMap<>();
+        List<Integer> compSymIds = new ArrayList<>();
+        List<Integer> tailWeights = new ArrayList<>();
+        for (int sym = 0; sym < numWords; sym++) {
+            LmSymbolSpec s = symbols.get(sym);
+            if (s.compressed) {
+                int cid = compSymIds.size();
+                compSymIds.add(sym);
+                wordToCompId.put(new String(s.raw, StandardCharsets.UTF_8), cid);
+            } else {
+                tailWeights.add(s.qWeight);
+            }
+        }
+
+        // Chunk 0x2
+        long off2 = out.size() + 16L;
+        byte[] chunk2 = buildCompactLmChunk(off2, symbols, bigrams, compSymIds, tailWeights, wordToCompId, scale);
+        writeChunk(out, 0x2L, chunk2);
+
+        // Chunk 0x20
+        long off20 = out.size() + 16L;
+        byte[] chunk20 = buildMarisaChunk(off20, symbols);
+        writeChunk(out, 0x20L, chunk20);
+
+        return out.toByteArray();
+    }
+
+    private static byte[] buildCompactLmChunk(
+            long chunkFileOffset,
+            List<LmSymbolSpec> symbols,
+            List<LmBigramSpec> bigrams,
+            List<Integer> compSymIds,
+            List<Integer> tailWeights,
+            Map<String, Integer> wordToCompId,
+            float scale
+    ) throws IOException {
+        // Group bigrams by prev word compressed ID
+        Map<Integer, List<int[]>> byPrevCid = new LinkedHashMap<>();
+        for (LmBigramSpec b : bigrams) {
+            Integer prevCid = wordToCompId.get(b.prev);
+            Integer nextCid = wordToCompId.get(b.next);
+            if (prevCid != null && nextCid != null) {
+                byPrevCid.computeIfAbsent(prevCid, k -> new ArrayList<>())
+                        .add(new int[] {nextCid, b.qWeight});
+            }
+        }
+        List<Integer> l1PrevCids = new ArrayList<>(byPrevCid.keySet());
+        int numStates = 1 + l1PrevCids.size();
+
+        int numFutures = compSymIds.size();
+        for (List<int[]> lst : byPrevCid.values()) {
+            numFutures += lst.size();
+        }
+
+        // Build NGramFst block
+        ByteArrayOutputStream ng = new ByteArrayOutputStream();
+        writeLeLong(ng, numStates);
+        writeLeLong(ng, numFutures);
+        writeLeLong(ng, 0L); // numFinal
+
+        // ctx_bv_: bit 0=1, bit 1=0, then l1PrevCids.size() 1s, then 0s
+        int ctxBits = 2 * numStates + 1;
+        byte[] ctxBv = new byte[((ctxBits + 63) / 64) * 8];
+        setBit(ctxBv, 0);
+        for (int i = 0; i < l1PrevCids.size(); i++) {
+            setBit(ctxBv, 2 + i);
+        }
+        ng.write(ctxBv);
+
+        // fut_bv_: bit 0=0, state 0 unigrams (compSymIds.size() 1s) + 0, then each L1 state's 1s + 0
+        int futBits = numFutures + numStates + 1;
+        byte[] futBv = new byte[((futBits + 63) / 64) * 8];
+        int bp = 1; // skip bit 0 (0)
+        for (int i = 0; i < compSymIds.size(); i++) {
+            setBit(futBv, bp++);
+        }
+        bp++; // 0 ends state 0
+        for (int prevCid : l1PrevCids) {
+            List<int[]> arcs = byPrevCid.get(prevCid);
+            for (int i = 0; i < arcs.size(); i++) {
+                setBit(futBv, bp++);
+            }
+            bp++;
+        }
+        ng.write(futBv);
+
+        // fin_bv_ (all zeros)
+        ng.write(new byte[((numStates + 63) / 64) * 8]);
+
+        // ctx_words_: u16[numStates + 1] (index 0 = 0, index 1..l1 = l1PrevCids, trailing sentinel)
+        writeLeShort(ng, 0);
+        for (int prevCid : l1PrevCids) {
+            writeLeShort(ng, prevCid);
+        }
+        writeLeShort(ng, 0);
+
+        // fut_words_ + fut_weights_
+        ByteArrayOutputStream fw = new ByteArrayOutputStream();
+        ByteArrayOutputStream fwt = new ByteArrayOutputStream();
+        for (int cid = 0; cid < compSymIds.size(); cid++) {
+            writeLeShort(fw, cid);
+            fwt.write(symbols.get(compSymIds.get(cid)).qWeight & 0xFF);
+        }
+        for (int prevCid : l1PrevCids) {
+            for (int[] arc : byPrevCid.get(prevCid)) {
+                writeLeShort(fw, arc[0]);
+                fwt.write(arc[1] & 0xFF);
+            }
+        }
+        ng.write(fw.toByteArray());
+
+        // ctx_weights_: u8[numStates + 1]
+        ng.write(new byte[numStates + 1]);
+        ng.write(fwt.toByteArray());
+
+        byte[] ngBytes = ng.toByteArray();
+
+        ByteArrayOutputStream c2 = new ByteArrayOutputStream();
+        c2.write(new byte[70]); // FstHeader placeholder
+        writeLeInt(c2, symbols.size());
+        writeLeInt(c2, tailWeights.size());
+        c2.write(0); // quant byte
+        writeLeFloat(c2, scale);
+        writeLeLong(c2, ngBytes.length);
+
+        padTo16(c2, chunkFileOffset);
+        c2.write(ngBytes);
+
+        // Align ngram_size to 8 bytes for bitset
+        int ngPad = ((ngBytes.length + 7) & ~7) - ngBytes.length;
+        if (ngPad > 0) c2.write(new byte[ngPad]);
+
+        byte[] bitset = new byte[((symbols.size() + 63) / 64) * 8];
+        for (int sym = 0; sym < symbols.size(); sym++) {
+            if (symbols.get(sym).compressed) {
+                setBit(bitset, sym);
+            }
+        }
+        c2.write(bitset);
+        for (int w : tailWeights) {
+            c2.write(w & 0xFF);
+        }
+        return c2.toByteArray();
+    }
+
+    private static byte[] buildMarisaChunk(
+            long chunkFileOffset,
+            List<LmSymbolSpec> symbols
+    ) throws IOException {
+        byte[] marisaBytes = buildTwoLevelMarisaTrie(symbols);
+
+        ByteArrayOutputStream c20 = new ByteArrayOutputStream();
+        writeLeInt(c20, 2); // version
+        byte[] name = "test".getBytes(StandardCharsets.US_ASCII);
+        writeLeInt(c20, name.length);
+        c20.write(name);
+        writeLeInt(c20, 16); // digestLen
+        c20.write(new byte[16]);
+        writeLeLong(c20, marisaBytes.length);
+
+        padTo16(c20, chunkFileOffset);
+        c20.write(marisaBytes);
+
+        // Relabel table: write u64 size placeholder + pad to 16 + (stride=3, byteLen=count*3, reversed mapping)
+        int count = symbols.size();
+        int relBytes = count * 3;
+        writeLeLong(c20, 0L);
+        padTo16(c20, chunkFileOffset);
+        writeLeLong(c20, 3L);
+        writeLeLong(c20, relBytes);
+        // Map sym -> kid = (count - 1 - sym) so relabel table exercises non-identity lookup!
+        for (int sym = 0; sym < count; sym++) {
+            int val = (count - 1 - sym) + 1; // 1-based marisa key ID
+            c20.write(val & 0xFF);
+            c20.write((val >>> 8) & 0xFF);
+            c20.write((val >>> 16) & 0xFF);
+        }
+        return c20.toByteArray();
+    }
+
+    /**
+     * Encodes each symbol using a 2-level Marisa trie:
+     * L0 has root (0) -> node (i+1) using first byte when len==1, or links to L1 child trie
+     * holding the reversed full bytes of each symbol, exercising recursive + reversed decoding.
+     */
+    private static byte[] buildTwoLevelMarisaTrie(List<LmSymbolSpec> symbols) throws IOException {
+        int count = symbols.size();
+        // Put reversed symbols in L1 tail_buf to also exercise depth>0 node linking + TEXT_TAIL!
+        // Specifically: split each symbol: L0 stores root->N nodes via links to L1, L1 has 1 link per key to tail_buf.
+        // Reverse symbol storage order so L0 kid i -> symbol[count - 1 - i] matching relabel table above.
+        List<byte[]> orderedKeys = new ArrayList<>(count);
+        for (int i = count - 1; i >= 0; i--) {
+            orderedKeys.add(symbols.get(i).raw);
+        }
+
+        // L1: each key gets 1 node (first reversed byte -> last byte of word? Wait: depth>0 edge+parent, with parent=0 so node string = tail!).
+        // To test multi-byte L1 parent+edge concatenation, encode L1 nodes directly as 1 node per key with a link to TEXT_TAIL.
+        ByteArrayOutputStream l1TailBuf = new ByteArrayOutputStream();
+        int[] l1Offsets = new int[count];
+        for (int i = 0; i < count; i++) {
+            l1Offsets[i] = l1TailBuf.size();
+            l1TailBuf.write(orderedKeys.get(i));
+            l1TailBuf.write(0);
+        }
+
+        ByteArrayOutputStream m = new ByteArrayOutputStream();
+        m.write("We love Marisa.\0".getBytes(StandardCharsets.US_ASCII));
+
+        // L0: root (node 0) has `count` children (nodes 1..count), all terminal, all linked to L1 node (i+1)
+        int l0Nodes = count + 1;
+        writeSimpleFlatLoudsBv(m, count); // louds: root has `count` children, each leaf has 0 children
+        writeTermBvAllChildren(m, l0Nodes); // term: 0 at root, 1 at 1..count
+        writeTermBvAllChildren(m, l0Nodes); // links: 0 at root, 1 at 1..count
+        byte[] l0Bases = new byte[l0Nodes];
+        for (int i = 0; i < count; i++) {
+            l0Bases[i + 1] = (byte) ((i + 1) & 0xFF);
+        }
+        writeMarisaVec(m, l0Bases);
+        writeMarisaFlatVec16HighByte(m, count, i -> (i + 1) >>> 8);
+        writeMarisaVec(m, new byte[0]); // empty tail_buf -> recurse into L1
+        writeEmptyMarisaBv(m); // tail_end
+
+        // L1: root (node 0) has `count` children (nodes 1..count), no term needed, all linked to l1TailBuf offsets
+        writeSimpleFlatLoudsBv(m, count);
+        writeEmptyMarisaBv(m); // term
+        writeTermBvAllChildren(m, l0Nodes); // links
+        byte[] l1Bases = new byte[l0Nodes];
+        for (int i = 0; i < count; i++) {
+            l1Bases[i + 1] = (byte) (l1Offsets[i] & 0xFF);
+        }
+        writeMarisaVec(m, l1Bases);
+        writeMarisaFlatVec16HighByte(m, count, i -> l1Offsets[i] >>> 8);
+        writeMarisaVec(m, l1TailBuf.toByteArray());
+        writeEmptyMarisaBv(m); // tail_end (TEXT_TAIL)
+        // L1 trailing cache + num_l1 + cfg
+        writeMarisaVec(m, new byte[0]);
+        writeLeInt(m, 0);
+        writeLeInt(m, 0);
+
+        // L0 trailing cache + num_l1 + cfg
+        writeMarisaVec(m, new byte[0]);
+        writeLeInt(m, 0);
+        writeLeInt(m, 0);
+
+        return m.toByteArray();
+    }
+
+    private interface IntUnaryOp {
+        int apply(int v);
+    }
+
+    private static void writeSimpleFlatLoudsBv(ByteArrayOutputStream out, int numChildren) throws IOException {
+        // Super-root: '1','0'; Node 0 (root): numChildren '1's + '0'; each child node: '0'
+        int totalBits = 2 + numChildren + 1 + numChildren;
+        byte[] units = new byte[((totalBits + 63) / 64) * 8];
+        setBit(units, 0); // 1 (enter node 0)
+        // bit 1 is 0 (end super-root)
+        int pos = 2;
+        for (int i = 0; i < numChildren; i++) {
+            setBit(units, pos++);
+        }
+        // remaining bits (1 zero for root + numChildren zeros for leaves) are already 0!
+        writeMarisaBitVector(out, units, totalBits, numChildren + 1);
+    }
+
+    private static void writeTermBvAllChildren(ByteArrayOutputStream out, int totalNodes) throws IOException {
+        byte[] units = new byte[((totalNodes + 63) / 64) * 8];
+        for (int i = 1; i < totalNodes; i++) {
+            setBit(units, i);
+        }
+        writeMarisaBitVector(out, units, totalNodes, Math.max(0, totalNodes - 1));
+    }
+
+    private static void writeEmptyMarisaBv(ByteArrayOutputStream out) throws IOException {
+        writeMarisaBitVector(out, new byte[0], 0, 0);
+    }
+
+    private static void writeMarisaBitVector(
+            ByteArrayOutputStream out,
+            byte[] units,
+            int size,
+            int num1s
+    ) throws IOException {
+        writeMarisaVec(out, units);
+        writeLeInt(out, size);
+        writeLeInt(out, num1s);
+        // 3 empty accelerator vectors (select0, select1, rank1s)
+        writeMarisaVec(out, new byte[0]);
+        writeMarisaVec(out, new byte[0]);
+        writeMarisaVec(out, new byte[0]);
+    }
+
+    private static void writeMarisaFlatVec16HighByte(
+            ByteArrayOutputStream out,
+            int count,
+            IntUnaryOp highByteFn
+    ) throws IOException {
+        byte[] units = new byte[count];
+        for (int i = 0; i < count; i++) {
+            units[i] = (byte) (highByteFn.apply(i) & 0xFF);
+        }
+        writeMarisaVec(out, units);
+        writeLeInt(out, 8); // val_size = 8 bits
+        writeLeInt(out, 0xFF); // mask
+        writeLeLong(out, count);
+    }
+
+    private static void writeMarisaVec(ByteArrayOutputStream out, byte[] data) throws IOException {
+        writeLeLong(out, data.length);
+        out.write(data);
+        int rem = data.length & 7;
+        if (rem != 0) {
+            out.write(new byte[8 - rem]);
+        }
+    }
+
+    private static void writeChunk(ByteArrayOutputStream out, long type, byte[] data) throws IOException {
+        writeLeLong(out, type);
+        writeLeLong(out, data.length);
+        out.write(data);
+    }
+
+    private static void padTo16(ByteArrayOutputStream out, long chunkFileOffset) throws IOException {
+        long abs = chunkFileOffset + out.size();
+        int rem = (int) (abs & 15L);
+        if (rem != 0) {
+            out.write(new byte[16 - rem]);
+        }
+    }
+
+    private static void setBit(byte[] buf, int bit) {
+        buf[bit >>> 3] |= (byte) (1 << (bit & 7));
+    }
+
+    private static void writeLeShort(ByteArrayOutputStream out, int v) {
+        out.write(v & 0xFF);
+        out.write((v >>> 8) & 0xFF);
+    }
+
+    private static void writeLeInt(ByteArrayOutputStream out, int v) {
+        out.write(v & 0xFF);
+        out.write((v >>> 8) & 0xFF);
+        out.write((v >>> 16) & 0xFF);
+        out.write((v >>> 24) & 0xFF);
+    }
+
+    private static void writeLeFloat(ByteArrayOutputStream out, float f) {
+        writeLeInt(out, Float.floatToRawIntBits(f));
+    }
+
+    private static void writeLeLong(ByteArrayOutputStream out, long v) {
+        for (int i = 0; i < 8; i++) {
+            out.write((int) ((v >>> (i * 8)) & 0xFF));
+        }
+    }
+}

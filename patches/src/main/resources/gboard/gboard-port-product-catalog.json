@@ -19,15 +19,15 @@
     {
       "feature_id": "matrix_word_suggestions",
       "public_patch_name": "Matrix Word Suggestions",
-      "feature_marker": "dev.jason.gboardpatches.feature.matrix_suggestions",
+      "feature_marker": "dev.srwi.gboardmultiswipe.feature.matrix_suggestions",
       "target_family_ids": [
         "matrixsuggestions"
       ],
       "migration_scope": "version-sensitive",
       "consumer_files": [
-        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/features/matrixsuggestions/GboardMatrixSuggestionsBytecodePatch.kt",
-        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/features/matrixsuggestions/GboardMatrixSuggestionsFeatureMarkerPatch.kt",
-        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/registry/GboardPatchRegistry.kt"
+        "patches/src/main/kotlin/dev/srwi/gboardmultiswipe/patches/gboard/features/matrixsuggestions/GboardMatrixSuggestionsBytecodePatch.kt",
+        "patches/src/main/kotlin/dev/srwi/gboardmultiswipe/patches/gboard/features/matrixsuggestions/GboardMatrixSuggestionsFeatureMarkerPatch.kt",
+        "patches/src/main/kotlin/dev/srwi/gboardmultiswipe/patches/gboard/registry/GboardPatchRegistry.kt"
       ],
       "contributions": [
         {
@@ -45,15 +45,15 @@
     {
       "feature_id": "nintype_multi_touch",
       "public_patch_name": "Nintype Multi-Touch Swipe",
-      "feature_marker": "dev.jason.gboardpatches.feature.nintype",
+      "feature_marker": "dev.srwi.gboardmultiswipe.feature.nintype",
       "target_family_ids": [
         "nintype"
       ],
       "migration_scope": "version-sensitive",
       "consumer_files": [
-        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/features/nintype/GboardNintypeBytecodePatch.kt",
-        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/features/nintype/GboardNintypeFeatureMarkerPatch.kt",
-        "patches/src/main/kotlin/dev/jason/gboardpatches/patches/gboard/registry/GboardPatchRegistry.kt"
+        "patches/src/main/kotlin/dev/srwi/gboardmultiswipe/patches/gboard/features/nintype/GboardNintypeBytecodePatch.kt",
+        "patches/src/main/kotlin/dev/srwi/gboardmultiswipe/patches/gboard/features/nintype/GboardNintypeFeatureMarkerPatch.kt",
+        "patches/src/main/kotlin/dev/srwi/gboardmultiswipe/patches/gboard/registry/GboardPatchRegistry.kt"
       ],
       "contributions": [
         {
