@@ -1,7 +1,18 @@
 package dev.jason.gboardpatches.patches.gboard.shared
 
+import app.morphe.patcher.patch.ResourcePatchContext
 import org.w3c.dom.Document
 import org.w3c.dom.Element
+
+context(context: ResourcePatchContext)
+internal fun applyFeatureMarker(markerName: String) = with(context) {
+    document("AndroidManifest.xml").use { document ->
+        val manifest = document.documentElement
+        val application = manifest.childElements("application").firstOrNull()
+            ?: error("Could not find application element in AndroidManifest.xml")
+        ensureManifestMetaData(document, application, markerName, "true")
+    }
+}
 
 internal fun ensureManifestUsesPermission(
     document: Document,

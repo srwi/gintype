@@ -8,12 +8,12 @@ class RuntimeCallEmitterTest {
     @Test
     fun `emits an exact static invocation from a semantic call id`() {
         assertEquals(
-            "invoke-static {}, " +
-                "Ldev/jason/gboardpatches/extension/rambler/" +
-                "GboardRamblerOfficialSelectionRuntime;->enterVoiceSettingsScope()V",
+            "invoke-static {v0}, " +
+                "Ldev/jason/gboardpatches/extension/matrixsuggestions/" +
+                "GboardMatrixSuggestionsRuntime;->onCandidatesCleared(Ljava/lang/Object;)V",
             RuntimeCallEmitter.invoke(
-                RuntimeCallId.RAMBLER_RUNTIME_ENTER_VOICE_SETTINGS_SCOPE,
-                registers = "",
+                RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED,
+                registers = "v0",
             ),
         )
     }
@@ -21,12 +21,12 @@ class RuntimeCallEmitterTest {
     @Test
     fun `emits a static range invocation without exposing an opcode string`() {
         assertEquals(
-            "invoke-static/range {v4 .. v4}, " +
-                "Ldev/jason/gboardpatches/extension/webclipboard/" +
-                "GboardWebClipboardCaptureBootstrap;->afterLatinImeOnCreate(Ljava/lang/Object;)V",
+            "invoke-static/range {v4 .. v5}, " +
+                "Ldev/jason/gboardpatches/extension/nintype/" +
+                "GboardNintypeRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V",
             RuntimeCallEmitter.invoke(
-                RuntimeCallId.WEB_CLIPBOARD_CAPTURE_BOOTSTRAP_AFTER_LATIN_IME_ON_CREATE,
-                registers = "v4 .. v4",
+                RuntimeCallId.NINTYPE_RUNTIME_ON_GESTURE_EVENT_ENTRY,
+                registers = "v4 .. v5",
             ),
         )
     }

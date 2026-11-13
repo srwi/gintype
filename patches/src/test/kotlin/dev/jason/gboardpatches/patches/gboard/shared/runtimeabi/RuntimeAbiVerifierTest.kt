@@ -9,7 +9,7 @@ class RuntimeAbiVerifierTest {
         val inventory = RuntimeArtifactInventory { _, _ -> emptyList() }
 
         val mismatches = RuntimeAbiVerifier.verify(
-            calls = listOf(RuntimeCallId.RAMBLER_RUNTIME_ENTER_VOICE_SETTINGS_SCOPE),
+            calls = listOf(RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED),
             inventory = inventory,
         )
 
@@ -17,9 +17,9 @@ class RuntimeAbiVerifierTest {
             listOf(
                 RuntimeAbiMismatch.MissingMethod(
                     RuntimeAbi(
-                        owner = "Ldev/jason/gboardpatches/extension/rambler/GboardRamblerOfficialSelectionRuntime;",
-                        name = "enterVoiceSettingsScope",
-                        parameters = emptyList(),
+                        owner = "Ldev/jason/gboardpatches/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;",
+                        name = "onCandidatesCleared",
+                        parameters = listOf("Ljava/lang/Object;"),
                         returnType = "V",
                         isStatic = true,
                     )
@@ -43,7 +43,7 @@ class RuntimeAbiVerifierTest {
         }
 
         val mismatches = RuntimeAbiVerifier.verify(
-            calls = listOf(RuntimeCallId.RAMBLER_RUNTIME_ENTER_VOICE_SETTINGS_SCOPE),
+            calls = listOf(RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED),
             inventory = inventory,
         )
 
@@ -51,7 +51,7 @@ class RuntimeAbiVerifierTest {
             listOf(
                 RuntimeAbiMismatch.WrongDescriptor(
                     expected = RuntimeAbiCatalog.abi(
-                        RuntimeCallId.RAMBLER_RUNTIME_ENTER_VOICE_SETTINGS_SCOPE
+                        RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED
                     ),
                     actualDescriptors = listOf("()Z"),
                 )
@@ -63,7 +63,7 @@ class RuntimeAbiVerifierTest {
     @Test
     fun `reports a runtime method with the wrong static access`() {
         val expected = RuntimeAbiCatalog.abi(
-            RuntimeCallId.RAMBLER_RUNTIME_ENTER_VOICE_SETTINGS_SCOPE
+            RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED
         )
         val inventory = RuntimeArtifactInventory { owner, name ->
             listOf(
@@ -77,7 +77,7 @@ class RuntimeAbiVerifierTest {
         }
 
         val mismatches = RuntimeAbiVerifier.verify(
-            calls = listOf(RuntimeCallId.RAMBLER_RUNTIME_ENTER_VOICE_SETTINGS_SCOPE),
+            calls = listOf(RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED),
             inventory = inventory,
         )
 

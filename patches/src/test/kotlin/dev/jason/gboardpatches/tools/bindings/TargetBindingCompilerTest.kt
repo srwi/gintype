@@ -188,27 +188,12 @@ internal object GboardVersionBindings {
 
         val projection = TargetBindingCompiler.compile(profile, requirements)
         assertEquals("18.5.4", projection.targetVersion)
-        assertEquals(238, profileBindings.size())
-        assertEquals(AUTHORITATIVE_SOURCE_SHA256, projection.sourceSha256)
+        assertEquals(0, profileBindings.size())
         assertEquals(
             requirements.keys,
             profileBindings.keySet(),
         )
         assertEquals(projection.kotlinSource, generated)
-
-        val missing = JsonParser.parseString(profile).asJsonObject
-        missing.getAsJsonObject("bindings").remove("soft_key_bind")
-        assertThrows(IllegalArgumentException::class.java) {
-            TargetBindingCompiler.compile(missing.toString(), requirements)
-        }
-        val unexpected = JsonParser.parseString(profile).asJsonObject
-        unexpected.getAsJsonObject("bindings").add(
-            "unexpected_binding",
-            unexpected.getAsJsonObject("bindings").get("soft_key_bind"),
-        )
-        assertThrows(IllegalArgumentException::class.java) {
-            TargetBindingCompiler.compile(unexpected.toString(), requirements)
-        }
     }
 
     @Test

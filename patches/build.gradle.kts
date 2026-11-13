@@ -61,7 +61,6 @@ group = "dev.jason.gboardpatches"
 
 val generatedPatchInfoDir = layout.buildDirectory.dir("generated/sources/patchBuildInfo/kotlin/main")
 val generatedVersionBindingsDir = layout.buildDirectory.dir("generated/sources/versionBindings/kotlin/main")
-val generatedPreviewAssetsResourcesDir = layout.buildDirectory.dir("generated/resources/previewAssets/main")
 val bindingCompilerSourceSet = sourceSets.create("bindingCompiler") {
     java.srcDir("src/bindingCompiler/kotlin")
 }
@@ -71,7 +70,6 @@ val patchMetadataSourceSet = sourceSets.create("patchMetadata") {
 patchMetadataSourceSet.compileClasspath += sourceSets.main.get().output
 patchMetadataSourceSet.runtimeClasspath += sourceSets.main.get().output
 val utf8Bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
-val previewAssetsSourceDir = layout.projectDirectory.dir("src/main/resources/settings-previews")
 val portBundleOverride = providers.gradleProperty("gboardPortBundleFile")
 val versionBindingsOverride = providers.gradleProperty("gboardReviewedBindingsFile")
 if (portBundleOverride.isPresent != versionBindingsOverride.isPresent) {
@@ -90,7 +88,6 @@ val gboardProductCatalog = layout.projectDirectory.file(
 )
 val syncExtensionTasks = listOf(
     project(":extensions:extension").tasks.named("syncExtension"),
-    project(":extensions:calculator").tasks.named("syncExtension"),
 )
 val runtimeAbiOutputDirectories = syncExtensionTasks.map { task ->
     task.map { it.outputs.files.singleFile }
@@ -129,42 +126,6 @@ val generatePatchBuildInfo = tasks.register("generatePatchBuildInfo") {
     }
 }
 
-val generatePreviewAssetsIndex = tasks.register("generatePreviewAssetsIndex") {
-    val sourceDir = previewAssetsSourceDir
-    val outputFile = generatedPreviewAssetsResourcesDir.map { directory ->
-        directory.file("settings-previews/index.txt")
-    }
-
-    inputs.dir(sourceDir)
-    outputs.file(outputFile)
-
-    doLast {
-        val sourceRoot = sourceDir.asFile
-        if (!sourceRoot.exists()) {
-            throw GradleException("Preview assets directory not found: $sourceRoot")
-        }
-
-        val indexedAssets = sourceRoot.walkTopDown()
-            .filter { file -> file.isFile && file.name != "index.txt" }
-            .map { file -> file.relativeTo(sourceRoot).invariantSeparatorsPath }
-            .sorted()
-            .toList()
-
-        if (indexedAssets.isEmpty()) {
-            throw GradleException("No preview assets found under $sourceRoot")
-        }
-
-        val output = outputFile.get().asFile
-        output.parentFile.mkdirs()
-        output.writeText(
-            indexedAssets.joinToString(
-                separator = System.lineSeparator(),
-                postfix = System.lineSeparator()
-            ),
-            Charsets.UTF_8
-        )
-    }
-}
 
 val generateGboardVersionBindings = tasks.register<GenerateTargetBindingsTask>(
     "generateGboardVersionBindings"
@@ -212,7 +173,6 @@ kotlin {
 sourceSets.named("main") {
     java.srcDir(generatedPatchInfoDir)
     java.srcDir(generatedVersionBindingsDir)
-    resources.srcDir(generatedPreviewAssetsResourcesDir)
 }
 
 dependencies {
@@ -271,15 +231,10 @@ tasks {
         dependsOn(generatePatchBuildInfo, generateGboardVersionBindings)
     }
 
-    named("processResources") {
-        dependsOn(generatePreviewAssetsIndex)
-    }
-
     named("sourcesJar") {
         dependsOn(
             generatePatchBuildInfo,
             generateGboardVersionBindings,
-            generatePreviewAssetsIndex
         )
     }
 

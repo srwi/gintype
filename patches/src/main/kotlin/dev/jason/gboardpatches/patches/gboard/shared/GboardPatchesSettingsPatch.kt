@@ -13,7 +13,6 @@ internal val gboardPatchesSettingsPatch = resourcePatch(
 
     dependsOn(
         gboardPatchesExtensionCarrierPatch,
-        gboardPatchesPreviewAssetsPatch
     )
 
     finalize {

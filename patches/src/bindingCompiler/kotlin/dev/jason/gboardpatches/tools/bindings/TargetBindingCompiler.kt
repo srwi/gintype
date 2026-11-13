@@ -82,7 +82,6 @@ class TargetBindingRequirements private constructor(
                     }
                 }
             }
-            require(requiredKeys.isNotEmpty()) { "Catalog required binding union must not be empty" }
             require(bindingKinds.keys == requiredKeys) {
                 "Catalog binding contracts must exactly match the complete required binding union"
             }

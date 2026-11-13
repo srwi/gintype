@@ -1,7 +1,7 @@
 package dev.jason.gboardpatches.patches.gboard.features.matrixsuggestions
 
 import app.morphe.patcher.patch.resourcePatch
-import dev.jason.gboardpatches.patches.gboard.features.featureflags.applyFeatureMarker
+import dev.jason.gboardpatches.patches.gboard.shared.applyFeatureMarker
 import dev.jason.gboardpatches.patches.shared.Constants.COMPATIBILITY_GBOARD
 
 internal val gboardMatrixSuggestionsFeatureMarkerPatch = resourcePatch(
