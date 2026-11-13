@@ -3820,6 +3820,106 @@
         <translation locale="en">Automatically insert spaces between words decoded by Nintype two-finger gestures.</translation>
         <translation locale="zh-Hant">在透過 Nintype 雙指手勢解碼的單字之間自動插入空白。</translation>
     </string>
+    <string name="gboard_patches_nintype_auto_space_delay_title">
+        <translation locale="en">Auto-space delay</translation>
+        <translation locale="zh-Hant">自動空白延遲</translation>
+    </string>
+    <string name="gboard_patches_nintype_auto_space_delay_summary">
+        <translation locale="en">Wait time after lifting all fingers before committing the word and inserting a space.</translation>
+        <translation locale="zh-Hant">所有手指離開鍵盤後，確定單字並插入空白前的等待時間。</translation>
+    </string>
+    <string name="gboard_patches_nintype_auto_space_delay_value">
+        <translation locale="en">%d ms</translation>
+        <translation locale="zh-Hant">%d 毫秒</translation>
+    </string>
+    <string name="gboard_patches_nintype_auto_space_delay_value_default">
+        <translation locale="en">%d ms (Default)</translation>
+        <translation locale="zh-Hant">%d 毫秒（預設）</translation>
+    </string>
+    <string name="gboard_patches_nintype_auto_space_delay_custom">
+        <translation locale="en">Custom…</translation>
+        <translation locale="zh-Hant">自訂…</translation>
+    </string>
+    <string name="gboard_patches_nintype_auto_space_delay_dialog_hint">
+        <translation locale="en">0–2000 ms</translation>
+        <translation locale="zh-Hant">0–2000 毫秒</translation>
+    </string>
+    <string name="gboard_patches_nintype_auto_space_delay_dialog_error">
+        <translation locale="en">Enter a delay between 0 and 2000 ms.</translation>
+        <translation locale="zh-Hant">請輸入 0 到 2000 毫秒之間的數值。</translation>
+    </string>
+    <string name="gboard_patches_nintype_section_tuning">
+        <translation locale="en">Decoder tuning</translation>
+        <translation locale="zh-Hant">解碼器微調</translation>
+    </string>
+    <string name="gboard_patches_nintype_beam_width_title">
+        <translation locale="en">Beam width</translation>
+        <translation locale="zh-Hant">Beam 搜尋寬度</translation>
+    </string>
+    <string name="gboard_patches_nintype_beam_width_summary">
+        <translation locale="en">Maximum prefixes kept per letter in parallel two-thumb swipes (higher = better recall on large dictionaries, slightly more CPU).</translation>
+        <translation locale="zh-Hant">雙指同時滑行時每個字母保留的最大前綴數量（較高可在大型詞庫中提高召回率，略微增加運算量）。</translation>
+    </string>
+    <string name="gboard_patches_nintype_beam_width_hint">
+        <translation locale="en">32–1024</translation>
+        <translation locale="zh-Hant">32–1024</translation>
+    </string>
+    <string name="gboard_patches_nintype_beam_width_error">
+        <translation locale="en">Enter a beam width between 32 and 1024.</translation>
+        <translation locale="zh-Hant">請輸入 32 到 1024 之間的整數。</translation>
+    </string>
+    <string name="gboard_patches_nintype_freq_weight_floor_title">
+        <translation locale="en">Frequency weight floor</translation>
+        <translation locale="zh-Hant">詞頻權重下限</translation>
+    </string>
+    <string name="gboard_patches_nintype_freq_weight_floor_summary">
+        <translation locale="en">Minimum score factor for rare words (lower = favor common words, higher = favor exact path match).</translation>
+        <translation locale="zh-Hant">罕見詞的最低分數倍率（較低＝偏好常見詞，較高＝偏好精確路徑吻合）。</translation>
+    </string>
+    <string name="gboard_patches_nintype_freq_weight_floor_hint">
+        <translation locale="en">0.05–1.00</translation>
+        <translation locale="zh-Hant">0.05–1.00</translation>
+    </string>
+    <string name="gboard_patches_nintype_freq_weight_floor_error">
+        <translation locale="en">Enter a value between 0.05 and 1.00.</translation>
+        <translation locale="zh-Hant">請輸入 0.05 到 1.00 之間的數值。</translation>
+    </string>
+    <string name="gboard_patches_nintype_geo_exponent_title">
+        <translation locale="en">Geometry exponent</translation>
+        <translation locale="zh-Hant">幾何路徑指數</translation>
+    </string>
+    <string name="gboard_patches_nintype_geo_exponent_summary">
+        <translation locale="en">Sensitivity to swipe shape error (higher = prioritize exact geometric match over word frequency/bigrams).</translation>
+        <translation locale="zh-Hant">對滑行路徑誤差的敏感度（較高＝優先選擇幾何路徑更精確的詞）。</translation>
+    </string>
+    <string name="gboard_patches_nintype_geo_exponent_hint">
+        <translation locale="en">1.00–8.00</translation>
+        <translation locale="zh-Hant">1.00–8.00</translation>
+    </string>
+    <string name="gboard_patches_nintype_geo_exponent_error">
+        <translation locale="en">Enter a value between 1.00 and 8.00.</translation>
+        <translation locale="zh-Hant">請輸入 1.00 到 8.00 之間的數值。</translation>
+    </string>
+    <string name="gboard_patches_nintype_beam_freq_weight_title">
+        <translation locale="en">Beam frequency weight</translation>
+        <translation locale="zh-Hant">Beam 詞頻權重</translation>
+    </string>
+    <string name="gboard_patches_nintype_beam_freq_weight_summary">
+        <translation locale="en">Bias toward frequent word prefixes while pruning the beam search (0 = pure geometry, higher = keep common words).</translation>
+        <translation locale="zh-Hant">Beam 剪枝時對常見詞前綴的偏好程度（0＝純幾何距離，較高＝優先保留常見詞）。</translation>
+    </string>
+    <string name="gboard_patches_nintype_beam_freq_weight_hint">
+        <translation locale="en">0.00–2.00</translation>
+        <translation locale="zh-Hant">0.00–2.00</translation>
+    </string>
+    <string name="gboard_patches_nintype_beam_freq_weight_error">
+        <translation locale="en">Enter a value between 0.00 and 2.00.</translation>
+        <translation locale="zh-Hant">請輸入 0.00 到 2.00 之間的數值。</translation>
+    </string>
+    <string name="gboard_patches_nintype_value_default">
+        <translation locale="en">%s (Default)</translation>
+        <translation locale="zh-Hant">%s（預設）</translation>
+    </string>
     <string name="gboard_patches_nintype_error_title">
         <translation locale="en">Nintype settings unavailable</translation>
         <translation locale="zh-Hant">Nintype 設定無法使用</translation>

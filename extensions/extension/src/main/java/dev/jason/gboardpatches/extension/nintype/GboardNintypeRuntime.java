@@ -288,6 +288,7 @@ public final class GboardNintypeRuntime {
         boolean decodedThisSession = false;
         boolean sawNonLetterThisSession = false;
         String textSnapshotAtActionDown = null;
+        boolean leadingSpaceEvaluated = false;
         NintypeInputToken pendingChordToken = null;
         String pendingChordBaselineText = null;
         float pendingChordAnchorX = 0f;
@@ -337,6 +338,7 @@ public final class GboardNintypeRuntime {
             currentComposingWord = null;
             currentAlternativeWords = null;
             nintypeWordActive = false;
+            leadingSpaceEvaluated = false;
             lastTouchUpTimeMs = 0L;
             lastPromotedPassiveCount = 0;
         }
@@ -521,7 +523,8 @@ public final class GboardNintypeRuntime {
 
                     boolean isWordContinuing = downOnLetter && session.nintypeWordActive
                             && (wasAutospacing
-                            || (timeSinceLastUp <= 380L && !session.wordTokens.isEmpty())
+                            || (timeSinceLastUp <= (GboardNintypeSettings.readAutoSpaceDelayMs(context) + 80L)
+                                    && !session.wordTokens.isEmpty())
                             || (session.activePointers.size() > 0));
 
                     session.resetGestureState();
@@ -755,11 +758,12 @@ public final class GboardNintypeRuntime {
                         // 1. Live Composing Text preview (exact Kinetica WordComposer)
                         decodeAndPreviewSession(handler, session, context, activeLang);
 
-                        // 2. Schedule 300ms autospace timer from lift (exact Kinetica Autospace)
+                        // 2. Schedule configurable autospace timer from lift
+                        int autoSpaceDelayMs = GboardNintypeSettings.readAutoSpaceDelayMs(context);
                         session.cancelAutospaceTimer();
                         session.autospaceTimerPending = true;
                         session.autospaceRunnable = () -> finalizeComposingAndAutospace(handler, session, context, activeLang);
-                        session.mainHandler.postDelayed(session.autospaceRunnable, 300L);
+                        session.mainHandler.postDelayed(session.autospaceRunnable, autoSpaceDelayMs);
                     } else {
                         // Single-finger input and pure multi-touch rollover taps stay on stock Gboard,
                         // while passively recording tap-only anchors in case a Nintype swipe continues the word.
@@ -1317,6 +1321,7 @@ public final class GboardNintypeRuntime {
                 return;
             }
 
+            GboardNintypeSettings.syncDecoderConstants(context);
             KineticaDtwDecoder decoder = new KineticaDtwDecoder();
             InputConnection ic = resolveActiveInputConnection(handler, context);
             String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
@@ -1369,9 +1374,18 @@ public final class GboardNintypeRuntime {
             session.currentComposingWord = bestWord;
             session.currentAlternativeWords = alternativeWords;
 
+            boolean autoSpaceEnabled = GboardNintypeSettings.isAutoSpaceEnabled(context);
+            boolean prependLeadingSpace = !session.leadingSpaceEvaluated
+                    && shouldPrependLeadingSpace(session.textSnapshotAtActionDown, autoSpaceEnabled);
+
             int rollbackDeleted = 0;
             if (ic != null) {
-                rollbackDeleted = previewWordToInputConnection(ic, bestWord, session.textSnapshotAtActionDown);
+                rollbackDeleted = previewWordToInputConnection(
+                        ic, bestWord, session.textSnapshotAtActionDown, prependLeadingSpace);
+                if (prependLeadingSpace && session.textSnapshotAtActionDown != null) {
+                    session.textSnapshotAtActionDown = session.textSnapshotAtActionDown + " ";
+                }
+                session.leadingSpaceEvaluated = true;
             }
 
             GboardNintypeTraceLogger.logWordDecode(
@@ -1397,10 +1411,19 @@ public final class GboardNintypeRuntime {
         }
     }
 
+    static boolean shouldPrependLeadingSpace(String baselineBeforeText, boolean autoSpaceEnabled) {
+        if (!autoSpaceEnabled || baselineBeforeText == null || baselineBeforeText.isEmpty()) {
+            return false;
+        }
+        char last = baselineBeforeText.charAt(baselineBeforeText.length() - 1);
+        return Character.isLetterOrDigit(last);
+    }
+
     private static int previewWordToInputConnection(
             InputConnection ic,
             String word,
-            String baselineBeforeText
+            String baselineBeforeText,
+            boolean prependLeadingSpace
     ) {
         int extraChars = 0;
         try {
@@ -1418,6 +1441,13 @@ public final class GboardNintypeRuntime {
                             ic.deleteSurroundingText(extraChars, 0);
                         }
                     }
+                }
+
+                // Stock Gboard single-finger swipes/taps leave no trailing space; prepend one before a new
+                // Nintype word so transitions like "es" + "dir" produce "es dir" instead of "esdir".
+                if (prependLeadingSpace) {
+                    ic.finishComposingText();
+                    ic.commitText(" ", 1);
                 }
 
                 // Display Live Composing preview (underlined text, exact Kinetica behavior)

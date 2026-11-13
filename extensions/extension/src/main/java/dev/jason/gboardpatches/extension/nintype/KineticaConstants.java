@@ -51,9 +51,9 @@ public final class KineticaConstants {
 
     public static final float UNCONTACTED_LETTER_KEEP = 0.85f;
 
-    public static final int BEAM_WIDTH = 128;
+    public static volatile int BEAM_WIDTH = 128;
     public static final int BEAM_MAX_ATTEMPTS = 300;
-    public static final float BEAM_FREQ_WEIGHT = 0.5f;
+    public static volatile float BEAM_FREQ_WEIGHT = 0.5f;
     public static final float BEAM_GATE_COST = 0.5f;
     public static final float BEAM_GATE_KEEP = 0.6f;
     public static final boolean BEAM_UNSATURATED = true;
@@ -61,7 +61,7 @@ public final class KineticaConstants {
     public static final float DROPPED_TAP_COST_KW = 2.0f;
     public static final float DROPPED_TAP_KEEP = 0.25f;
 
-    public static final float GEO_EXPONENT = 3.75f;
+    public static volatile float GEO_EXPONENT = 3.75f;
     public static final float GEO_SATURATION_KW = 0.5f;
     public static final float GEO_SATURATION_LONG_KW = 0.9f;
     public static final float LONG_STROKE_KW = 22f;
@@ -70,7 +70,7 @@ public final class KineticaConstants {
         return (arcKw >= LONG_STROKE_KW) ? GEO_SATURATION_LONG_KW : GEO_SATURATION_KW;
     }
 
-    public static final float FREQ_WEIGHT_FLOOR = 0.25f;
+    public static volatile float FREQ_WEIGHT_FLOOR = 0.25f;
 
     public static final int TOP_K = 10;
     public static final int MAX_WORD_LEN = 40;
@@ -115,7 +115,27 @@ public final class KineticaConstants {
     public static final float MIN_SWIPE_ARC_KW = 1.8f;
     public static final float KW_PER_LETTER = 1.5f;
 
-    private static final float SATURATED_TERM = (float) (1.0 / Math.pow(1.0 + GEO_SATURATION_KW, GEO_EXPONENT));
+    private static volatile float saturatedTerm = computeSaturatedTerm(GEO_EXPONENT);
+
+    private static float computeSaturatedTerm(float geoExponent) {
+        return (float) (1.0 / Math.pow(1.0 + GEO_SATURATION_KW, geoExponent));
+    }
+
+    /**
+     * Applies user-configured runtime tuning values without altering upstream algorithm logic.
+     */
+    public static void applyRuntimeTuning(
+            int beamWidth,
+            float freqWeightFloor,
+            float geoExponent,
+            float beamFreqWeight
+    ) {
+        BEAM_WIDTH = beamWidth;
+        FREQ_WEIGHT_FLOOR = freqWeightFloor;
+        GEO_EXPONENT = geoExponent;
+        saturatedTerm = computeSaturatedTerm(geoExponent);
+        BEAM_FREQ_WEIGHT = beamFreqWeight;
+    }
 
     /**
      * Geometric factor of the score; 1.0 at a perfect fit, floored past saturation.
@@ -157,8 +177,10 @@ public final class KineticaConstants {
     public static float boostWeight(float dGeometric) {
         float excess = dGeometric - GEO_SATURATION_KW;
         if (excess <= 0f) return 1.0f;
-        float cur = (float) (1.0 / Math.pow(1.0 + Math.min(excess, GEO_SATURATION_KW), GEO_EXPONENT));
-        return (cur - SATURATED_TERM) / (1.0f - SATURATED_TERM);
+        float exp = GEO_EXPONENT;
+        float sat = saturatedTerm;
+        float cur = (float) (1.0 / Math.pow(1.0 + Math.min(excess, GEO_SATURATION_KW), exp));
+        return (cur - sat) / (1.0f - sat);
     }
 
     public static float appliedBoost(float rawBoost, float dGeometric) {
