@@ -1,4 +1,4 @@
-package dev.jason.gboardpatches.extension.backuprestore;
+package dev.jason.gboardpatches.extension.settings;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;

@@ -8,11 +8,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import dev.jason.gboardpatches.extension.languagemodels.GboardLanguageModelSettingsFeature;
-import dev.jason.gboardpatches.extension.clipboard.GboardClipboardSettingsFeature;
-import dev.jason.gboardpatches.extension.keyboard.GboardAiVoiceSettingsGroupFeature;
-import dev.jason.gboardpatches.extension.keyboard.GboardKeyboardLayoutSettingsGroupFeature;
-import dev.jason.gboardpatches.extension.keyboard.GboardKeyboardToolsSettingsGroupFeature;
+import dev.jason.gboardpatches.extension.matrixsuggestions.GboardMatrixSuggestionsSettingsFeature;
+import dev.jason.gboardpatches.extension.nintype.GboardNintypeSettingsFeature;
 
 public final class GboardPatchesSettingsFeatureRegistry {
     private static final String TAG = "GboardPatches";
@@ -32,12 +29,8 @@ public final class GboardPatchesSettingsFeatureRegistry {
     /** Every home-page feature in display order, before availability filtering. */
     public static List<GboardPatchesSettingsContract.Feature> allFeatures(Context context) {
         return Collections.unmodifiableList(Arrays.asList(
-                new GboardAiVoiceSettingsGroupFeature(context),
-                new GboardLanguageModelSettingsFeature(context),
-                new GboardKeyboardToolsSettingsGroupFeature(context),
-                new GboardKeyboardLayoutSettingsGroupFeature(context),
-                new GboardClipboardSettingsFeature(),
-                new GboardMoreSettingsGroupFeature(context)));
+                new GboardNintypeSettingsFeature(context),
+                new GboardMatrixSuggestionsSettingsFeature(context)));
     }
 
     private static void addIfAvailable(Context context,
