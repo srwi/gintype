@@ -22,6 +22,7 @@ public final class GboardNintypeSettingsFeature implements GboardPatchesSettings
 
     private static final String TAG = "GboardPatches";
     private static final int[] PRESET_DELAYS_MS = {150, 200, 300, 450, 600, 800};
+    private static final int[] PRESET_COMBINE_DELAYS_MS = {0, 80, 120, 150, 200, 300};
     private static final int[] PRESET_BEAM_WIDTHS = {64, 128, 192, 256, 384, 512};
     private static final float[] PRESET_FREQ_WEIGHT_FLOORS = {0.10f, 0.15f, 0.25f, 0.40f, 0.60f, 0.80f, 1.00f};
     private static final float[] PRESET_GEO_EXPONENTS = {2.50f, 3.00f, 3.75f, 4.50f, 5.50f, 6.50f};
@@ -57,6 +58,11 @@ public final class GboardNintypeSettingsFeature implements GboardPatchesSettings
     private final String delayCustomLabel;
     private final String delayDialogHint;
     private final String delayDialogError;
+    private final String combineDelayTitle;
+    private final String combineDelaySummary;
+    private final String combineDelayHint;
+    private final String combineDelayError;
+    private final String combineDelayOffLabel;
     private final String defaultValueTemplate;
     private final String beamWidthTitle;
     private final String beamWidthSummary;
@@ -114,6 +120,16 @@ public final class GboardNintypeSettingsFeature implements GboardPatchesSettings
                 : text(context, R.string.gboard_patches_nintype_auto_space_delay_dialog_hint);
         delayDialogError = de ? "Bitte eine Verzögerung zwischen 0 und 2000 ms eingeben."
                 : text(context, R.string.gboard_patches_nintype_auto_space_delay_dialog_error);
+        combineDelayTitle = de ? "Single-Touch-Kombinationszeit"
+                : text(context, R.string.gboard_patches_nintype_combine_delay_title);
+        combineDelaySummary = de
+                ? "Folgt nach einem Gboard-Einzelfinger-Swipe/Tap innerhalb dieser Zeit ein weiterer Swipe oder Tap, kombiniert Nintype beide rückwirkend (0 = aus)."
+                : text(context, R.string.gboard_patches_nintype_combine_delay_summary);
+        combineDelayHint = text(context, R.string.gboard_patches_nintype_combine_delay_hint);
+        combineDelayError = de ? "Bitte eine Zeit zwischen 0 und 500 ms eingeben."
+                : text(context, R.string.gboard_patches_nintype_combine_delay_error);
+        combineDelayOffLabel = de ? "0 ms (Aus)"
+                : text(context, R.string.gboard_patches_nintype_combine_delay_off);
         defaultValueTemplate = de ? "%s (Standard)"
                 : text(context, R.string.gboard_patches_nintype_value_default);
         beamWidthTitle = de ? "Beam-Breite (BEAM_WIDTH)"
@@ -192,12 +208,13 @@ public final class GboardNintypeSettingsFeature implements GboardPatchesSettings
             boolean enabled = GboardNintypeSettings.readEnabled(preferences);
             boolean autoSpaceEnabled = GboardNintypeSettings.readAutoSpaceEnabled(preferences);
             int autoSpaceDelayMs = GboardNintypeSettings.readAutoSpaceDelayMs(preferences);
+            int combineDelayMs = GboardNintypeSettings.readSingleTouchCombineDelayMs(preferences);
             int beamWidth = GboardNintypeSettings.readBeamWidth(preferences);
             float freqWeightFloor = GboardNintypeSettings.readFreqWeightFloor(preferences);
             float geoExponent = GboardNintypeSettings.readGeoExponent(preferences);
             float beamFreqWeight = GboardNintypeSettings.readBeamFreqWeight(preferences);
 
-            List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(3);
+            List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(4);
             behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
                     enabledTitle,
                     enabledSummary,
@@ -227,6 +244,17 @@ public final class GboardNintypeSettingsFeature implements GboardPatchesSettings
                             GboardNintypeSettings.MAX_AUTO_SPACE_DELAY_MS,
                             autoSpaceDelayMs, this::formatDelayLabel, delayDialogError,
                             v -> GboardNintypeSettings.writeAutoSpaceDelayMs(preferences, v))));
+            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    combineDelayTitle,
+                    combineDelaySummary,
+                    formatCombineDelayLabel(combineDelayMs),
+                    enabled,
+                    () -> showIntSelector(
+                            host, combineDelayTitle, combineDelayHint, PRESET_COMBINE_DELAYS_MS,
+                            GboardNintypeSettings.MIN_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                            GboardNintypeSettings.MAX_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                            combineDelayMs, this::formatCombineDelayLabel, combineDelayError,
+                            v -> GboardNintypeSettings.writeSingleTouchCombineDelayMs(preferences, v))));
 
             List<GboardPatchesSettingsContract.Row> tuningRows = new ArrayList<>(4);
             tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -464,6 +492,16 @@ public final class GboardNintypeSettingsFeature implements GboardPatchesSettings
 
     private String formatDelayLabel(int delayMs) {
         if (delayMs == GboardNintypeSettings.DEFAULT_AUTO_SPACE_DELAY_MS) {
+            return String.format(Locale.US, delayValueDefaultTemplate, delayMs);
+        }
+        return String.format(Locale.US, delayValueTemplate, delayMs);
+    }
+
+    private String formatCombineDelayLabel(int delayMs) {
+        if (delayMs == 0) {
+            return combineDelayOffLabel;
+        }
+        if (delayMs == GboardNintypeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS) {
             return String.format(Locale.US, delayValueDefaultTemplate, delayMs);
         }
         return String.format(Locale.US, delayValueTemplate, delayMs);

@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import org.junit.Before;
 import org.junit.Test;
@@ -797,5 +798,50 @@ public class NintypeDecoderTest {
                 Arrays.asList(p1, p2, p3, p4), trie, bigrams, geometry, null);
         assertFalse(results.isEmpty());
         assertEquals(longCompound, results.get(0).word);
+    }
+
+    @Test
+    public void singleTouchCombineBufferPromotesSequentialSwipesAndSwipeTapWithinTimeout() {
+        GboardNintypeRuntime.SingleTouchCombineBuffer buf =
+                new GboardNintypeRuntime.SingleTouchCombineBuffer();
+
+        // 1) Stock swipe "mi" followed 10ms later by tap 'r' -> promotes to [mi, r] with baseline restored
+        NintypeInputToken swipeMi = buildSwipeToken(0, "mi", 100L, 300L);
+        NintypeInputToken tapR = buildTapToken(0, 'r', 310L, 360L);
+        buf.recordStroke(Collections.singletonList(swipeMi), true, false, "das", 300L, 150);
+        assertEquals(1, buf.tokens.size());
+        buf.validateOnActionDown("das Mi", true, 310L, 150);
+        assertTrue(buf.canPromoteWith(Collections.singletonList(tapR), false));
+
+        List<NintypeInputToken> dest = new ArrayList<>();
+        String restored = buf.promoteInto(dest, "das Mi r");
+        assertEquals("das", restored);
+        assertEquals(1, dest.size());
+        assertEquals(5, GboardNintypeRuntime.computeExtraCharsAfterBaseline("das", "das Mi r"));
+        assertTrue(GboardNintypeRuntime.shouldPrependLeadingSpace("das", true));
+        assertTrue(buf.tokens.isEmpty());
+
+        // 2) Stock swipe "hal" followed 80ms later by swipe "lo" -> promotes both
+        NintypeInputToken swipeHal = buildSwipeToken(0, "hal", 100L, 260L);
+        NintypeInputToken swipeLo = buildSwipeToken(0, "lo", 340L, 500L);
+        buf.recordStroke(Collections.singletonList(swipeHal), true, false, "Sage ", 260L, 150);
+        buf.validateOnActionDown("Sage Hal", true, 340L, 150);
+        assertTrue(buf.canPromoteWith(Collections.singletonList(swipeLo), false));
+        dest.clear();
+        assertEquals("Sage ", buf.promoteInto(dest, "Sage Hal"));
+        assertEquals(1, dest.size());
+
+        // 3) Pure taps without swipe do NOT promote; timeout > combineDelayMs clears buffer
+        NintypeInputToken tapA = buildTapToken(0, 'a', 100L, 130L);
+        NintypeInputToken tapB = buildTapToken(0, 'b', 180L, 210L);
+        buf.recordStroke(Collections.singletonList(tapA), false, false, "ok ", 130L, 150);
+        buf.validateOnActionDown("ok a", true, 180L, 150);
+        assertFalse(buf.canPromoteWith(Collections.singletonList(tapB), false));
+        buf.validateOnActionDown("ok ab", true, 400L, 150);
+        assertTrue(buf.tokens.isEmpty());
+
+        // 4) Disabled combine timeout (0ms) ignores single-touch swipes
+        buf.recordStroke(Collections.singletonList(swipeHal), true, false, "Sage ", 260L, 0);
+        assertTrue(buf.tokens.isEmpty());
     }
 }

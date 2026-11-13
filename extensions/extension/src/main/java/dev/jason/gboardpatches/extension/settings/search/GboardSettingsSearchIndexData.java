@@ -179,6 +179,7 @@ final class GboardSettingsSearchIndexData {
             {19, R.string.gboard_patches_nintype_enabled_title, R.string.gboard_patches_nintype_summary, 0},
             {19, R.string.gboard_patches_nintype_auto_space_title, R.string.gboard_patches_nintype_auto_space_summary, 0},
             {19, R.string.gboard_patches_nintype_auto_space_delay_title, R.string.gboard_patches_nintype_auto_space_delay_summary, 0},
+            {19, R.string.gboard_patches_nintype_combine_delay_title, R.string.gboard_patches_nintype_combine_delay_summary, 0},
             {19, R.string.gboard_patches_nintype_beam_width_title, R.string.gboard_patches_nintype_beam_width_summary, 0},
             {19, R.string.gboard_patches_nintype_freq_weight_floor_title, R.string.gboard_patches_nintype_freq_weight_floor_summary, 0},
             {19, R.string.gboard_patches_nintype_geo_exponent_title, R.string.gboard_patches_nintype_geo_exponent_summary, 0},

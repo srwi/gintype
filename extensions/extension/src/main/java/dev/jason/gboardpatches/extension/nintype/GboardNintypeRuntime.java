@@ -45,7 +45,7 @@ public final class GboardNintypeRuntime {
     private static final long MAX_CHORD_GAP_MS = 420L;
     private static final long MAX_SEQUENTIAL_CHORD_GAP_MS = 180L;
     private static final int TEXT_SNAPSHOT_CHARS = 256;
-    private static final int MAX_ROLLBACK_EXTRA_CHARS = 12;
+    private static final int MAX_ROLLBACK_EXTRA_CHARS = 32;
     private static final long MAX_PASSIVE_TAP_GAP_MS = 750L;
     private static final int MAX_PASSIVE_TAP_TOKENS = 8;
 
@@ -297,6 +297,7 @@ public final class GboardNintypeRuntime {
         int restingDroppedThisSession = 0;
         int lastPromotedPassiveCount = 0;
         final PassiveTapBuffer passiveTapBuffer = new PassiveTapBuffer();
+        final SingleTouchCombineBuffer singleTouchCombineBuffer = new SingleTouchCombineBuffer();
 
         // Auto-space & Live Composing (WordComposer) state
         String currentComposingWord = null;
@@ -534,6 +535,9 @@ public final class GboardNintypeRuntime {
                         String snapshotNow = readTextBeforeCursorSnapshot(handler, context);
                         session.textSnapshotAtActionDown = snapshotNow;
                         session.passiveTapBuffer.validateOnActionDown(snapshotNow, downOnLetter, eventTime);
+                        int combineDelayMs = GboardNintypeSettings.readSingleTouchCombineDelayMs(context);
+                        session.singleTouchCombineBuffer.validateOnActionDown(
+                                snapshotNow, downOnLetter, eventTime, combineDelayMs);
                     }
 
                     registerPointerDown(session, pid, x, y, eventTime);
@@ -729,11 +733,17 @@ public final class GboardNintypeRuntime {
                     }
 
                     // Only run Nintype decoding for multi-touch gestures (or continuations of an active
-                    // Nintype word / multi-touch tap prefix) that contain at least one swipe.
-                    // Single-finger taps, single-finger swipes, and pure rollover taps stay 100% on stock Gboard.
+                    // Nintype word / multi-touch tap prefix) that contain at least one swipe,
+                    // OR sequential single-touch strokes combined within singleTouchCombineDelayMs.
+                    int combineDelayMs = GboardNintypeSettings.readSingleTouchCombineDelayMs(context);
                     boolean promoteMultiTouchPassive = !session.nintypeWordActive
                             && session.passiveTapBuffer.canPromoteMultiTouchSwipe(session.completedTokens);
-                    boolean shouldDecodeNow = (isNintypeGesture || promoteMultiTouchPassive) && hasSwipe;
+                    boolean promoteSingleTouchCombine = !session.nintypeWordActive
+                            && combineDelayMs > 0
+                            && session.singleTouchCombineBuffer.canPromoteWith(
+                                    session.completedTokens, session.sawNonLetterThisSession);
+                    boolean shouldDecodeNow = ((isNintypeGesture || promoteMultiTouchPassive) && hasSwipe)
+                            || promoteSingleTouchCombine;
 
                     if (shouldDecodeNow) {
                         boolean wasNintypeWordActive = session.nintypeWordActive;
@@ -743,12 +753,21 @@ public final class GboardNintypeRuntime {
 
                         if (!wasNintypeWordActive) {
                             int beforePromoted = session.wordTokens.size();
-                            session.textSnapshotAtActionDown = session.passiveTapBuffer.promoteInto(
-                                    session.wordTokens, session.textSnapshotAtActionDown);
+                            if (promoteSingleTouchCombine && !promoteMultiTouchPassive) {
+                                session.textSnapshotAtActionDown =
+                                        session.singleTouchCombineBuffer.promoteInto(
+                                                session.wordTokens, session.textSnapshotAtActionDown);
+                                session.passiveTapBuffer.clear();
+                            } else {
+                                session.textSnapshotAtActionDown = session.passiveTapBuffer.promoteInto(
+                                        session.wordTokens, session.textSnapshotAtActionDown);
+                                session.singleTouchCombineBuffer.clear();
+                            }
                             session.lastPromotedPassiveCount += Math.max(
                                     0, session.wordTokens.size() - beforePromoted);
                         } else {
                             session.passiveTapBuffer.clear();
+                            session.singleTouchCombineBuffer.clear();
                         }
 
                         // Accumulate all completed tokens into persistent word buffer
@@ -766,7 +785,7 @@ public final class GboardNintypeRuntime {
                         session.mainHandler.postDelayed(session.autospaceRunnable, autoSpaceDelayMs);
                     } else {
                         // Single-finger input and pure multi-touch rollover taps stay on stock Gboard,
-                        // while passively recording tap-only anchors in case a Nintype swipe continues the word.
+                        // while passively recording anchors in case a following stroke within timeout combines.
                         String tapBaselineAtDown = session.textSnapshotAtActionDown;
                         boolean strokeHadMultiTouch = session.sawMultiTouch;
                         boolean sawNonLetter = session.sawNonLetterThisSession;
@@ -781,6 +800,13 @@ public final class GboardNintypeRuntime {
                                 strokeHadMultiTouch,
                                 tapBaselineAtDown,
                                 eventTime);
+                        session.singleTouchCombineBuffer.recordStroke(
+                                completedCopy,
+                                hasSwipe,
+                                sawNonLetter,
+                                tapBaselineAtDown,
+                                eventTime,
+                                combineDelayMs);
                         if (hasSwipe || strokeHadMultiTouch || restingDropped > 0
                                 || !session.passiveTapBuffer.tokens.isEmpty()) {
                             String reason = !hasSwipe
@@ -809,6 +835,7 @@ public final class GboardNintypeRuntime {
                     session.resetGestureState();
                     session.clearWordBuffer();
                     session.passiveTapBuffer.clear();
+                    session.singleTouchCombineBuffer.clear();
                     for (int i = 0; i < 10; i++) {
                         finishTrailForPointer(handler, i, false);
                     }
@@ -1506,6 +1533,7 @@ public final class GboardNintypeRuntime {
 
             session.clearWordBuffer();
             session.passiveTapBuffer.clear();
+            session.singleTouchCombineBuffer.clear();
             session.resetGestureState();
         } catch (Throwable t) {
             Log.w(TAG, "finalizeComposingAndAutospace failed", t);
@@ -1605,6 +1633,111 @@ public final class GboardNintypeRuntime {
             clear();
             return restoredSnapshot;
         }
+    }
+
+    /**
+     * Pure-JVM buffer retaining a brief single-touch stock Gboard swipe or tap stroke so a
+     * rapidly following swipe or tap within the combine timeout promotes both into Nintype.
+     */
+    static final class SingleTouchCombineBuffer {
+        final List<NintypeInputToken> tokens = new ArrayList<>();
+        String baselineText = null;
+        long lastUpTimeMs = 0L;
+        boolean hasSwipeToken = false;
+
+        void clear() {
+            tokens.clear();
+            baselineText = null;
+            lastUpTimeMs = 0L;
+            hasSwipeToken = false;
+        }
+
+        void validateOnActionDown(
+                String snapshotNow,
+                boolean downOnLetter,
+                long eventTimeMs,
+                int combineDelayMs
+        ) {
+            if (tokens.isEmpty()) return;
+            long gapMs = (lastUpTimeMs > 0L) ? (eventTimeMs - lastUpTimeMs) : Long.MAX_VALUE;
+            if (combineDelayMs <= 0 || !downOnLetter || gapMs < 0L || gapMs > combineDelayMs) {
+                clear();
+                return;
+            }
+            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, snapshotNow);
+            if (!isCombinePrefix(typedPrefix)) {
+                clear();
+            }
+        }
+
+        boolean canPromoteWith(List<NintypeInputToken> completedTokens, boolean sawNonLetter) {
+            if (sawNonLetter || tokens.isEmpty() || completedTokens == null || completedTokens.isEmpty()) {
+                return false;
+            }
+            if (hasSwipeToken) return true;
+            for (int i = 0; i < completedTokens.size(); i++) {
+                if (completedTokens.get(i).kind == NintypeInputToken.Kind.SWIPE) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void recordStroke(
+                List<NintypeInputToken> completedTokens,
+                boolean strokeHasSwipe,
+                boolean sawNonLetter,
+                String tapBaselineAtDown,
+                long eventTimeMs,
+                int combineDelayMs
+        ) {
+            if (combineDelayMs <= 0 || sawNonLetter || completedTokens == null
+                    || completedTokens.isEmpty() || tapBaselineAtDown == null) {
+                clear();
+                return;
+            }
+            if (tokens.isEmpty()) {
+                if (completedTokens.size() > MAX_PASSIVE_TAP_TOKENS) {
+                    clear();
+                    return;
+                }
+                baselineText = tapBaselineAtDown;
+                tokens.addAll(completedTokens);
+                hasSwipeToken = strokeHasSwipe;
+                lastUpTimeMs = eventTimeMs;
+                return;
+            }
+            if (tokens.size() + completedTokens.size() > MAX_PASSIVE_TAP_TOKENS) {
+                clear();
+                return;
+            }
+            tokens.addAll(completedTokens);
+            hasSwipeToken |= strokeHasSwipe;
+            lastUpTimeMs = eventTimeMs;
+        }
+
+        String promoteInto(List<NintypeInputToken> destWordTokens, String textSnapshotAtActionDown) {
+            if (tokens.isEmpty()) return textSnapshotAtActionDown;
+            String restoredSnapshot = textSnapshotAtActionDown;
+            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, textSnapshotAtActionDown);
+            if (isCombinePrefix(typedPrefix)) {
+                destWordTokens.addAll(tokens);
+                restoredSnapshot = baselineText;
+            }
+            clear();
+            return restoredSnapshot;
+        }
+    }
+
+    static boolean isCombinePrefix(String prefix) {
+        if (prefix == null || prefix.length() > MAX_ROLLBACK_EXTRA_CHARS) return false;
+        for (int i = 0; i < prefix.length(); i++) {
+            char c = prefix.charAt(i);
+            if (!Character.isLetter(c) && c != ' ') {
+                return false;
+            }
+        }
+        return true;
     }
 
     static int computeExtraCharsAfterBaseline(String baselineBeforeText, String currentStr) {

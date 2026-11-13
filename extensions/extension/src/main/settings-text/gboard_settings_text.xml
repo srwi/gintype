@@ -3848,6 +3848,26 @@
         <translation locale="en">Enter a delay between 0 and 2000 ms.</translation>
         <translation locale="zh-Hant">請輸入 0 到 2000 毫秒之間的數值。</translation>
     </string>
+    <string name="gboard_patches_nintype_combine_delay_title">
+        <translation locale="en">Single-finger combine timeout</translation>
+        <translation locale="zh-Hant">單指連續合併時間限制</translation>
+    </string>
+    <string name="gboard_patches_nintype_combine_delay_summary">
+        <translation locale="en">If a second swipe or tap follows a stock Gboard swipe/tap within this window, retroactively combine both in Nintype (0 = off).</translation>
+        <translation locale="zh-Hant">若在原生單指滑行或點擊後於此時間內接續下一次滑行或點擊，則合併由 Nintype 一起解碼（0＝關閉）。</translation>
+    </string>
+    <string name="gboard_patches_nintype_combine_delay_hint">
+        <translation locale="en">0–500 ms</translation>
+        <translation locale="zh-Hant">0–500 毫秒</translation>
+    </string>
+    <string name="gboard_patches_nintype_combine_delay_error">
+        <translation locale="en">Enter a timeout between 0 and 500 ms.</translation>
+        <translation locale="zh-Hant">請輸入 0 到 500 毫秒之間的數值。</translation>
+    </string>
+    <string name="gboard_patches_nintype_combine_delay_off">
+        <translation locale="en">0 ms (Off)</translation>
+        <translation locale="zh-Hant">0 毫秒（關閉）</translation>
+    </string>
     <string name="gboard_patches_nintype_section_tuning">
         <translation locale="en">Decoder tuning</translation>
         <translation locale="zh-Hant">解碼器微調</translation>

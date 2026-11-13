@@ -13,6 +13,8 @@ public final class GboardNintypeSettings {
     public static final String PREF_KEY_ENABLED = "pref_nintype_multi_touch_enabled";
     public static final String PREF_KEY_AUTO_SPACE = "pref_nintype_auto_space_enabled";
     public static final String PREF_KEY_AUTO_SPACE_DELAY_MS = "pref_nintype_auto_space_delay_ms";
+    public static final String PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS =
+            "pref_nintype_single_touch_combine_delay_ms";
     public static final String PREF_KEY_BEAM_WIDTH = "pref_nintype_beam_width";
     public static final String PREF_KEY_FREQ_WEIGHT_FLOOR = "pref_nintype_freq_weight_floor";
     public static final String PREF_KEY_GEO_EXPONENT = "pref_nintype_geo_exponent";
@@ -23,6 +25,9 @@ public final class GboardNintypeSettings {
     public static final int MIN_AUTO_SPACE_DELAY_MS = 0;
     public static final int MAX_AUTO_SPACE_DELAY_MS = 2000;
     public static final int DEFAULT_AUTO_SPACE_DELAY_MS = 300;
+    public static final int MIN_SINGLE_TOUCH_COMBINE_DELAY_MS = 0;
+    public static final int MAX_SINGLE_TOUCH_COMBINE_DELAY_MS = 500;
+    public static final int DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS = 150;
     public static final int MIN_BEAM_WIDTH = 32;
     public static final int MAX_BEAM_WIDTH = 1024;
     public static final int DEFAULT_BEAM_WIDTH = 256;
@@ -79,6 +84,10 @@ public final class GboardNintypeSettings {
         if (!preferences.contains(PREF_KEY_AUTO_SPACE_DELAY_MS)) {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_AUTO_SPACE_DELAY_MS, DEFAULT_AUTO_SPACE_DELAY_MS);
+        }
+        if (!preferences.contains(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS);
         }
         if (!preferences.contains(PREF_KEY_BEAM_WIDTH)) {
             if (editor == null) editor = preferences.edit();
@@ -165,6 +174,27 @@ public final class GboardNintypeSettings {
 
     public static int sanitizeAutoSpaceDelayMs(int delayMs) {
         return sanitizeInt(delayMs, MIN_AUTO_SPACE_DELAY_MS, MAX_AUTO_SPACE_DELAY_MS);
+    }
+
+    public static int readSingleTouchCombineDelayMs(Context context) {
+        try {
+            SharedPreferences preferences = resolvePreferences(context);
+            return readSingleTouchCombineDelayMs(preferences);
+        } catch (Throwable ignored) {
+            return DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS;
+        }
+    }
+
+    public static int readSingleTouchCombineDelayMs(SharedPreferences preferences) {
+        return readInt(preferences, PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                MIN_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                MAX_SINGLE_TOUCH_COMBINE_DELAY_MS);
+    }
+
+    public static boolean writeSingleTouchCombineDelayMs(SharedPreferences preferences, int delayMs) {
+        return writeInt(preferences, PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                delayMs, MIN_SINGLE_TOUCH_COMBINE_DELAY_MS, MAX_SINGLE_TOUCH_COMBINE_DELAY_MS);
     }
 
     public static int readBeamWidth(SharedPreferences preferences) {

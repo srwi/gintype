@@ -45,6 +45,15 @@ public class GboardNintypeSettingsTest {
         assertTrue(GboardNintypeSettings.writeAutoSpaceDelayMs(prefs, 9999));
         assertEquals(GboardNintypeSettings.MAX_AUTO_SPACE_DELAY_MS,
                 GboardNintypeSettings.readAutoSpaceDelayMs(prefs));
+
+        assertEquals(GboardNintypeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                GboardNintypeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertTrue(prefs.contains(GboardNintypeSettings.PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS));
+        assertTrue(GboardNintypeSettings.writeSingleTouchCombineDelayMs(prefs, 0));
+        assertEquals(0, GboardNintypeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertTrue(GboardNintypeSettings.writeSingleTouchCombineDelayMs(prefs, 900));
+        assertEquals(GboardNintypeSettings.MAX_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                GboardNintypeSettings.readSingleTouchCombineDelayMs(prefs));
     }
 
     @Test
