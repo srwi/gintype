@@ -5,7 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Spatial geometry model of Gboard's active keyboard for Nintype Gaussian proximity scoring.
+ * Spatial geometry model of Gboard's active keyboard for Nintype DTW decoding.
  * Ported from Kinetica's KeyboardGeometry.kt.
  */
 public final class NintypeGeometry {
@@ -32,23 +32,6 @@ public final class NintypeGeometry {
         }
     }
 
-    public static final class KeyProximity implements Comparable<KeyProximity> {
-        public final char key;
-        public final int charIdx;
-        public final float score;
-
-        public KeyProximity(char key, int charIdx, float score) {
-            this.key = key;
-            this.charIdx = charIdx;
-            this.score = score;
-        }
-
-        @Override
-        public int compareTo(KeyProximity other) {
-            return Float.compare(other.score, this.score);
-        }
-    }
-
     public static final String NO_SPACE_BEFORE = ".,!?;:)]}\u00bb\u2026";
 
     public boolean isPunctuationChar(char c) {
@@ -60,8 +43,6 @@ public final class NintypeGeometry {
 
     public float keyWidthPx = 96f;
     public float keyHeightPx = 140f;
-    public float sigma = 96f * 0.78f;
-    private float invTwoSigmaSq = 1f / (2f * sigma * sigma);
 
     private float minLetterY = 0f;
     private float maxLetterY = 600f;
@@ -76,8 +57,6 @@ public final class NintypeGeometry {
 
         if (avgWidth > 10f) this.keyWidthPx = avgWidth;
         if (avgHeight > 10f) this.keyHeightPx = avgHeight;
-        this.sigma = this.keyWidthPx * 0.78f;
-        this.invTwoSigmaSq = 1f / (2f * sigma * sigma);
 
         float minY = Float.MAX_VALUE;
         float maxY = -Float.MAX_VALUE;
@@ -277,23 +256,6 @@ public final class NintypeGeometry {
         return null;
     }
 
-    public float gaussianProximity(float px, float py, char keyChar) {
-        int idx = NintypeAlphabet.charIndex(keyChar);
-        if (idx >= 0) return gaussianProximityByIdx(px, py, idx);
-        KeySpec k = keySpec(keyChar);
-        if (k == null) return 0f;
-        float d2 = k.distanceSqTo(px, py);
-        return (float) Math.exp(-d2 * invTwoSigmaSq);
-    }
-
-    public float gaussianProximityByIdx(float px, float py, int charIdx) {
-        if (charIdx < 0 || charIdx >= NintypeAlphabet.ALPHABET_SIZE) return 0f;
-        KeySpec k = letterArray[charIdx];
-        if (k == null) return 0f;
-        float d2 = k.distanceSqTo(px, py);
-        return (float) Math.exp(-d2 * invTwoSigmaSq);
-    }
-
     public KeySpec nearestLetterKey(float px, float py) {
         KeySpec best = null;
         float bestDist = Float.MAX_VALUE;
@@ -316,37 +278,6 @@ public final class NintypeGeometry {
         float distSq = nearest.distanceSqTo(px, py);
         float maxRadius = Math.max(keyWidthPx, keyHeightPx) * 1.45f;
         return distSq <= maxRadius * maxRadius;
-    }
-
-    public List<KeyProximity> nearKeys(float px, float py, int maxCount) {
-        float cutoffDistSq = (sigma * 2.5f) * (sigma * 2.5f);
-        List<KeyProximity> out = new ArrayList<>(maxCount);
-
-        for (int idx = 0; idx < NintypeAlphabet.ALPHABET_SIZE; idx++) {
-            KeySpec k = letterArray[idx];
-            if (k == null) continue;
-            float d2 = k.distanceSqTo(px, py);
-            if (d2 <= cutoffDistSq) {
-                float score = (float) Math.exp(-d2 * invTwoSigmaSq);
-                out.add(new KeyProximity(k.character, idx, score));
-            }
-        }
-
-        if (out.isEmpty()) {
-            KeySpec nearest = nearestLetterKey(px, py);
-            if (nearest != null) {
-                int idx = NintypeAlphabet.charIndex(nearest.character);
-                if (idx >= 0) {
-                    out.add(new KeyProximity(nearest.character, idx, 0.2f));
-                }
-            }
-        }
-
-        out.sort(null);
-        if (out.size() > maxCount) {
-            return out.subList(0, maxCount);
-        }
-        return out;
     }
 
     public KeySpec findKeyAt(float px, float py) {

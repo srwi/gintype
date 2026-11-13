@@ -7,13 +7,6 @@ public final class NintypeAlphabet {
 
     public static final int ALPHABET_SIZE = 26;
 
-    // Scoring weights for final candidate ranking (ported from Kinetica)
-    public static final float WEIGHT_SPATIAL = 0.50f;
-    public static final float WEIGHT_FREQUENCY = 0.30f;
-    public static final float WEIGHT_BIGRAM = 0.20f;
-
-    public static final float FREQ_LOG_SCALE = 11.512925f; // ln(100_000)
-
     private NintypeAlphabet() {}
 
     public static int charIndex(char c) {

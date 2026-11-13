@@ -41,9 +41,6 @@ public final class GboardNintypeRuntime {
 
     private static final String TAG = "GboardNintype";
     private static final float MULTI_TOUCH_SWIPE_THRESHOLD_PX = 22f;
-    private static final float SINGLE_FINGER_NEIGHBOR_SWIPE_THRESHOLD_PX = 30f;
-    private static final long MAX_CHORD_GAP_MS = 420L;
-    private static final long MAX_SEQUENTIAL_CHORD_GAP_MS = 180L;
     private static final int TEXT_SNAPSHOT_CHARS = 256;
     private static final int MAX_ROLLBACK_EXTRA_CHARS = 32;
     private static final long MAX_PASSIVE_TAP_GAP_MS = 750L;
@@ -77,7 +74,6 @@ public final class GboardNintypeRuntime {
         long runLastTimeMs;
         boolean dwellInitialized = false;
         boolean contactsFinalized = false;
-        boolean crossedKeyBoundary = false;
         boolean finished = false;
 
         PointerTrack(
@@ -155,22 +151,6 @@ public final class GboardNintypeRuntime {
                         }
                         currentCode = newCode;
                         currentEnterTimeMs = ts;
-                    }
-                }
-            }
-
-            if (geometry != null && startedOnLetter) {
-                KeySpec nearest = geometry.nearestLetterKey(x, y);
-                if (nearest != null && nearest.character != '\0') {
-                    currentKeyChar = nearest.character;
-                    if (startKeyChar != '\0' && currentKeyChar != startKeyChar) {
-                        float netDisp = (float) Math.hypot(x - startX, y - startY);
-                        float minBoundaryDisp = (geometry.isValid())
-                                ? Math.max(26f, geometry.keyWidthPx * 0.32f)
-                                : 26f;
-                        if (netDisp >= minBoundaryDisp) {
-                            crossedKeyBoundary = true;
-                        }
                     }
                 }
             }
@@ -284,14 +264,9 @@ public final class GboardNintypeRuntime {
         boolean sawMultiTouch = false;
         boolean nintypeTakeoverActive = false;
         boolean nintypeWordActive = false;
-        boolean shortSwipeForceStarted = false;
-        boolean decodedThisSession = false;
         boolean sawNonLetterThisSession = false;
         String textSnapshotAtActionDown = null;
         boolean leadingSpaceEvaluated = false;
-        NintypeInputToken pendingChordToken = null;
-        String pendingChordBaselineText = null;
-        float pendingChordAnchorX = 0f;
         String lastCommittedWord = null;
         long lastTouchUpTimeMs = 0L;
         int restingDroppedThisSession = 0;
@@ -321,16 +296,8 @@ public final class GboardNintypeRuntime {
             slotByPointer.clear();
             sawMultiTouch = false;
             nintypeTakeoverActive = false;
-            shortSwipeForceStarted = false;
-            decodedThisSession = false;
             sawNonLetterThisSession = false;
             restingDroppedThisSession = 0;
-        }
-
-        void clearPendingChord() {
-            pendingChordToken = null;
-            pendingChordBaselineText = null;
-            pendingChordAnchorX = 0f;
         }
 
         void clearWordBuffer() {
@@ -549,22 +516,11 @@ public final class GboardNintypeRuntime {
                     float x = event.getX(actionIndex);
                     float y = event.getY(actionIndex);
                     finishTrailForPointer(handler, pid, false);
-                    PointerTrack track = registerPointerDown(session, pid, x, y, eventTime);
+                    registerPointerDown(session, pid, x, y, eventTime);
                     session.sawMultiTouch = true;
-                    if (letterStartedField != null) {
-                        try {
-                            letterStartedField.setBoolean(handler, true);
-                            if (gestureResetField != null) {
-                                gestureResetField.setBoolean(handler, false);
-                            }
-                        } catch (Throwable ignored) {
-                        }
-                    }
+                    markNativeLetterStarted(handler);
                     ensureSoftKeyMapPopulated(handler, session, event);
-                    if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
-                        session.nintypeTakeoverActive = true;
-                        ensureTrailRecorderEnabled(handler);
-                    }
+                    maybeActivateTakeover(handler, session, multiSwipeThreshold, false);
                     break;
                 }
 
@@ -599,21 +555,11 @@ public final class GboardNintypeRuntime {
                         sanitizeTrailIndices(handler);
                     }
 
-                    if ((session.sawMultiTouch || !session.completedTokens.isEmpty()) && letterStartedField != null) {
-                        try {
-                            letterStartedField.setBoolean(handler, true);
-                            if (gestureResetField != null) {
-                                gestureResetField.setBoolean(handler, false);
-                            }
-                        } catch (Throwable ignored) {
-                        }
+                    if (session.sawMultiTouch || !session.completedTokens.isEmpty()) {
+                        markNativeLetterStarted(handler);
                     }
 
-                    if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
-                        session.nintypeTakeoverActive = true;
-                        ensureTrailRecorderEnabled(handler);
-                        ensureGestureHandlerOwnsDispatcher(handler);
-                    }
+                    maybeActivateTakeover(handler, session, multiSwipeThreshold, true);
                     break;
                 }
 
@@ -647,21 +593,11 @@ public final class GboardNintypeRuntime {
                         ensureSoftKeyMapPopulated(handler, session, event);
                     }
 
-                    if ((session.sawMultiTouch || !session.completedTokens.isEmpty()) && letterStartedField != null) {
-                        try {
-                            letterStartedField.setBoolean(handler, true);
-                            if (gestureResetField != null) {
-                                gestureResetField.setBoolean(handler, false);
-                            }
-                        } catch (Throwable ignored) {
-                        }
+                    if (session.sawMultiTouch || !session.completedTokens.isEmpty()) {
+                        markNativeLetterStarted(handler);
                     }
 
-                    if (session.sawMultiTouch && hasAnySwipingPointer(session, multiSwipeThreshold)) {
-                        session.nintypeTakeoverActive = true;
-                        ensureTrailRecorderEnabled(handler);
-                        ensureGestureHandlerOwnsDispatcher(handler);
-                    }
+                    maybeActivateTakeover(handler, session, multiSwipeThreshold, true);
                     break;
                 }
 
@@ -928,18 +864,7 @@ public final class GboardNintypeRuntime {
             if (session != null && (session.sawMultiTouch
                     || session.nintypeTakeoverActive
                     || !session.completedTokens.isEmpty())) {
-                if (letterStartedField != null) {
-                    try {
-                        letterStartedField.setBoolean(handler, true);
-                    } catch (Throwable ignored) {
-                    }
-                }
-                if (gestureResetField != null) {
-                    try {
-                        gestureResetField.setBoolean(handler, false);
-                    } catch (Throwable ignored) {
-                    }
-                }
+                markNativeLetterStarted(handler);
                 return true;
             }
         } catch (Throwable t) {
@@ -1062,21 +987,41 @@ public final class GboardNintypeRuntime {
         }
     }
 
+    private static void markNativeLetterStarted(Object handler) {
+        if (letterStartedField != null) {
+            try {
+                letterStartedField.setBoolean(handler, true);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (gestureResetField != null) {
+            try {
+                gestureResetField.setBoolean(handler, false);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private static void maybeActivateTakeover(
+            Object handler,
+            HandlerSession session,
+            float multiSwipeThreshold,
+            boolean claimDispatcher
+    ) {
+        if (!session.sawMultiTouch || !hasAnySwipingPointer(session, multiSwipeThreshold)) {
+            return;
+        }
+        session.nintypeTakeoverActive = true;
+        ensureTrailRecorderEnabled(handler);
+        if (claimDispatcher) {
+            ensureGestureHandlerOwnsDispatcher(handler);
+        }
+    }
+
     private static void ensureGestureHandlerOwnsDispatcher(Object handler) {
         probeHandlerFields(handler);
         try {
-            if (letterStartedField != null) {
-                try {
-                    letterStartedField.setBoolean(handler, true);
-                } catch (Throwable ignored) {
-                }
-            }
-            if (gestureResetField != null) {
-                try {
-                    gestureResetField.setBoolean(handler, false);
-                } catch (Throwable ignored) {
-                }
-            }
+            markNativeLetterStarted(handler);
             if (hostBridgeField != null && claimOwnershipMethod != null) {
                 Object bridge = hostBridgeField.get(handler);
                 if (bridge != null) {
@@ -1253,16 +1198,6 @@ public final class GboardNintypeRuntime {
         return track;
     }
 
-    private static int countLetterPointers(HandlerSession session) {
-        int count = 0;
-        for (int i = 0; i < session.activePointers.size(); i++) {
-            if (session.activePointers.valueAt(i).startedOnLetter) {
-                count++;
-            }
-        }
-        return count;
-    }
-
     private static boolean hasAnySwipingPointer(HandlerSession session, float swipeThreshold) {
         for (int i = 0; i < session.activePointers.size(); i++) {
             PointerTrack t = session.activePointers.valueAt(i);
@@ -1276,25 +1211,6 @@ public final class GboardNintypeRuntime {
             }
         }
         return false;
-    }
-
-    private static boolean shouldDecodeMultiFingerSession(HandlerSession session) {
-        List<NintypeInputToken> tokens = session.completedTokens;
-        if (tokens.size() < 2) return false;
-
-        int swipeCount = 0;
-        long minStart = Long.MAX_VALUE;
-        long maxStart = Long.MIN_VALUE;
-        for (int i = 0; i < tokens.size(); i++) {
-            NintypeInputToken t = tokens.get(i);
-            if (t.kind == NintypeInputToken.Kind.SWIPE) {
-                swipeCount++;
-            }
-            if (t.startTimeMs < minStart) minStart = t.startTimeMs;
-            if (t.startTimeMs > maxStart) maxStart = t.startTimeMs;
-        }
-        // Require at least one swipe (so pure 2-finger rollover tap typing stays on Gboard's tap engine)
-        return swipeCount >= 1 && (maxStart - minStart <= MAX_CHORD_GAP_MS * 3);
     }
 
     private static boolean isGestureAlreadyActive(Object handler) {
@@ -1522,8 +1438,8 @@ public final class GboardNintypeRuntime {
                     ic.endBatchEdit();
                 }
 
-                session.lastCommittedWord = committedWord;
                 String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
+                session.lastCommittedWord = committedWord;
                 GboardNintypeDictionaryManager.recordCommittedWord(prevWord, committedWord, lang);
                 GboardNintypeTraceLogger.logCommit(context, committedWord, session.autospaceInserted, prevWord);
                 if (session.currentAlternativeWords != null) {
@@ -1552,32 +1468,98 @@ public final class GboardNintypeRuntime {
     }
 
     /**
-     * Pure-JVM passive pre-swipe tap buffer: retains tap-only prefix strokes and their pre-tap
-     * baseline so a subsequent Nintype swipe in the same word can roll back Stock Gboard's partial
-     * prefix (e.g. "fn", "in", "um") and decode the full multi-stroke word.
+     * Shared buffer state for retaining short prefix strokes and rolling back Stock Gboard's
+     * committed prefix if a subsequent stroke promotes into Nintype.
      */
-    static final class PassiveTapBuffer {
+    static abstract class PendingStrokeBufferBase {
         final List<NintypeInputToken> tokens = new ArrayList<>();
         String baselineText = null;
         long lastUpTimeMs = 0L;
-        boolean hadMultiTouch = false;
 
         void clear() {
             tokens.clear();
             baselineText = null;
             lastUpTimeMs = 0L;
+        }
+
+        protected abstract boolean isValidTypedPrefix(String typedPrefix);
+
+        protected final void validateGapAndPrefix(
+                String snapshotNow,
+                boolean downOnLetter,
+                long eventTimeMs,
+                long maxGapMs
+        ) {
+            if (tokens.isEmpty()) return;
+            long gapMs = (lastUpTimeMs > 0L) ? (eventTimeMs - lastUpTimeMs) : Long.MAX_VALUE;
+            if (!downOnLetter || gapMs < 0L || gapMs > maxGapMs) {
+                clear();
+                return;
+            }
+            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, snapshotNow);
+            if (!isValidTypedPrefix(typedPrefix)) {
+                clear();
+            }
+        }
+
+        protected final boolean appendTokensWithinCap(
+                List<NintypeInputToken> additions,
+                String baselineAtDown,
+                long eventTimeMs
+        ) {
+            if (additions == null || additions.isEmpty() || baselineAtDown == null) {
+                clear();
+                return false;
+            }
+            if (tokens.isEmpty()) {
+                if (additions.size() > MAX_PASSIVE_TAP_TOKENS) {
+                    clear();
+                    return false;
+                }
+                baselineText = baselineAtDown;
+            } else if (tokens.size() + additions.size() > MAX_PASSIVE_TAP_TOKENS) {
+                clear();
+                return false;
+            }
+            tokens.addAll(additions);
+            lastUpTimeMs = eventTimeMs;
+            return true;
+        }
+
+        String promoteInto(List<NintypeInputToken> destWordTokens, String textSnapshotAtActionDown) {
+            if (tokens.isEmpty()) return textSnapshotAtActionDown;
+            String restoredSnapshot = textSnapshotAtActionDown;
+            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, textSnapshotAtActionDown);
+            if (isValidTypedPrefix(typedPrefix)) {
+                destWordTokens.addAll(tokens);
+                restoredSnapshot = baselineText;
+            }
+            clear();
+            return restoredSnapshot;
+        }
+    }
+
+    /**
+     * Pure-JVM passive pre-swipe tap buffer: retains tap-only prefix strokes and their pre-tap
+     * baseline so a subsequent Nintype swipe in the same word can roll back Stock Gboard's partial
+     * prefix (e.g. "fn", "in", "um") and decode the full multi-stroke word.
+     */
+    static final class PassiveTapBuffer extends PendingStrokeBufferBase {
+        boolean hadMultiTouch = false;
+
+        @Override
+        void clear() {
+            super.clear();
             hadMultiTouch = false;
         }
 
+        @Override
+        protected boolean isValidTypedPrefix(String typedPrefix) {
+            return isPureLetterPrefix(typedPrefix, tokens.size());
+        }
+
         void validateOnActionDown(String snapshotNow, boolean downOnLetter, long eventTimeMs) {
-            if (tokens.isEmpty()) return;
-            long gapMs = (lastUpTimeMs > 0L) ? (eventTimeMs - lastUpTimeMs) : Long.MAX_VALUE;
-            String typedPrefix = (downOnLetter && gapMs <= MAX_PASSIVE_TAP_GAP_MS)
-                    ? extractTypedPrefixSinceBaseline(baselineText, snapshotNow)
-                    : null;
-            if (!isPureLetterPrefix(typedPrefix, tokens.size())) {
-                clear();
-            }
+            validateGapAndPrefix(snapshotNow, downOnLetter, eventTimeMs, MAX_PASSIVE_TAP_GAP_MS);
         }
 
         boolean canPromoteMultiTouchSwipe(List<NintypeInputToken> completedTokens) {
@@ -1598,40 +1580,11 @@ public final class GboardNintypeRuntime {
             List<NintypeInputToken> tapOnlyTokens = (!hasSwipe && !sawNonLetter)
                     ? collectPureTapTokens(completedTokens)
                     : null;
-            if (tapOnlyTokens == null || tapOnlyTokens.isEmpty() || tapBaselineAtDown == null) {
-                clear();
+            boolean hadExisting = !tokens.isEmpty();
+            if (!appendTokensWithinCap(tapOnlyTokens, tapBaselineAtDown, eventTimeMs)) {
                 return;
             }
-            if (tokens.isEmpty()) {
-                if (tapOnlyTokens.size() > MAX_PASSIVE_TAP_TOKENS) {
-                    clear();
-                    return;
-                }
-                baselineText = tapBaselineAtDown;
-                tokens.addAll(tapOnlyTokens);
-                lastUpTimeMs = eventTimeMs;
-                hadMultiTouch = strokeHadMultiTouch;
-                return;
-            }
-            if (tokens.size() + tapOnlyTokens.size() > MAX_PASSIVE_TAP_TOKENS) {
-                clear();
-                return;
-            }
-            tokens.addAll(tapOnlyTokens);
-            lastUpTimeMs = eventTimeMs;
-            hadMultiTouch |= strokeHadMultiTouch;
-        }
-
-        String promoteInto(List<NintypeInputToken> destWordTokens, String textSnapshotAtActionDown) {
-            if (tokens.isEmpty()) return textSnapshotAtActionDown;
-            String restoredSnapshot = textSnapshotAtActionDown;
-            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, textSnapshotAtActionDown);
-            if (isPureLetterPrefix(typedPrefix, tokens.size())) {
-                destWordTokens.addAll(tokens);
-                restoredSnapshot = baselineText;
-            }
-            clear();
-            return restoredSnapshot;
+            hadMultiTouch = hadExisting ? (hadMultiTouch | strokeHadMultiTouch) : strokeHadMultiTouch;
         }
     }
 
@@ -1639,17 +1592,18 @@ public final class GboardNintypeRuntime {
      * Pure-JVM buffer retaining a brief single-touch stock Gboard swipe or tap stroke so a
      * rapidly following swipe or tap within the combine timeout promotes both into Nintype.
      */
-    static final class SingleTouchCombineBuffer {
-        final List<NintypeInputToken> tokens = new ArrayList<>();
-        String baselineText = null;
-        long lastUpTimeMs = 0L;
+    static final class SingleTouchCombineBuffer extends PendingStrokeBufferBase {
         boolean hasSwipeToken = false;
 
+        @Override
         void clear() {
-            tokens.clear();
-            baselineText = null;
-            lastUpTimeMs = 0L;
+            super.clear();
             hasSwipeToken = false;
+        }
+
+        @Override
+        protected boolean isValidTypedPrefix(String typedPrefix) {
+            return isCombinePrefix(typedPrefix);
         }
 
         void validateOnActionDown(
@@ -1658,16 +1612,11 @@ public final class GboardNintypeRuntime {
                 long eventTimeMs,
                 int combineDelayMs
         ) {
-            if (tokens.isEmpty()) return;
-            long gapMs = (lastUpTimeMs > 0L) ? (eventTimeMs - lastUpTimeMs) : Long.MAX_VALUE;
-            if (combineDelayMs <= 0 || !downOnLetter || gapMs < 0L || gapMs > combineDelayMs) {
+            if (combineDelayMs <= 0) {
                 clear();
                 return;
             }
-            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, snapshotNow);
-            if (!isCombinePrefix(typedPrefix)) {
-                clear();
-            }
+            validateGapAndPrefix(snapshotNow, downOnLetter, eventTimeMs, combineDelayMs);
         }
 
         boolean canPromoteWith(List<NintypeInputToken> completedTokens, boolean sawNonLetter) {
@@ -1691,41 +1640,15 @@ public final class GboardNintypeRuntime {
                 long eventTimeMs,
                 int combineDelayMs
         ) {
-            if (combineDelayMs <= 0 || sawNonLetter || completedTokens == null
-                    || completedTokens.isEmpty() || tapBaselineAtDown == null) {
+            if (combineDelayMs <= 0 || sawNonLetter) {
                 clear();
                 return;
             }
-            if (tokens.isEmpty()) {
-                if (completedTokens.size() > MAX_PASSIVE_TAP_TOKENS) {
-                    clear();
-                    return;
-                }
-                baselineText = tapBaselineAtDown;
-                tokens.addAll(completedTokens);
-                hasSwipeToken = strokeHasSwipe;
-                lastUpTimeMs = eventTimeMs;
+            boolean hadExisting = !tokens.isEmpty();
+            if (!appendTokensWithinCap(completedTokens, tapBaselineAtDown, eventTimeMs)) {
                 return;
             }
-            if (tokens.size() + completedTokens.size() > MAX_PASSIVE_TAP_TOKENS) {
-                clear();
-                return;
-            }
-            tokens.addAll(completedTokens);
-            hasSwipeToken |= strokeHasSwipe;
-            lastUpTimeMs = eventTimeMs;
-        }
-
-        String promoteInto(List<NintypeInputToken> destWordTokens, String textSnapshotAtActionDown) {
-            if (tokens.isEmpty()) return textSnapshotAtActionDown;
-            String restoredSnapshot = textSnapshotAtActionDown;
-            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, textSnapshotAtActionDown);
-            if (isCombinePrefix(typedPrefix)) {
-                destWordTokens.addAll(tokens);
-                restoredSnapshot = baselineText;
-            }
-            clear();
-            return restoredSnapshot;
+            hasSwipeToken = hadExisting ? (hasSwipeToken | strokeHasSwipe) : strokeHasSwipe;
         }
     }
 
@@ -1976,20 +1899,7 @@ public final class GboardNintypeRuntime {
             boolean[] hasUmlaut = new boolean[] {false};
             List<KeySpec> nativeKeys = extractKeysFromNativeLayout(nativeLayout, hasUmlaut);
             if (nativeKeys.size() >= 20) {
-                float sumW = 0f;
-                float sumH = 0f;
-                for (int i = 0; i < nativeKeys.size(); i++) {
-                    sumW += nativeKeys.get(i).width;
-                    sumH += nativeKeys.get(i).height;
-                }
-                session.geometry.setKeys(
-                        nativeKeys,
-                        sumW / nativeKeys.size(),
-                        sumH / nativeKeys.size(),
-                        hasUmlaut[0]
-                );
-                session.geometryReady = true;
-                session.geometryFromNativeLayout = true;
+                applyGeometryKeys(session, nativeKeys, hasUmlaut[0], true);
                 return;
             }
         }
@@ -1999,20 +1909,7 @@ public final class GboardNintypeRuntime {
             boolean[] hasUmlaut = new boolean[] {false};
             collectLetterKeysFromViewHierarchy((ViewGroup) keyboardView, keyboardView, extracted, hasUmlaut);
             if (extracted.size() >= 20) {
-                float sumW = 0f;
-                float sumH = 0f;
-                for (int i = 0; i < extracted.size(); i++) {
-                    sumW += extracted.get(i).width;
-                    sumH += extracted.get(i).height;
-                }
-                session.geometry.setKeys(
-                        extracted,
-                        sumW / extracted.size(),
-                        sumH / extracted.size(),
-                        hasUmlaut[0]
-                );
-                session.geometryReady = true;
-                session.geometryFromNativeLayout = false;
+                applyGeometryKeys(session, extracted, hasUmlaut[0], false);
                 return;
             }
         }
@@ -2028,6 +1925,23 @@ public final class GboardNintypeRuntime {
         session.geometry.setKeys(specs, fallback.keyWidthPx, fallback.keyHeightPx, false);
         session.geometryReady = true;
         session.geometryFromNativeLayout = false;
+    }
+
+    private static void applyGeometryKeys(
+            HandlerSession session,
+            List<KeySpec> keys,
+            boolean hasUmlauts,
+            boolean fromNativeLayout
+    ) {
+        float sumW = 0f;
+        float sumH = 0f;
+        for (int i = 0; i < keys.size(); i++) {
+            sumW += keys.get(i).width;
+            sumH += keys.get(i).height;
+        }
+        session.geometry.setKeys(keys, sumW / keys.size(), sumH / keys.size(), hasUmlauts);
+        session.geometryReady = true;
+        session.geometryFromNativeLayout = fromNativeLayout;
     }
 
     /**
@@ -2363,8 +2277,7 @@ public final class GboardNintypeRuntime {
                     CharSequence text = ((TextView) c).getText();
                     if (text != null && text.length() == 1) {
                         char ch = Character.toLowerCase(text.charAt(0));
-                        if ((ch >= 'a' && ch <= 'z') || ch == 'ä' || ch == 'ö' || ch == 'ü'
-                                || NintypeGeometry.NO_SPACE_BEFORE.indexOf(ch) >= 0) {
+                        if (isSupportedGeometryChar(ch)) {
                             return ch;
                         }
                     }
@@ -2372,10 +2285,9 @@ public final class GboardNintypeRuntime {
             }
         }
         CharSequence desc = softKeyView.getContentDescription();
-        if (desc != null && desc.length() >= 1) {
+        if (desc != null && desc.length() == 1) {
             char ch = Character.toLowerCase(desc.charAt(0));
-            if (desc.length() == 1 && ((ch >= 'a' && ch <= 'z') || ch == 'ä' || ch == 'ö' || ch == 'ü'
-                    || NintypeGeometry.NO_SPACE_BEFORE.indexOf(ch) >= 0)) {
+            if (isSupportedGeometryChar(ch)) {
                 return ch;
             }
         }

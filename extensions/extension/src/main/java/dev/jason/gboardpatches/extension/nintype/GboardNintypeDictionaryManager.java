@@ -88,13 +88,10 @@ public final class GboardNintypeDictionaryManager {
         return t;
     });
 
-    private static volatile Class<?> facilitatorClass;
     private static volatile Method getFacilitatorNoArgMethod;
     private static volatile Method getFacilitatorContextMethod;
     private static volatile Method getLocaleMethod;
     private static volatile List<Method> facilitatorLmListMethods;
-    private static volatile Field decoderWrapperField;
-    private static volatile Method checkWordsMethod;
     private static volatile Field lmDescFileField;
     private static volatile Field lmDescLangField;
     private static volatile Field lmDescTypeField;
@@ -537,54 +534,6 @@ public final class GboardNintypeDictionaryManager {
     }
 
     /**
-     * Queries Gboard's live Delight5 native decoder (checkWords) to verify which candidate
-     * words are present in Gboard's active language model or user dictionary.
-     */
-    public static boolean[] checkWordsInGboard(Context context, List<String> words) {
-        if (words == null || words.isEmpty()) return null;
-        try {
-            Object facilitator = getDelight5Facilitator(context);
-            if (facilitator == null) return null;
-
-            if (decoderWrapperField == null || checkWordsMethod == null) {
-                synchronized (GboardNintypeDictionaryManager.class) {
-                    if (decoderWrapperField == null || checkWordsMethod == null) {
-                        for (Field f : facilitator.getClass().getDeclaredFields()) {
-                            f.setAccessible(true);
-                            Object val = f.get(facilitator);
-                            if (val == null) continue;
-                            for (Method m : val.getClass().getDeclaredMethods()) {
-                                Class<?>[] params = m.getParameterTypes();
-                                if (params.length == 1
-                                        && List.class.isAssignableFrom(params[0])
-                                        && m.getReturnType() == boolean[].class) {
-                                    m.setAccessible(true);
-                                    decoderWrapperField = f;
-                                    checkWordsMethod = m;
-                                    break;
-                                }
-                            }
-                            if (checkWordsMethod != null) break;
-                        }
-                    }
-                }
-            }
-
-            if (decoderWrapperField != null && checkWordsMethod != null) {
-                Object wrapper = decoderWrapperField.get(facilitator);
-                if (wrapper != null) {
-                    Object res = checkWordsMethod.invoke(wrapper, words);
-                    if (res instanceof boolean[]) {
-                        return (boolean[]) res;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return null;
-    }
-
-    /**
      * Learns a committed word into the active NintypeTrie & BigramTable so user-typed
      * vocabulary is immediately available for subsequent 2-finger swipes.
      */
@@ -641,7 +590,6 @@ public final class GboardNintypeDictionaryManager {
                         ? context.getClassLoader()
                         : GboardNintypeDictionaryManager.class.getClassLoader();
                 Class<?> cls = Class.forName(DELIGHT5_FACILITATOR_CLASS, false, cl);
-                facilitatorClass = cls;
                 List<Method> lmListMethods = new ArrayList<>();
                 for (Method m : cls.getDeclaredMethods()) {
                     int mods = m.getModifiers();

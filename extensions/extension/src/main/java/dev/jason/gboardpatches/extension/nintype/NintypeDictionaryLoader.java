@@ -9,25 +9,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.GZIPInputStream;
 
 /**
- * Loads Nintype wordlists and bigram tables from compressed or plain streams.
+ * Loads Nintype wordlists and bigram tables from plain streams.
  * Ported from Kinetica's DictionaryLoader.kt.
  */
 public final class NintypeDictionaryLoader {
 
     private NintypeDictionaryLoader() {}
-
-    public static NintypeTrie loadTrieFromGzipStream(
-            InputStream gzipStream,
-            String lang,
-            boolean hasDedicatedUmlautKeys
-    ) throws IOException {
-        try (GZIPInputStream gis = new GZIPInputStream(gzipStream)) {
-            return loadTrieFromStream(gis, lang, hasDedicatedUmlautKeys);
-        }
-    }
 
     private static final class ParsedEntry {
         final String word;
@@ -131,12 +120,6 @@ public final class NintypeDictionaryLoader {
             if (digraphKey != null && !digraphKey.equals(foldedKey) && !digraphKey.isEmpty()) {
                 trie.insert(digraphKey, freq, rawWord, isProperNoun);
             }
-        }
-    }
-
-    public static NintypeBigramTable loadBigramsFromGzipStream(InputStream gzipStream) throws IOException {
-        try (GZIPInputStream gis = new GZIPInputStream(gzipStream)) {
-            return loadBigramsFromStream(gis);
         }
     }
 

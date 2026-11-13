@@ -172,10 +172,6 @@ public final class GboardNintypeSettings {
                 delayMs, MIN_AUTO_SPACE_DELAY_MS, MAX_AUTO_SPACE_DELAY_MS);
     }
 
-    public static int sanitizeAutoSpaceDelayMs(int delayMs) {
-        return sanitizeInt(delayMs, MIN_AUTO_SPACE_DELAY_MS, MAX_AUTO_SPACE_DELAY_MS);
-    }
-
     public static int readSingleTouchCombineDelayMs(Context context) {
         try {
             SharedPreferences preferences = resolvePreferences(context);
