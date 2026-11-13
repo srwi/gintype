@@ -1,4 +1,0 @@
-de_wordlist.txt.gz
-de_bigrams.txt.gz
-en_wordlist.txt.gz
-en_bigrams.txt.gz

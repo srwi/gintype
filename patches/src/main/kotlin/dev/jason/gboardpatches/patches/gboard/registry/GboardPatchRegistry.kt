@@ -66,7 +66,6 @@ import dev.jason.gboardpatches.patches.gboard.features.longpressquickactions.gbo
 import dev.jason.gboardpatches.patches.gboard.features.manualincognito.gboardManualIncognitoFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.manualincognito.gboardManualIncognitoLifecyclePatch
 import dev.jason.gboardpatches.patches.gboard.features.manualincognito.gboardManualIncognitoPolicyPatch
-import dev.jason.gboardpatches.patches.gboard.features.nintype.gboardNintypeAssetsPatch
 import dev.jason.gboardpatches.patches.gboard.features.nintype.gboardNintypeBytecodePatch
 import dev.jason.gboardpatches.patches.gboard.features.nintype.gboardNintypeFeatureMarkerPatch
 import dev.jason.gboardpatches.patches.gboard.features.ocr.gboardOcrFeatureMarkerPatch
@@ -328,7 +327,6 @@ val gboardNintypePatch = gboardPublicResourcePatch(
 
     dependsOn(
         gboardPatchesSettingsPatch,
-        gboardNintypeAssetsPatch,
         gboardNintypeFeatureMarkerPatch,
         gboardNintypeBytecodePatch,
     )

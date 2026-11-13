@@ -487,17 +487,7 @@ public class NintypeDecoderTest {
 
     @Test
     public void decodesRealGermanDictionaryFunktioniertAndUntersuchen() throws IOException {
-        java.io.File wordlist = new java.io.File(
-                "../../patches/src/main/resources/nintype-assets/de_wordlist.txt.gz");
-        if (!wordlist.exists()) {
-            wordlist = new java.io.File("patches/src/main/resources/nintype-assets/de_wordlist.txt.gz");
-        }
-        assertTrue("Expected de_wordlist.txt.gz at " + wordlist.getAbsolutePath(), wordlist.exists());
-
-        NintypeTrie deTrie;
-        try (java.io.FileInputStream fis = new java.io.FileInputStream(wordlist)) {
-            deTrie = NintypeDictionaryLoader.loadTrieFromGzipStream(fis, "de", true);
-        }
+        NintypeTrie deTrie = GboardLmReaderTest.loadGermanTestTrieFromSyntheticLm();
 
         // Pattern A: "funktioniert" - Left thumb taps 'f', 'u'/'n' transitions, or dual-swipe
         // 1) Pure tap prefix 'f' + swipe "unktioniert" (single chord)
