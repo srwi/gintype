@@ -14,16 +14,19 @@ show_help() {
 Usage: ./patch-gboard.sh [options] [INPUT_APK] [OUTPUT_APK] [MORPHE_CLI]
 
 Options:
-  -i, --input <path>      Input Gboard APK or XAPK file
+  -i, --input <path>      Input Gboard APK, APKS, APKM, or XAPK file
   -o, --output <path>     Output patched APK path (default: ./gboard-multiswipe-patched.apk)
   -m, --morphe <path>     Path to Morphe CLI JAR or executable
   -p, --patches <path>    Path to built .mpp patches bundle
+  -r, --rename            Enable "Package Rename" for side-by-side installation
+      --app-name <name>   Custom app name when using --rename (implies --rename)
+  -f, --force             Bypass Morphe target version check
   -b, --build             Force rebuild of extension and patches bundle
   --skip-build            Skip building patches bundle if .mpp already exists
   -h, --help              Show this help message
 
 Environment Variables:
-  INPUT_APK               Default input APK/XAPK if not passed as argument
+  INPUT_APK               Default input APK/APKS/XAPK if not passed as argument
   OUTPUT_APK              Default output APK path
   MORPHE_CLI              Path to Morphe CLI JAR or executable
   JAVA_HOME               Path to JDK 21+ installation
@@ -31,7 +34,8 @@ Environment Variables:
 Examples:
   ./patch-gboard.sh
   ./patch-gboard.sh base.apk
-  ./patch-gboard.sh -i ~/Downloads/gboard.apk -o ./gboard-patched.apk -m morphe-cli.jar
+  ./patch-gboard.sh -r -i ~/Downloads/gboard.xapk -m morphe-cli.jar
+  ./patch-gboard.sh --rename --app-name "Gboard Dev" -o ./gboard-side-by-side.apk
 EOF
 }
 
@@ -42,6 +46,9 @@ MORPHE_ARG=""
 PATCHES_ARG=""
 FORCE_BUILD=false
 SKIP_BUILD=false
+RENAME_PACKAGE=false
+APP_NAME=""
+FORCE_PATCH=false
 
 POSITIONAL_ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -65,6 +72,19 @@ while [[ $# -gt 0 ]]; do
     -p|--patches)
       PATCHES_ARG="$2"
       shift 2
+      ;;
+    -r|--rename)
+      RENAME_PACKAGE=true
+      shift
+      ;;
+    --app-name)
+      RENAME_PACKAGE=true
+      APP_NAME="$2"
+      shift 2
+      ;;
+    -f|--force)
+      FORCE_PATCH=true
+      shift
       ;;
     -b|--build)
       FORCE_BUILD=true
@@ -124,26 +144,30 @@ if [[ -z "$MPP_FILE" || ! -f "$MPP_FILE" ]]; then
 fi
 echo "Patches bundle: $MPP_FILE"
 
-# Auto-detect input APK/XAPK if not provided
+# Determine output APK path
+OUTPUT_APK="${OUTPUT_ARG:-${OUTPUT_APK:-"$SCRIPT_DIR/gboard-multiswipe-patched.apk"}}"
+
+# Auto-detect input APK/APKS/APKM/XAPK if not provided
 INPUT_APK="${INPUT_ARG:-${INPUT_APK:-}}"
 if [[ -z "$INPUT_APK" ]]; then
-  # Search order: current dir, Downloads, Termux storage/downloads
+  # Search order: script dir, current dir, Downloads, Termux storage/downloads
   CANDIDATES=(
-    "$SCRIPT_DIR"/*gboard*.apk "$SCRIPT_DIR"/*gboard*.xapk "$SCRIPT_DIR"/*gboard*.apkm
-    "$PWD"/*gboard*.apk "$PWD"/*gboard*.xapk "$PWD"/*gboard*.apkm
-    "${HOME}/Downloads"/*gboard*.apk "${HOME}/Downloads"/*gboard*.xapk "${HOME}/Downloads"/*gboard*.apkm
-    "${HOME}/storage/downloads"/*gboard*.apk "${HOME}/storage/downloads"/*gboard*.xapk
+    "$SCRIPT_DIR"/*gboard*.apk "$SCRIPT_DIR"/*gboard*.apks "$SCRIPT_DIR"/*gboard*.apkm "$SCRIPT_DIR"/*gboard*.xapk
+    "$PWD"/*gboard*.apk "$PWD"/*gboard*.apks "$PWD"/*gboard*.apkm "$PWD"/*gboard*.xapk
+    "${HOME}/Downloads"/*gboard*.apk "${HOME}/Downloads"/*gboard*.apks "${HOME}/Downloads"/*gboard*.apkm "${HOME}/Downloads"/*gboard*.xapk
+    "${HOME}/storage/downloads"/*gboard*.apk "${HOME}/storage/downloads"/*gboard*.apks "${HOME}/storage/downloads"/*gboard*.apkm "${HOME}/storage/downloads"/*gboard*.xapk
   )
   for candidate in "${CANDIDATES[@]}"; do
     if [[ -f "$candidate" ]]; then
+      base_name="$(basename "$candidate")"
+      if [[ "$base_name" == *patched* || "$base_name" == *Patched* || "$candidate" == "$OUTPUT_APK" ]]; then
+        continue
+      fi
       INPUT_APK="$candidate"
       break
     fi
   done
 fi
-
-# Determine output APK path
-OUTPUT_APK="${OUTPUT_ARG:-${OUTPUT_APK:-"$SCRIPT_DIR/gboard-multiswipe-patched.apk"}}"
 
 # Auto-detect Morphe CLI
 MORPHE_CLI="${MORPHE_ARG:-${MORPHE_CLI:-}}"
@@ -201,11 +225,24 @@ else
   MORPHE_CMD=("$MORPHE_CLI")
 fi
 
+PATCH_ARGS=(
+  --patches="$MPP_FILE"
+  --exclusive
+  -e "Matrix Word Suggestions"
+  -e "Nintype Multi-Touch Swipe"
+)
+if [[ "$RENAME_PACKAGE" == true ]]; then
+  PATCH_ARGS+=(-e "Package Rename")
+  if [[ -n "$APP_NAME" ]]; then
+    PATCH_ARGS+=("-Oapp_display_name=$APP_NAME")
+  fi
+fi
+if [[ "$FORCE_PATCH" == true ]]; then
+  PATCH_ARGS+=(--force)
+fi
+
 "${MORPHE_CMD[@]}" patch \
-  --patches="$MPP_FILE" \
-  --exclusive \
-  -e "Matrix Word Suggestions" \
-  -e "Nintype Multi-Touch Swipe" \
+  "${PATCH_ARGS[@]}" \
   -o "$OUTPUT_APK" \
   "$INPUT_APK"
 

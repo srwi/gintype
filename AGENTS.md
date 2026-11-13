@@ -1,41 +1,44 @@
-# AGENTS.md — Autonomous Building, Patching, and Wireless Deployment
+# AGENTS.md — Autonomous Building, Patching, and Device Deployment
 
-This document provides instructions for AI agents and automated tooling to build, test, patch, and deploy `gboard-multiswipe` directly to an Android device over Wireless Debugging via Termux or host ADB without manual user intervention.
+This document provides portable instructions for developers, CI pipelines, and AI agents to build, test, patch, and deploy `gboard-multiswipe` on any Android device via USB ADB, Wireless Debugging, or on-device Termux.
 
 ---
 
 ## 1. Project Overview & Architecture
 
-`gboard-multiswipe` is a specialized, standalone Morphe/ReVanced patch repository providing two features for Google Gboard:
+`gboard-multiswipe` is a standalone Morphe/ReVanced patch repository providing Gboard patches:
 
 1. **Matrix Word Suggestions** (`matrix_word_suggestions`): 2D top-bar suggestions matrix with vertical wheel scrolling and sentence history.
 2. **Nintype Multi-Touch Swipe** (`nintype_multi_touch`): Two-finger chorded swipe and tap+swipe gesture typing powered by the Nintype algorithm and Gboard dictionary.
+3. **Package Rename** (`package_rename`): Renames the patched package to `dev.srwi.com.google.android.inputmethod.latin` with a customizable launcher/IME display name (`Gboard Multiswipe` by default) so non-rooted devices can install it side-by-side alongside official Play Store or system-signed Gboard.
 
-### Non-Interference Guarantee (Coexistence with Upstream)
-- **Application Package / Target**: `com.google.android.inputmethod.latin`
+### Target & Non-Interference Guarantee
+- **Target Application Package**: `com.google.android.inputmethod.latin` (pinned target: `18.5.4.993608717-release-arm64-v8a`)
+- **Renamed Side-by-Side Package**: `dev.srwi.com.google.android.inputmethod.latin`
 - **Isolated Extension Namespace**: `dev.srwi.gboardmultiswipe`
 - **Independent Settings Entry Key**: `gboard_multiswipe_entry` ("Multiswipe & Matrix")
 - **Independent ContentProvider Authority**: `${applicationId}.gboard_multiswipe`
-- **Result**: Can be patched alone or combined simultaneously with upstream Morphe/ReVanced patch bundles without settings collisions or provider crashes.
-- **Language**: English only (all code, strings, tests, and documentation).
+- **Coexistence**: Can be applied alone or combined with upstream Morphe/ReVanced patch bundles without settings collisions or provider crashes (enable `Package Rename` in at most one bundle).
+- **Language**: English only (all code, resource strings, tests, commit messages, and documentation).
 
 ---
 
 ## 2. Environment Prerequisites
 
 - **Java**: JDK 21+ (`JAVA_HOME` pointing to JDK 21)
-- **Android SDK**: Build-tools & API platform 36 (`ANDROID_HOME` or `ANDROID_USER_HOME`)
-- **ADB**: `android-tools` installed (on Linux, macOS, or inside Termux on Android)
-- **Morphe CLI**: `morphe-cli.jar` (or executable binary)
+- **Android SDK**: Build-Tools & API Platform 36 (`ANDROID_HOME` or `ANDROID_USER_HOME`, or `sdk.dir` in `local.properties`)
+- **ADB**: Android `platform-tools` (`adb`) on Linux/macOS/Windows or `android-tools` inside Termux
+- **Morphe CLI**: `morphe-cli.jar` or a native/script `morphe-cli` executable on `PATH`
 
 ```bash
 export JAVA_HOME=/path/to/jdk-21
-export ANDROID_USER_HOME=/path/to/android-sdk
+export ANDROID_HOME=/path/to/android-sdk
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
 ```
 
 ---
 
-## 3. Building the Patches Bundle
+## 3. Building & Running Tests
 
 ### Build MPP Bundle & Extension DEX
 ```bash
@@ -45,14 +48,18 @@ Output artifact: `patches/build/libs/patches-4.2.0.mpp`
 
 ### Run Tests
 ```bash
-# Patches contract, wiring, and metadata tests
+# Patches contract, manifest/settings/package-rename transform, and wiring tests
 ./gradlew :patches:test
 
-# Extension core logic tests (Nintype decoder, accent folding, matrix helpers)
-./gradlew :extensions:extension:testDebugUnitTest --tests "dev.srwi.gboardmultiswipe.extension.matrixsuggestions.*" --tests "dev.srwi.gboardmultiswipe.extension.nintype.*"
+# Extension core logic unit tests (Matrix helpers and Nintype decoder/geometry/accent folding)
+./gradlew :extensions:extension:testDebugUnitTest \
+  --tests "dev.srwi.gboardmultiswipe.extension.matrixsuggestions.*" \
+  --tests "dev.srwi.gboardmultiswipe.extension.nintype.*"
 ```
+> Note: Other Robolectric-based Android tests in `:extensions:extension` require Robolectric Android runtime JARs (not available offline or on ARM64 Termux hosts). The filtered Matrix + Nintype unit suites above run cleanly in all environments.
 
 ### Refresh `patches-list.json`
+Run whenever patch names, descriptions, defaults, or options change:
 ```bash
 ./gradlew :patches:generatePatchesList
 ```
@@ -61,108 +68,140 @@ Output artifact: `patches/build/libs/patches-4.2.0.mpp`
 
 ## 4. Patching Gboard
 
-### Using `patch-gboard.sh`
-The script automatically builds the MPP if missing, auto-detects Gboard APKs and Morphe CLI:
-```bash
-./patch-gboard.sh [input_apk_or_xapk] [output_apk] [morphe_cli_jar]
-```
-Or with explicit flags:
+`patch-gboard.sh` accepts `.apk`, `.apks`, `.apkm`, or `.xapk` inputs (Morphe CLI merges split APK archives into a standalone output APK automatically).
+
+### Option A: Side-by-Side Install (`Package Rename`, Recommended for Non-Rooted Phones)
+Use `--rename` (`-r`) so the patched APK installs alongside stock Gboard with no signature conflict:
 ```bash
 ./patch-gboard.sh \
-  -i /path/to/gboard-base.apk \
+  --rename \
+  --app-name "Gboard Multiswipe" \
+  -i /path/to/gboard-18.5.4.xapk \
   -o ./gboard-multiswipe-patched.apk \
   -m /path/to/morphe-cli.jar
 ```
 
+### Option B: In-Place Replacement (Original Package ID)
+Omit `--rename` to keep `com.google.android.inputmethod.latin` (requires root/mount, uninstalled updates/systemless override, or a matching signing key):
+```bash
+./patch-gboard.sh \
+  -i /path/to/gboard-18.5.4.xapk \
+  -o ./gboard-multiswipe-patched.apk \
+  -m /path/to/morphe-cli.jar
+```
+
+Useful `patch-gboard.sh` flags:
+- `--skip-build`: Skip rebuilding `.mpp` if one already exists in `patches/build/libs/`.
+- `-b, --build`: Force rebuild of extension and `.mpp`.
+- `-f, --force`: Bypass Morphe CLI's target version check (useful when experimenting on newer Gboard builds; fingerprint compatibility is only guaranteed on `18.5.4.993608717-release-arm64-v8a`).
+
 ### Direct Morphe CLI Invocation
+Note that in Morphe CLI, `-O<key>=<value>` applies to the preceding `-e "<Patch Name>"`:
 ```bash
 java -jar morphe-cli.jar patch \
   --patches=patches/build/libs/patches-4.2.0.mpp \
   --exclusive \
   -e "Matrix Word Suggestions" \
   -e "Nintype Multi-Touch Swipe" \
+  -e "Package Rename" \
+  -Oapp_display_name="Gboard Multiswipe" \
   -o ./gboard-multiswipe-patched.apk \
-  /path/to/gboard-base.apk
+  /path/to/gboard-18.5.4.xapk
 ```
 
-### Coexisting with Upstream Morphe Patches
-To include both this repo's patches AND upstream Morphe patches:
+### Combining with Upstream Morphe Patches
 ```bash
 java -jar morphe-cli.jar patch \
   --patches=patches/build/libs/patches-4.2.0.mpp \
   --patches=/path/to/upstream-morphe-patches.mpp \
   -e "Matrix Word Suggestions" \
   -e "Nintype Multi-Touch Swipe" \
+  -e "Package Rename" \
   -e "Custom Symbols" \
   -e "Latin Globe Key Ignore Interval" \
   -o ./gboard-all-patches.apk \
-  /path/to/gboard-base.apk
+  /path/to/gboard-18.5.4.xapk
 ```
 
 ---
 
-## 5. Wireless Debugging & Direct Device Deployment (Termux / ADB)
+## 5. Portable Device Deployment (USB ADB or Wireless Debugging)
 
-An agent running in Termux on the target Android phone (or on a local machine on the same Wi-Fi) can pull, patch, and install Gboard directly.
+These steps work from any workstation over USB or Wi-Fi, or directly on the target Android phone inside Termux.
 
-### Step 1: Pair and Connect over Wireless Debugging
-1. On the Android device: Go to **Settings > Developer Options > Wireless debugging**.
-2. Tap **Pair device with pairing code**. Note the IP, pairing port, and 6-digit pairing code.
-3. In Termux or host shell:
-   ```bash
-   adb pair localhost:<pairing_port> <pairing_code>
-   # Or from host computer: adb pair <device_ip>:<pairing_port> <pairing_code>
-   ```
-4. Connect to the debugging port shown on the main Wireless debugging screen:
-   ```bash
-   adb connect localhost:<debug_port>
-   # Or from host computer: adb connect <device_ip>:<debug_port>
-   ```
-5. Confirm connection:
-   ```bash
-   adb devices
-   ```
+### Step 1: Connect ADB
+- **USB debugging**: Plug in the device, accept the RSA prompt, and confirm with `adb devices`.
+- **Wireless debugging** (**Settings > Developer options > Wireless debugging**):
+  1. First-time pairing (**Pair device with pairing code**):
+     ```bash
+     adb pair <device_ip_or_127.0.0.1>:<pairing_port> <pairing_code>
+     ```
+  2. Connect using the port shown on the Wireless debugging main screen:
+     ```bash
+     adb connect <device_ip_or_127.0.0.1>:<debug_port>
+     adb devices
+     ```
+  *(Use `127.0.0.1` when running ADB in Termux on the phone itself; use the phone's LAN IP from a PC. If multiple devices are attached, export `ANDROID_SERIAL=<serial>`.)*
 
-### Step 2: Extract Current Gboard Base APK from Phone
-Extract the clean, already-installed base APK directly from the device:
+### Step 2: Obtain a Clean Base Gboard APK or Split Bundle
+If you do not already have a downloaded `gboard-18.5.4*.xapk` / `.apk`, you can extract the installed Gboard package from the connected device. Modern Play Store installs use **Split APKs** (`base.apk` + `split_config.*.apk` + feature splits) — pull **all** splits rather than only `base.apk`, and archive them with `jar c0Mf` (from JDK 21) so Morphe CLI merges every density/feature split cleanly:
+
 ```bash
-GBOARD_APK_PATH=$(adb shell pm path com.google.android.inputmethod.latin | grep "base.apk" | head -n 1 | cut -d: -f2 | tr -d '\r')
-adb pull "$GBOARD_APK_PATH" ./gboard-base.apk
+rm -rf ./gboard-splits && mkdir -p ./gboard-splits
+for apk_path in $(adb shell pm path com.google.android.inputmethod.latin | sed 's/^package://;s/\r//'); do
+  adb pull "$apk_path" ./gboard-splits/
+done
+
+SPLIT_COUNT=$(find ./gboard-splits -maxdepth 1 -name '*.apk' | wc -l)
+if [ "$SPLIT_COUNT" -eq 1 ]; then
+  mv ./gboard-splits/*.apk ./gboard-base.apk
+else
+  jar c0Mf ./gboard-base.apks -C ./gboard-splits .
+fi
+```
+> Check the extracted version (`adb shell dumpsys package com.google.android.inputmethod.latin | grep versionName`). If the device has a newer Play Store release than `18.5.4.993608717-release-arm64-v8a`, either provide the pinned `18.5.4` `.xapk`/`.apk` or pass `--force` (`-f`) to test against the newer build.
+
+### Step 3: Patch the Extracted APK/APKS
+```bash
+# Side-by-side (non-root compatible, package: dev.srwi.com.google.android.inputmethod.latin)
+./patch-gboard.sh --rename -i ./gboard-base.apks -o ./gboard-multiswipe-patched.apk -m /path/to/morphe-cli.jar
 ```
 
-### Step 3: Patch the Extracted APK
+### Step 4: Install and Enable Keyboard
 ```bash
-./patch-gboard.sh -i ./gboard-base.apk -o ./gboard-multiswipe-patched.apk -m ./morphe-cli.jar
-```
-
-### Step 4: Install Patched APK Wirelessly
-```bash
-# -r replaces existing application, -d allows version code downgrade if needed
+# -r replaces an existing patched build; -d allows downgrade if needed
 adb install -r -d ./gboard-multiswipe-patched.apk
 ```
+- **If `Package Rename` was enabled (side-by-side)**: enable and optionally select the renamed IME (`dev.srwi.com.google.android.inputmethod.latin`):
+  ```bash
+  adb shell ime enable dev.srwi.com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME
+  adb shell ime set dev.srwi.com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME
+  ```
+- **If `Package Rename` was omitted (in-place)**: replacing stock Play Store Gboard on a non-rooted device fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` because the APK is signed with Morphe's keystore rather than Google's key. Re-run with `--rename` unless you are using a rooted/mounted install or have uninstalled Gboard updates with a matching signature setup.
 
-### Step 5: Restart Gboard
-Force-stop Gboard so the new DEX extension and patched bytecode take effect immediately:
+### Step 5: Restart & Verify Runtime
+Force-stop the target package (`TARGET_PKG=dev.srwi.com.google.android.inputmethod.latin` for `--rename`, or `com.google.android.inputmethod.latin` for in-place), open the keyboard in any text field, then check runtime logs:
+
 ```bash
-adb shell am force-stop com.google.android.inputmethod.latin
-```
+TARGET_PKG=dev.srwi.com.google.android.inputmethod.latin
+adb shell am force-stop "$TARGET_PKG"
+adb shell pidof "$TARGET_PKG"
 
-### Step 6: Verify Deployment
-1. Verify that Gboard is running:
-   ```bash
-   adb shell pidof com.google.android.inputmethod.latin
-   ```
-2. Check logcat for initialization tags:
-   ```bash
-   adb logcat -d -s GboardPatches NintypeDecoder MatrixSuggestions | tail -n 50
-   ```
-3. Open Gboard Settings on the phone: tap the gear icon -> select **Multiswipe & Matrix** to configure Nintype swipe timing, autospace, and 2D matrix suggestions.
+adb logcat -d -s \
+  GboardPatches \
+  GboardMatrixSuggestions \
+  GboardNintype \
+  GboardNintypeDict \
+  GboardNintypeTrace \
+  MatrixGboardReflector | tail -n 50
+```
+Open Gboard Settings -> **Multiswipe & Matrix** to configure Nintype swipe timing, autospace, 2D Matrix Suggestions, and log export.
 
 ---
 
 ## 6. Coding Standards for Autonomous Agents
 
-- **Language**: English exclusively across all commit messages, code, comments, resource strings, and documentation.
+- **Language**: English exclusively across commit messages, code, comments, resource strings, tests, and documentation.
 - **Commit Cadence**: Commit after each logical, verified step using conventional commits (`feat`, `refactor`, `fix`, `docs`).
-- **Focus**: Maintain only `Matrix Word Suggestions` and `Nintype Multi-Touch Swipe`. Do not re-add upstream features or dependencies.
-- **Namespace Integrity**: Never revert package namespace back to upstream `dev.jason.gboardpatches`; always maintain `dev.srwi.gboardmultiswipe`.
+- **Scope**: Maintain only `Matrix Word Suggestions`, `Nintype Multi-Touch Swipe`, and `Package Rename` unless explicitly asked otherwise.
+- **Namespace Integrity**: Always use `dev.srwi.gboardmultiswipe` for extension/patch code and `dev.srwi.com.google.android.inputmethod.latin` for renamed Gboard manifests; never revert to `dev.jason.gboardpatches`.
