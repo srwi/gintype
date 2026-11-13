@@ -6,8 +6,10 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import android.content.SharedPreferences;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.After;
@@ -162,6 +164,118 @@ public class GboardNintypeSettingsTest {
         assertFalse(GboardNintypeRuntime.shouldPrependLeadingSpace("", true));
         assertFalse(GboardNintypeRuntime.shouldPrependLeadingSpace(null, true));
         assertFalse(GboardNintypeRuntime.shouldPrependLeadingSpace("Hallo wie geht es", false));
+    }
+
+    @Test
+    public void defaultsTraceLoggingOffAndResetsAllSettingsToDefaults() {
+        assertFalse(GboardNintypeSettings.DEFAULT_TRACE_LOGGING);
+
+        InMemorySharedPreferences prefs = new InMemorySharedPreferences();
+        GboardNintypeSettings.ensureDefaults(prefs);
+        assertFalse(GboardNintypeSettings.readTraceLoggingEnabled(prefs));
+
+        assertTrue(GboardNintypeSettings.writeEnabled(prefs, false));
+        assertTrue(GboardNintypeSettings.writeAutoSpaceEnabled(prefs, false));
+        assertTrue(GboardNintypeSettings.writeAutoSpaceDelayMs(prefs, 725));
+        assertTrue(GboardNintypeSettings.writeSingleTouchCombineDelayMs(prefs, 260));
+        assertTrue(GboardNintypeSettings.writeBeamWidth(prefs, 512));
+        assertTrue(GboardNintypeSettings.writeFreqWeightFloor(prefs, 0.72f));
+        assertTrue(GboardNintypeSettings.writeGeoExponent(prefs, 6.25f));
+        assertTrue(GboardNintypeSettings.writeBeamFreqWeight(prefs, 1.35f));
+        assertTrue(GboardNintypeSettings.writeTraceLoggingEnabled(prefs, true));
+        assertTrue(GboardNintypeSettings.readTraceLoggingEnabled(prefs));
+
+        assertTrue(GboardNintypeSettings.resetToDefaults(prefs));
+
+        assertEquals(GboardNintypeSettings.DEFAULT_ENABLED, GboardNintypeSettings.readEnabled(prefs));
+        assertEquals(GboardNintypeSettings.DEFAULT_AUTO_SPACE,
+                GboardNintypeSettings.readAutoSpaceEnabled(prefs));
+        assertEquals(GboardNintypeSettings.DEFAULT_AUTO_SPACE_DELAY_MS,
+                GboardNintypeSettings.readAutoSpaceDelayMs(prefs));
+        assertEquals(GboardNintypeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                GboardNintypeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertEquals(GboardNintypeSettings.DEFAULT_BEAM_WIDTH,
+                GboardNintypeSettings.readBeamWidth(prefs));
+        assertEquals(GboardNintypeSettings.DEFAULT_FREQ_WEIGHT_FLOOR,
+                GboardNintypeSettings.readFreqWeightFloor(prefs), 0.0001f);
+        assertEquals(GboardNintypeSettings.DEFAULT_GEO_EXPONENT,
+                GboardNintypeSettings.readGeoExponent(prefs), 0.0001f);
+        assertEquals(GboardNintypeSettings.DEFAULT_BEAM_FREQ_WEIGHT,
+                GboardNintypeSettings.readBeamFreqWeight(prefs), 0.0001f);
+        assertEquals(GboardNintypeSettings.DEFAULT_TRACE_LOGGING,
+                GboardNintypeSettings.readTraceLoggingEnabled(prefs));
+        assertEquals(GboardNintypeSettings.DEFAULT_BEAM_WIDTH, KineticaConstants.BEAM_WIDTH);
+    }
+
+    @Test
+    public void convertsSliderStepsRoundTripOnIntAndFloatDefaults() {
+        int delayStep = GboardNintypeSettingsFeature.sliderStepForInt(
+                GboardNintypeSettings.DEFAULT_AUTO_SPACE_DELAY_MS, 0, 2000, 25);
+        assertEquals(300, GboardNintypeSettingsFeature.intValueForSliderStep(delayStep, 0, 2000, 25));
+
+        int beamStep = GboardNintypeSettingsFeature.sliderStepForInt(
+                GboardNintypeSettings.DEFAULT_BEAM_WIDTH, 32, 1024, 16);
+        assertEquals(256, GboardNintypeSettingsFeature.intValueForSliderStep(beamStep, 32, 1024, 16));
+
+        int floorStep = GboardNintypeSettingsFeature.sliderStepForFloat(
+                GboardNintypeSettings.DEFAULT_FREQ_WEIGHT_FLOOR, 0.05f, 1.00f, 0.01f);
+        assertEquals(0.25f, GboardNintypeSettingsFeature.floatValueForSliderStep(
+                floorStep, 0.05f, 1.00f, 0.01f), 0.0001f);
+
+        int geoStep = GboardNintypeSettingsFeature.sliderStepForFloat(
+                GboardNintypeSettings.DEFAULT_GEO_EXPONENT, 1.00f, 8.00f, 0.05f);
+        assertEquals(3.75f, GboardNintypeSettingsFeature.floatValueForSliderStep(
+                geoStep, 1.00f, 8.00f, 0.05f), 0.0001f);
+
+        int freqStep = GboardNintypeSettingsFeature.sliderStepForFloat(
+                GboardNintypeSettings.DEFAULT_BEAM_FREQ_WEIGHT, 0.00f, 2.00f, 0.05f);
+        assertEquals(0.50f, GboardNintypeSettingsFeature.floatValueForSliderStep(
+                freqStep, 0.00f, 2.00f, 0.05f), 0.0001f);
+    }
+
+    @Test
+    public void filtersTraceExportByPastMinutesAndIncludesReferencedGeometry() {
+        long nowMs = 1_000_000_000L;
+        String oldGeom = "{\"type\":\"geom\",\"ts\":" + (nowMs - 40 * 60_000L) + ",\"geom\":-42}";
+        String oldWord = "{\"type\":\"word\",\"ts\":" + (nowMs - 30 * 60_000L) + ",\"geom\":-42,\"best\":\"alt\"}";
+        String recentWord = "{\"type\":\"word\",\"ts\":" + (nowMs - 5 * 60_000L) + ",\"geom\":-42,\"best\":\"neu\"}";
+        String recentCommit = "{\"type\":\"commit\",\"ts\":" + (nowMs - 4 * 60_000L) + ",\"word\":\"neu\"}";
+        List<String> all = Arrays.asList(oldGeom, oldWord, recentWord, recentCommit);
+
+        GboardNintypeTraceLogger.TraceExportResult last10 =
+                GboardNintypeTraceLogger.buildTraceExport(all, 10, nowMs);
+        assertEquals(3, last10.lineCount);
+        assertEquals(oldGeom + "\n" + recentWord + "\n" + recentCommit, last10.content);
+
+        GboardNintypeTraceLogger.TraceExportResult last1 =
+                GboardNintypeTraceLogger.buildTraceExport(all, 1, nowMs);
+        assertEquals(0, last1.lineCount);
+        assertEquals("", last1.content);
+
+        GboardNintypeTraceLogger.TraceExportResult exportAll =
+                GboardNintypeTraceLogger.buildTraceExport(all, 0, nowMs);
+        assertEquals(4, exportAll.lineCount);
+    }
+
+    @Test
+    public void selectsDistinctMaterialDynamicAccentForNintypeTrail() {
+        // Material You Tertiary color distinct from stock Primary blue -> pick Tertiary directly
+        assertEquals(0xF2B8B5,
+                GboardNintypeRuntime.chooseNintypeTrailColor(0xA8C7FA, 0xF2B8B5, 0xCCC2DC, true));
+
+        // When Tertiary matches stock too closely, fall back to distinct Secondary
+        assertEquals(0x80CBC4,
+                GboardNintypeRuntime.chooseNintypeTrailColor(0xA8C7FA, 0xA8C7FA, 0x80CBC4, true));
+
+        // When both Tertiary and Secondary are too close to stock, rotate accent hue
+        int tooCloseFallback =
+                GboardNintypeRuntime.chooseNintypeTrailColor(0xA8C7FA, 0xA8C7FA, 0xCCC2DC, true);
+        assertTrue(tooCloseFallback != 0xA8C7FA && tooCloseFallback != 0xCCC2DC);
+
+        // On Android <12 (no dynamic system_accent* resources), returns a distinct fallback accent
+        int rotated = GboardNintypeRuntime.chooseNintypeTrailColor(0x4285F4, -1, -1, false);
+        assertTrue(rotated != 0x4285F4);
+        assertEquals(0xEFB8C8, GboardNintypeRuntime.chooseNintypeTrailColor(0xEEEEEE, -1, -1, true));
     }
 
     private static final class InMemorySharedPreferences implements SharedPreferences {

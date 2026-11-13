@@ -7,15 +7,24 @@ import dev.jason.gboardpatches.extension.nintype.NintypeInputToken.Dwell;
 import dev.jason.gboardpatches.extension.nintype.NintypeInputToken.KeyContact;
 import dev.jason.gboardpatches.extension.nintype.NintypeInputToken.TouchPoint;
 import dev.jason.gboardpatches.extension.nintype.NintypeInputToken.WordCandidate;
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Structured JSONL telemetry logger for Nintype word decoding & touch-integration diagnostics.
@@ -388,12 +397,199 @@ public final class GboardNintypeTraceLogger {
         }
     }
 
+    public static final class TraceExportResult {
+        public final String content;
+        public final int lineCount;
+
+        public TraceExportResult(String content, int lineCount) {
+            this.content = content;
+            this.lineCount = lineCount;
+        }
+    }
+
+    public static TraceExportResult readTraceForExport(Context context, int minutesBack) {
+        if (context == null) {
+            return new TraceExportResult("", 0);
+        }
+        final Context appCtx = context.getApplicationContext() != null
+                ? context.getApplicationContext()
+                : context;
+        try {
+            return IO_EXECUTOR.submit(() -> {
+                File dir = resolveTraceDir(appCtx);
+                if (dir == null) {
+                    return new TraceExportResult("", 0);
+                }
+                List<String> lines = new ArrayList<>();
+                readLinesInto(new File(dir, TRACE_BACKUP_NAME), lines);
+                readLinesInto(new File(dir, TRACE_FILE_NAME), lines);
+                return buildTraceExport(lines, minutesBack, System.currentTimeMillis());
+            }).get(3, TimeUnit.SECONDS);
+        } catch (Throwable ignored) {
+            return new TraceExportResult("", 0);
+        }
+    }
+
+    public static boolean clearTraceLogs(Context context) {
+        if (context == null) return false;
+        final Context appCtx = context.getApplicationContext() != null
+                ? context.getApplicationContext()
+                : context;
+        try {
+            return IO_EXECUTOR.submit(() -> {
+                File dir = resolveTraceDir(appCtx);
+                boolean ok = true;
+                if (dir != null) {
+                    File main = new File(dir, TRACE_FILE_NAME);
+                    if (main.exists()) ok &= main.delete();
+                    File backup = new File(dir, TRACE_BACKUP_NAME);
+                    if (backup.exists()) ok &= backup.delete();
+                }
+                lastLoggedGeomHash = 0;
+                return ok;
+            }).get(3, TimeUnit.SECONDS);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    static TraceExportResult buildTraceExport(
+            List<String> chronologicalLines,
+            int minutesBack,
+            long nowMs
+    ) {
+        if (chronologicalLines == null || chronologicalLines.isEmpty()) {
+            return new TraceExportResult("", 0);
+        }
+        if (minutesBack <= 0) {
+            StringBuilder all = new StringBuilder();
+            int count = 0;
+            for (int i = 0; i < chronologicalLines.size(); i++) {
+                String line = chronologicalLines.get(i);
+                if (line == null || line.trim().isEmpty()) continue;
+                if (count > 0) all.append('\n');
+                all.append(line);
+                count++;
+            }
+            return new TraceExportResult(all.toString(), count);
+        }
+
+        long windowMs = Math.max(1L, minutesBack) * 60_000L;
+        long cutoffMs = nowMs - windowMs;
+        Map<Integer, String> latestGeomLineByHash = new LinkedHashMap<>();
+        List<String> inWindowLines = new ArrayList<>();
+        Set<Integer> neededGeomHashes = new LinkedHashSet<>();
+        Set<Integer> includedGeomHashes = new LinkedHashSet<>();
+
+        for (int i = 0; i < chronologicalLines.size(); i++) {
+            String line = chronologicalLines.get(i);
+            if (line == null || line.trim().isEmpty()) continue;
+            long ts = extractTimestampMs(line);
+            Integer geomHash = extractGeomHash(line);
+            boolean isGeom = line.startsWith("{\"type\":\"geom\"");
+            if (ts >= cutoffMs) {
+                inWindowLines.add(line);
+                if (geomHash != null) {
+                    if (isGeom) {
+                        includedGeomHashes.add(geomHash);
+                    } else {
+                        neededGeomHashes.add(geomHash);
+                    }
+                }
+            } else if (isGeom && geomHash != null) {
+                latestGeomLineByHash.put(geomHash, line);
+            }
+        }
+
+        if (inWindowLines.isEmpty()) {
+            return new TraceExportResult("", 0);
+        }
+
+        StringBuilder out = new StringBuilder();
+        int count = 0;
+        for (Integer hash : neededGeomHashes) {
+            if (!includedGeomHashes.contains(hash)) {
+                String geomLine = latestGeomLineByHash.get(hash);
+                if (geomLine != null) {
+                    if (count > 0) out.append('\n');
+                    out.append(geomLine);
+                    count++;
+                }
+            }
+        }
+        for (int i = 0; i < inWindowLines.size(); i++) {
+            if (count > 0) out.append('\n');
+            out.append(inWindowLines.get(i));
+            count++;
+        }
+        return new TraceExportResult(out.toString(), count);
+    }
+
+    static long extractTimestampMs(String jsonLine) {
+        return extractLongField(jsonLine, "\"ts\":", -1L);
+    }
+
+    static Integer extractGeomHash(String jsonLine) {
+        if (jsonLine == null) return null;
+        int idx = jsonLine.indexOf("\"geom\":");
+        if (idx < 0) return null;
+        long parsed = parseSignedLongAt(jsonLine, idx + 7, Long.MIN_VALUE);
+        return parsed == Long.MIN_VALUE ? null : (int) parsed;
+    }
+
+    private static long extractLongField(String jsonLine, String fieldPrefix, long fallback) {
+        if (jsonLine == null) return fallback;
+        int idx = jsonLine.indexOf(fieldPrefix);
+        if (idx < 0) return fallback;
+        return parseSignedLongAt(jsonLine, idx + fieldPrefix.length(), fallback);
+    }
+
+    private static long parseSignedLongAt(String s, int start, long fallback) {
+        int len = s.length();
+        while (start < len && s.charAt(start) == ' ') start++;
+        if (start >= len) return fallback;
+        boolean negative = false;
+        if (s.charAt(start) == '-') {
+            negative = true;
+            start++;
+        }
+        if (start >= len || !Character.isDigit(s.charAt(start))) {
+            return fallback;
+        }
+        long val = 0L;
+        while (start < len && Character.isDigit(s.charAt(start))) {
+            val = val * 10L + (s.charAt(start) - '0');
+            start++;
+        }
+        return negative ? -val : val;
+    }
+
+    private static void readLinesInto(File file, List<String> dest) {
+        if (file == null || !file.isFile()) return;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (!line.trim().isEmpty()) {
+                    dest.add(line);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static File resolveTraceDir(Context context) {
+        if (context == null) return null;
+        File dir = context.getExternalFilesDir(null);
+        if (dir == null) {
+            dir = context.getFilesDir();
+        }
+        return dir;
+    }
+
     private static void appendLineToFile(Context context, String jsonLine) {
         try {
-            File dir = context.getExternalFilesDir(null);
-            if (dir == null) {
-                dir = context.getFilesDir();
-            }
+            File dir = resolveTraceDir(context);
             if (dir == null) return;
             if (!dir.exists() && !dir.mkdirs()) return;
 

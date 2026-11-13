@@ -3948,4 +3948,104 @@
         <translation locale="en">The Nintype settings screen failed to load. Reopen Gboard settings and try again.</translation>
         <translation locale="zh-Hant">Nintype 設定畫面載入失敗。請重新開啟 Gboard 設定再試一次。</translation>
     </string>
+    <string name="gboard_patches_nintype_slider_default">
+        <translation locale="en">Default</translation>
+        <translation locale="zh-Hant">預設</translation>
+    </string>
+    <string name="gboard_patches_nintype_section_diagnostics">
+        <translation locale="en">Diagnostics</translation>
+        <translation locale="zh-Hant">診斷與除錯</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_logging_title">
+        <translation locale="en">Debug trace logging</translation>
+        <translation locale="zh-Hant">除錯追蹤紀錄</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_logging_summary">
+        <translation locale="en">Record touch paths, timings, and decoder candidates to local trace logs for troubleshooting.</translation>
+        <translation locale="zh-Hant">記錄觸控路徑、時間與解碼候選詞至本機追蹤檔，以供除錯分析。</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_title">
+        <translation locale="en">Export debug trace log…</translation>
+        <translation locale="zh-Hant">匯出除錯追蹤紀錄…</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_summary">
+        <translation locale="en">Choose how many minutes back to export recorded trace events as JSONL.</translation>
+        <translation locale="zh-Hant">選擇要匯出過去幾分鐘內的 JSONL 追蹤紀錄。</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_dialog_title">
+        <translation locale="en">Export trace window</translation>
+        <translation locale="zh-Hant">選擇匯出時間範圍</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_minutes_item">
+        <translation locale="en">Last %d minutes</translation>
+        <translation locale="zh-Hant">最近 %d 分鐘</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_hours_item">
+        <translation locale="en">Last %d hours</translation>
+        <translation locale="zh-Hant">最近 %d 小時</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_all">
+        <translation locale="en">All recorded logs</translation>
+        <translation locale="zh-Hant">全部已記錄內容</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_hint">
+        <translation locale="en">Minutes (1–1440)</translation>
+        <translation locale="zh-Hant">分鐘數（1–1440）</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_error">
+        <translation locale="en">Enter a duration between 1 and 1440 minutes.</translation>
+        <translation locale="zh-Hant">請輸入 1 到 1440 分鐘之間的整數。</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_empty">
+        <translation locale="en">No trace log entries found in the selected time window.</translation>
+        <translation locale="zh-Hant">所選時間範圍內沒有任何追蹤紀錄。</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_export_done">
+        <translation locale="en">Trace log exported.</translation>
+        <translation locale="zh-Hant">追蹤紀錄已匯出。</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_clear_title">
+        <translation locale="en">Clear debug trace logs</translation>
+        <translation locale="zh-Hant">清除除錯追蹤紀錄</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_clear_summary">
+        <translation locale="en">Delete locally stored Nintype trace log files.</translation>
+        <translation locale="zh-Hant">刪除儲存於裝置上的 Nintype 追蹤紀錄檔案。</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_clear_confirm_title">
+        <translation locale="en">Clear debug trace logs?</translation>
+        <translation locale="zh-Hant">確定清除除錯追蹤紀錄？</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_clear_confirm_message">
+        <translation locale="en">Delete all recorded Nintype trace log files?</translation>
+        <translation locale="zh-Hant">這將刪除所有已記錄的 Nintype 追蹤檔案。</translation>
+    </string>
+    <string name="gboard_patches_nintype_trace_clear_done">
+        <translation locale="en">Debug trace logs cleared.</translation>
+        <translation locale="zh-Hant">已清除除錯追蹤紀錄。</translation>
+    </string>
+    <string name="gboard_patches_nintype_section_reset">
+        <translation locale="en">Reset</translation>
+        <translation locale="zh-Hant">重設</translation>
+    </string>
+    <string name="gboard_patches_nintype_reset_title">
+        <translation locale="en">Restore default settings</translation>
+        <translation locale="zh-Hant">恢復預設設定</translation>
+    </string>
+    <string name="gboard_patches_nintype_reset_summary">
+        <translation locale="en">Reset Nintype behavior, timing, decoder tuning, and debug logging to release defaults.</translation>
+        <translation locale="zh-Hant">將 Nintype 行為、時間參數、解碼器微調與除錯紀錄恢復為預設值。</translation>
+    </string>
+    <string name="gboard_patches_nintype_reset_confirm_title">
+        <translation locale="en">Restore Nintype defaults?</translation>
+        <translation locale="zh-Hant">恢復 Nintype 預設設定？</translation>
+    </string>
+    <string name="gboard_patches_nintype_reset_confirm_message">
+        <translation locale="en">All customized timings and Kinetica decoder tuning values will be reset to their defaults.</translation>
+        <translation locale="zh-Hant">所有自訂的時間與 Kinetica 解碼器微調參數都將恢復為預設值。</translation>
+    </string>
+    <string name="gboard_patches_nintype_reset_done">
+        <translation locale="en">Nintype settings restored to defaults.</translation>
+        <translation locale="zh-Hant">已將 Nintype 設定恢復為預設值。</translation>
+    </string>
 </settings-text>

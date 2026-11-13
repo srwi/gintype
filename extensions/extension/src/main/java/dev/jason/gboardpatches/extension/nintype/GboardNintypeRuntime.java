@@ -2,7 +2,13 @@ package dev.jason.gboardpatches.extension.nintype;
 
 import android.content.Context;
 import android.content.ContextWrapper;
+import android.content.res.Configuration;
+import android.graphics.ColorFilter;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Paint;
 import android.inputmethodservice.InputMethodService;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -314,9 +320,15 @@ public final class GboardNintypeRuntime {
 
     private static final Map<Object, HandlerSession> SESSIONS =
             Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Object, ColorFilter> STOCK_TRAIL_FILTERS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<Object, Boolean> OVERLAY_NINTYPE_ACTIVE =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private static volatile Field contextField;
     private static volatile Field keyboardViewField;
+    private static volatile Field gestureOverlayViewField;
+    private static volatile Field gestureOverlayPaintField;
     private static volatile Field hostBridgeField;
     private static volatile Method claimOwnershipMethod;
     private static volatile Field bridgeDispatcherField;
@@ -506,6 +518,7 @@ public final class GboardNintypeRuntime {
                         session.singleTouchCombineBuffer.validateOnActionDown(
                                 snapshotNow, downOnLetter, eventTime, combineDelayMs);
                     }
+                    setNintypeTrailAccentActive(handler, isWordContinuing, context);
 
                     registerPointerDown(session, pid, x, y, eventTime);
                     break;
@@ -685,6 +698,7 @@ public final class GboardNintypeRuntime {
                         boolean wasNintypeWordActive = session.nintypeWordActive;
                         session.nintypeTakeoverActive = true;
                         session.nintypeWordActive = true;
+                        setNintypeTrailAccentActive(handler, true, context);
                         activateNintypeTakeoverOnFinish(handler);
 
                         if (!wasNintypeWordActive) {
@@ -768,6 +782,7 @@ public final class GboardNintypeRuntime {
                 }
 
                 case MotionEvent.ACTION_CANCEL: {
+                    setNintypeTrailAccentActive(handler, false, context);
                     session.resetGestureState();
                     session.clearWordBuffer();
                     session.passiveTapBuffer.clear();
@@ -1012,6 +1027,7 @@ public final class GboardNintypeRuntime {
             return;
         }
         session.nintypeTakeoverActive = true;
+        setNintypeTrailAccentActive(handler, true, null);
         ensureTrailRecorderEnabled(handler);
         if (claimDispatcher) {
             ensureGestureHandlerOwnsDispatcher(handler);
@@ -1151,6 +1167,220 @@ public final class GboardNintypeRuntime {
             sanitizeTrailIndices(handler);
         } catch (Throwable ignored) {
         }
+    }
+
+    private static void setNintypeTrailAccentActive(Object handler, boolean active, Context fallbackCtx) {
+        if (handler == null) return;
+        probeHandlerFields(handler);
+        try {
+            if (gestureOverlayViewField == null) return;
+            Object overlayObj = gestureOverlayViewField.get(handler);
+            if (!(overlayObj instanceof View)) return;
+            View overlayView = (View) overlayObj;
+
+            Field paintField = findGestureOverlayPaintField(overlayView);
+            if (paintField == null) return;
+            Object paintObj = paintField.get(overlayView);
+            if (!(paintObj instanceof Paint)) return;
+            Paint drawPaint = (Paint) paintObj;
+
+            Boolean wasActive = OVERLAY_NINTYPE_ACTIVE.get(overlayView);
+            if (wasActive != null && wasActive == active) {
+                return;
+            }
+
+            if (!STOCK_TRAIL_FILTERS.containsKey(overlayView)) {
+                STOCK_TRAIL_FILTERS.put(overlayView, drawPaint.getColorFilter());
+            }
+            ColorFilter stockFilter = STOCK_TRAIL_FILTERS.get(overlayView);
+
+            if (active) {
+                Context ctx = overlayView.getContext() != null ? overlayView.getContext() : fallbackCtx;
+                int stockRgb = extractStockTrailRgb(stockFilter);
+                int nintypeRgb = resolveNintypeTrailColor(ctx, stockRgb);
+                drawPaint.setColorFilter(buildTrailColorFilter(stockFilter, nintypeRgb));
+                OVERLAY_NINTYPE_ACTIVE.put(overlayView, Boolean.TRUE);
+                overlayView.invalidate();
+            } else if (Boolean.TRUE.equals(wasActive)) {
+                drawPaint.setColorFilter(stockFilter);
+                OVERLAY_NINTYPE_ACTIVE.put(overlayView, Boolean.FALSE);
+                overlayView.invalidate();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static Field findGestureOverlayPaintField(Object overlayView) {
+        Field cached = gestureOverlayPaintField;
+        if (cached != null) return cached;
+        Field nFallback = null;
+        for (Field f : overlayView.getClass().getDeclaredFields()) {
+            if (f.getType() != Paint.class) continue;
+            f.setAccessible(true);
+            try {
+                Object val = f.get(overlayView);
+                if (val instanceof Paint && ((Paint) val).getColorFilter() instanceof ColorMatrixColorFilter) {
+                    gestureOverlayPaintField = f;
+                    return f;
+                }
+                if ("n".equals(f.getName())) {
+                    nFallback = f;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        if (nFallback != null) {
+            gestureOverlayPaintField = nFallback;
+        }
+        return nFallback;
+    }
+
+    private static int extractStockTrailRgb(ColorFilter stockFilter) {
+        if (!(stockFilter instanceof ColorMatrixColorFilter)) return -1;
+        try {
+            ColorMatrix cm = new ColorMatrix();
+            ((ColorMatrixColorFilter) stockFilter).getColorMatrix(cm);
+            float[] m = cm.getArray();
+            if (m != null && m.length >= 15) {
+                int r = Math.max(0, Math.min(255, Math.round(m[4])));
+                int g = Math.max(0, Math.min(255, Math.round(m[9])));
+                int b = Math.max(0, Math.min(255, Math.round(m[14])));
+                return (r << 16) | (g << 8) | b;
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
+    private static ColorFilter buildTrailColorFilter(ColorFilter stockFilter, int rgb) {
+        float[] matrix = new float[] {
+            0f, 0f, 0f, 0f, (float) ((rgb >> 16) & 0xff),
+            0f, 0f, 0f, 0f, (float) ((rgb >> 8) & 0xff),
+            0f, 0f, 0f, 0f, (float) (rgb & 0xff),
+            0f, 0f, 1f, 0f, 0f
+        };
+        if (stockFilter instanceof ColorMatrixColorFilter) {
+            try {
+                ColorMatrix existing = new ColorMatrix();
+                ((ColorMatrixColorFilter) stockFilter).getColorMatrix(existing);
+                float[] existingArr = existing.getArray();
+                if (existingArr != null && existingArr.length == 20) {
+                    matrix = existingArr.clone();
+                    matrix[4] = (rgb >> 16) & 0xff;
+                    matrix[9] = (rgb >> 8) & 0xff;
+                    matrix[14] = rgb & 0xff;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return new ColorMatrixColorFilter(new ColorMatrix(matrix));
+    }
+
+    private static int resolveNintypeTrailColor(Context context, int stockRgb) {
+        boolean darkMode = stockRgb >= 0
+                ? perceivedLuminance(stockRgb) >= 140f
+                : (context != null && (context.getResources().getConfiguration().uiMode
+                        & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES);
+        int tertiary = -1;
+        int secondary = -1;
+        if (context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            tertiary = resolveAndroidColorRgb(context,
+                    darkMode ? android.R.color.system_accent3_200 : android.R.color.system_accent3_500);
+            secondary = resolveAndroidColorRgb(context,
+                    darkMode ? android.R.color.system_accent2_200 : android.R.color.system_accent2_500);
+        }
+        return chooseNintypeTrailColor(stockRgb, tertiary, secondary, darkMode);
+    }
+
+    private static int resolveAndroidColorRgb(Context context, int resId) {
+        try {
+            return context.getColor(resId) & 0x00ffffff;
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    static int chooseNintypeTrailColor(
+            int stockRgb,
+            int dynamicTertiaryRgb,
+            int dynamicSecondaryRgb,
+            boolean darkKeyboard
+    ) {
+        if (dynamicTertiaryRgb >= 0
+                && (stockRgb < 0 || !isColorTooClose(dynamicTertiaryRgb & 0x00ffffff, stockRgb))) {
+            return dynamicTertiaryRgb & 0x00ffffff;
+        }
+        if (dynamicSecondaryRgb >= 0
+                && (stockRgb < 0 || !isColorTooClose(dynamicSecondaryRgb & 0x00ffffff, stockRgb))) {
+            return dynamicSecondaryRgb & 0x00ffffff;
+        }
+        if (stockRgb >= 0) {
+            return rotateMaterialAccentHue(stockRgb, darkKeyboard);
+        }
+        return darkKeyboard ? 0xEFB8C8 : 0x984061;
+    }
+
+    private static boolean isColorTooClose(int rgbA, int rgbB) {
+        int dr = ((rgbA >> 16) & 0xff) - ((rgbB >> 16) & 0xff);
+        int dg = ((rgbA >> 8) & 0xff) - ((rgbB >> 8) & 0xff);
+        int db = (rgbA & 0xff) - (rgbB & 0xff);
+        return (dr * dr + dg * dg + db * db) < (56 * 56);
+    }
+
+    private static float perceivedLuminance(int rgb) {
+        int r = (rgb >> 16) & 0xff;
+        int g = (rgb >> 8) & 0xff;
+        int b = rgb & 0xff;
+        return 0.299f * r + 0.587f * g + 0.114f * b;
+    }
+
+    private static int rotateMaterialAccentHue(int stockRgb, boolean darkKeyboard) {
+        float r = ((stockRgb >> 16) & 0xff) / 255f;
+        float g = ((stockRgb >> 8) & 0xff) / 255f;
+        float b = (stockRgb & 0xff) / 255f;
+        float max = Math.max(r, Math.max(g, b));
+        float min = Math.min(r, Math.min(g, b));
+        float delta = max - min;
+        if (delta < 0.08f) {
+            return darkKeyboard ? 0xEFB8C8 : 0x7D5260;
+        }
+        float hue;
+        if (max == r) {
+            hue = 60f * (((g - b) / delta) % 6f);
+        } else if (max == g) {
+            hue = 60f * (((b - r) / delta) + 2f);
+        } else {
+            hue = 60f * (((r - g) / delta) + 4f);
+        }
+        if (hue < 0f) hue += 360f;
+        float rotatedHue = (hue + 120f) % 360f;
+        float sat = Math.max(0.45f, Math.min(0.75f, max > 0f ? delta / max : 0.55f));
+        float val = darkKeyboard ? 0.92f : 0.65f;
+        return hsvToRgb(rotatedHue, sat, val);
+    }
+
+    private static int hsvToRgb(float hueDeg, float sat, float val) {
+        float c = val * sat;
+        float x = c * (1f - Math.abs((hueDeg / 60f) % 2f - 1f));
+        float m = val - c;
+        float r1, g1, b1;
+        if (hueDeg < 60f) {
+            r1 = c; g1 = x; b1 = 0f;
+        } else if (hueDeg < 120f) {
+            r1 = x; g1 = c; b1 = 0f;
+        } else if (hueDeg < 180f) {
+            r1 = 0f; g1 = c; b1 = x;
+        } else if (hueDeg < 240f) {
+            r1 = 0f; g1 = x; b1 = c;
+        } else if (hueDeg < 300f) {
+            r1 = x; g1 = 0f; b1 = c;
+        } else {
+            r1 = c; g1 = 0f; b1 = x;
+        }
+        int r = Math.max(0, Math.min(255, Math.round((r1 + m) * 255f)));
+        int g = Math.max(0, Math.min(255, Math.round((g1 + m) * 255f)));
+        int b = Math.max(0, Math.min(255, Math.round((b1 + m) * 255f)));
+        return (r << 16) | (g << 8) | b;
     }
 
     private static void releasePointerSlot(HandlerSession session, int pointerId) {
@@ -1451,6 +1681,7 @@ public final class GboardNintypeRuntime {
             session.passiveTapBuffer.clear();
             session.singleTouchCombineBuffer.clear();
             session.resetGestureState();
+            setNintypeTrailAccentActive(handler, false, context);
         } catch (Throwable t) {
             Log.w(TAG, "finalizeComposingAndAutospace failed", t);
         }
@@ -2366,6 +2597,10 @@ public final class GboardNintypeRuntime {
                             contextField = f;
                         } else if (type.getName().endsWith("SoftKeyboardView") && keyboardViewField == null) {
                             keyboardViewField = f;
+                        } else if ((type.getName().endsWith("GestureOverlayView")
+                                || ("h".equals(name) && View.class.isAssignableFrom(type)))
+                                && gestureOverlayViewField == null) {
+                            gestureOverlayViewField = f;
                         } else if ("v".equals(name) && type == boolean.class) {
                             gestureActiveFlagField = f;
                         } else if ("u".equals(name) && type == boolean.class) {

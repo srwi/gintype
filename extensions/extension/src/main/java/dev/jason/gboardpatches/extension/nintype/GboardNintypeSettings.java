@@ -40,7 +40,9 @@ public final class GboardNintypeSettings {
     public static final float MIN_BEAM_FREQ_WEIGHT = 0.0f;
     public static final float MAX_BEAM_FREQ_WEIGHT = 2.0f;
     public static final float DEFAULT_BEAM_FREQ_WEIGHT = 0.50f;
-    public static final boolean DEFAULT_TRACE_LOGGING = true;
+    public static final boolean DEFAULT_TRACE_LOGGING = false;
+    public static final int MIN_TRACE_EXPORT_MINUTES = 1;
+    public static final int MAX_TRACE_EXPORT_MINUTES = 1440;
 
     private GboardNintypeSettings() {}
 
@@ -105,8 +107,33 @@ public final class GboardNintypeSettings {
             if (editor == null) editor = preferences.edit();
             editor.putFloat(PREF_KEY_BEAM_FREQ_WEIGHT, DEFAULT_BEAM_FREQ_WEIGHT);
         }
+        if (!preferences.contains(PREF_KEY_TRACE_LOGGING)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putBoolean(PREF_KEY_TRACE_LOGGING, DEFAULT_TRACE_LOGGING);
+        }
         if (editor != null) {
             editor.apply();
+        }
+    }
+
+    public static boolean resetToDefaults(SharedPreferences preferences) {
+        if (preferences == null) return false;
+        try {
+            boolean saved = preferences.edit()
+                    .putBoolean(PREF_KEY_ENABLED, DEFAULT_ENABLED)
+                    .putBoolean(PREF_KEY_AUTO_SPACE, DEFAULT_AUTO_SPACE)
+                    .putInt(PREF_KEY_AUTO_SPACE_DELAY_MS, DEFAULT_AUTO_SPACE_DELAY_MS)
+                    .putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS)
+                    .putInt(PREF_KEY_BEAM_WIDTH, DEFAULT_BEAM_WIDTH)
+                    .putFloat(PREF_KEY_FREQ_WEIGHT_FLOOR, DEFAULT_FREQ_WEIGHT_FLOOR)
+                    .putFloat(PREF_KEY_GEO_EXPONENT, DEFAULT_GEO_EXPONENT)
+                    .putFloat(PREF_KEY_BEAM_FREQ_WEIGHT, DEFAULT_BEAM_FREQ_WEIGHT)
+                    .putBoolean(PREF_KEY_TRACE_LOGGING, DEFAULT_TRACE_LOGGING)
+                    .commit();
+            syncDecoderConstants(preferences);
+            return saved;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
@@ -307,11 +334,29 @@ public final class GboardNintypeSettings {
     public static boolean isTraceLoggingEnabled(Context context) {
         try {
             SharedPreferences preferences = resolvePreferences(context);
-            return preferences == null
-                    ? DEFAULT_TRACE_LOGGING
-                    : preferences.getBoolean(PREF_KEY_TRACE_LOGGING, DEFAULT_TRACE_LOGGING);
+            return readTraceLoggingEnabled(preferences);
         } catch (Throwable ignored) {
             return DEFAULT_TRACE_LOGGING;
+        }
+    }
+
+    public static boolean readTraceLoggingEnabled(SharedPreferences preferences) {
+        if (preferences == null) return DEFAULT_TRACE_LOGGING;
+        try {
+            return preferences.getBoolean(PREF_KEY_TRACE_LOGGING, DEFAULT_TRACE_LOGGING);
+        } catch (ClassCastException ignored) {
+            return DEFAULT_TRACE_LOGGING;
+        }
+    }
+
+    public static boolean writeTraceLoggingEnabled(SharedPreferences preferences, boolean enabled) {
+        if (preferences == null) return false;
+        try {
+            return preferences.edit()
+                    .putBoolean(PREF_KEY_TRACE_LOGGING, enabled)
+                    .commit();
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 }
