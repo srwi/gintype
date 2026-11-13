@@ -193,7 +193,7 @@ public class VerticalWordWheelView extends LinearLayout {
         boolean dark = (getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         int primaryColor = dark ? Color.WHITE : 0xff202124;
-        int accentColor = dark ? 0xff8ab4f8 : 0xff1a73e8;
+        int accentColor = MatrixGboardReflector.resolveNormalAccentColor(getContext(), dark);
 
         if (isActiveWord) {
             topView.setTextColor(primaryColor);
@@ -205,9 +205,11 @@ public class VerticalWordWheelView extends LinearLayout {
             centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
 
-            // Active pill background: Material You accent rounded pill with clean vertical padding
-            int fillColor = dark ? 0x2e8ab4f8 : 0x1f1a73e8;
-            int strokeColor = dark ? 0x4d8ab4f8 : 0x331a73e8;
+            // Active pill background matching the normal keyboard/trail accent
+            boolean lightAccent = MatrixGboardReflector.perceivedLuminance(accentColor) >= 140f;
+            int accentRgb = accentColor & 0x00ffffff;
+            int fillColor = ((lightAccent ? 0x2E : 0x1F) << 24) | accentRgb;
+            int strokeColor = ((lightAccent ? 0x4D : 0x33) << 24) | accentRgb;
             centerView.setBackground(createPillDrawable(fillColor, strokeColor, 9f));
             int padH = (int) TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_DIP, 8f, getResources().getDisplayMetrics());

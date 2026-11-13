@@ -62,7 +62,7 @@ public class JumpToEndArrowView extends FrameLayout {
     public void updateIconColor() {
         boolean dark = (getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-        int accentColor = dark ? 0xff8ab4f8 : 0xff1a73e8;
+        int accentColor = MatrixGboardReflector.resolveNormalAccentColor(getContext(), dark);
         iconView.setImageDrawable(new ArrowForwardDrawable(accentColor));
     }
 

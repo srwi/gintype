@@ -48,6 +48,26 @@ public final class MatrixSuggestionsSettingsTest {
         Assert.assertTrue(GboardMatrixSuggestionsSettings.readEnabled(prefs));
     }
 
+    @Test
+    public void chooseNormalAccentPrefersStockTrailThenPrimaryThenGoogleBlue() {
+        Assert.assertEquals(0xFFECC09F,
+                MatrixGboardReflector.chooseNormalAccentColor(0xECC09F, 0xA8C7FA, true));
+        Assert.assertEquals(0xFFA8C7FA,
+                MatrixGboardReflector.chooseNormalAccentColor(-1, 0xA8C7FA, true));
+        Assert.assertEquals(0xFF8AB4F8,
+                MatrixGboardReflector.chooseNormalAccentColor(-1, -1, true));
+        Assert.assertEquals(0xFF1A73E8,
+                MatrixGboardReflector.chooseNormalAccentColor(-1, -1, false));
+    }
+
+    @Test
+    public void recordStockTrailAccentUpdatesResolvedColorWhenDarkPolarityMatches() {
+        MatrixGboardReflector.recordStockTrailAccent(null, 0xECC09F);
+        Assert.assertEquals(0xFFECC09F, MatrixGboardReflector.resolveNormalAccentColor(null, true));
+        Assert.assertTrue(MatrixGboardReflector.perceivedLuminance(0xFFECC09F) >= 140f);
+        Assert.assertTrue(MatrixGboardReflector.perceivedLuminance(0xFF845B38) < 140f);
+    }
+
     private static final class TestSharedPreferences implements SharedPreferences {
         final Map<String, Object> values = new HashMap<>();
 

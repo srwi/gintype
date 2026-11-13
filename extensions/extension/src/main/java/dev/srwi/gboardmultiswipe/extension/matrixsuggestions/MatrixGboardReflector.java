@@ -6,6 +6,7 @@ import android.content.res.Configuration;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
+import android.os.Build;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
@@ -34,7 +35,79 @@ public final class MatrixGboardReflector {
     private static Field candidateTypeField = null;
     private static Field candidateAutoCorrectField = null;
 
+    private static volatile int stockTrailAccentRgb = -1;
+    private static volatile int stockTrailNightMask = -1;
+
     private MatrixGboardReflector() {}
+
+    /**
+     * Records the native Stock Gboard gesture trail RGB so the Matrix bar can match
+     * the normal keyboard accent rather than falling back to hardcoded blue.
+     */
+    public static void recordStockTrailAccent(Context context, int rgb) {
+        if (rgb < 0) return;
+        stockTrailNightMask = context != null
+                ? (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                : -1;
+        stockTrailAccentRgb = rgb & 0x00ffffff;
+    }
+
+    public static int resolveNormalAccentColor(Context context, boolean dark) {
+        int usableStockRgb = -1;
+        int cachedRgb = stockTrailAccentRgb;
+        if (cachedRgb >= 0) {
+            int expectedMask = dark ? Configuration.UI_MODE_NIGHT_YES : Configuration.UI_MODE_NIGHT_NO;
+            int cachedMask = stockTrailNightMask;
+            if (cachedMask < 0 || cachedMask == expectedMask) {
+                usableStockRgb = cachedRgb;
+            }
+        }
+        int dynamicPrimaryRgb = -1;
+        if (context != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                dynamicPrimaryRgb = resolveAndroidColorRgb(
+                        context,
+                        dark ? android.R.color.system_accent1_200 : android.R.color.system_accent1_600);
+            }
+            if (dynamicPrimaryRgb < 0) {
+                TypedValue tv = new TypedValue();
+                if (context.getTheme() != null
+                        && context.getTheme().resolveAttribute(android.R.attr.colorAccent, tv, true)
+                        && tv.type >= TypedValue.TYPE_FIRST_COLOR_INT
+                        && tv.type <= TypedValue.TYPE_LAST_COLOR_INT
+                        && tv.data != 0) {
+                    dynamicPrimaryRgb = tv.data & 0x00ffffff;
+                }
+            }
+        }
+        return chooseNormalAccentColor(usableStockRgb, dynamicPrimaryRgb, dark);
+    }
+
+    static int chooseNormalAccentColor(int stockTrailRgb, int dynamicPrimaryRgb, boolean dark) {
+        if (stockTrailRgb >= 0) {
+            return 0xFF000000 | (stockTrailRgb & 0x00ffffff);
+        }
+        if (dynamicPrimaryRgb >= 0) {
+            return 0xFF000000 | (dynamicPrimaryRgb & 0x00ffffff);
+        }
+        return dark ? 0xFF8AB4F8 : 0xFF1A73E8;
+    }
+
+    public static int resolveAndroidColorRgb(Context context, int resId) {
+        if (context == null) return -1;
+        try {
+            return context.getColor(resId) & 0x00ffffff;
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    public static float perceivedLuminance(int rgb) {
+        int r = (rgb >> 16) & 0xff;
+        int g = (rgb >> 8) & 0xff;
+        int b = rgb & 0xff;
+        return 0.299f * r + 0.587f * g + 0.114f * b;
+    }
 
     /**
      * Extracts candidates directly from the holder view's slots (0, 1, 2) where

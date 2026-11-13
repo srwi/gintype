@@ -736,6 +736,7 @@ public final class GboardNintypeRuntime {
                     } else {
                         // Single-finger input and pure multi-touch rollover taps stay on stock Gboard,
                         // while passively recording anchors in case a following stroke within timeout combines.
+                        setNintypeTrailAccentActive(handler, false, context);
                         String tapBaselineAtDown = session.textSnapshotAtActionDown;
                         boolean strokeHadMultiTouch = session.sawMultiTouch;
                         boolean sawNonLetter = session.sawNonLetterThisSession;
@@ -1184,19 +1185,29 @@ public final class GboardNintypeRuntime {
             if (!(paintObj instanceof Paint)) return;
             Paint drawPaint = (Paint) paintObj;
 
+            if (!STOCK_TRAIL_FILTERS.containsKey(overlayView)) {
+                ColorFilter capturedFilter = drawPaint.getColorFilter();
+                STOCK_TRAIL_FILTERS.put(overlayView, capturedFilter);
+                int capturedRgb = extractStockTrailRgb(capturedFilter);
+                if (capturedRgb >= 0) {
+                    Context ctx = overlayView.getContext() != null ? overlayView.getContext() : fallbackCtx;
+                    MatrixGboardReflector.recordStockTrailAccent(ctx, capturedRgb);
+                }
+            }
+
             Boolean wasActive = OVERLAY_NINTYPE_ACTIVE.get(overlayView);
             if (wasActive != null && wasActive == active) {
                 return;
             }
 
-            if (!STOCK_TRAIL_FILTERS.containsKey(overlayView)) {
-                STOCK_TRAIL_FILTERS.put(overlayView, drawPaint.getColorFilter());
-            }
             ColorFilter stockFilter = STOCK_TRAIL_FILTERS.get(overlayView);
 
             if (active) {
                 Context ctx = overlayView.getContext() != null ? overlayView.getContext() : fallbackCtx;
                 int stockRgb = extractStockTrailRgb(stockFilter);
+                if (stockRgb >= 0) {
+                    MatrixGboardReflector.recordStockTrailAccent(ctx, stockRgb);
+                }
                 int nintypeRgb = resolveNintypeTrailColor(ctx, stockRgb);
                 drawPaint.setColorFilter(buildTrailColorFilter(stockFilter, nintypeRgb));
                 OVERLAY_NINTYPE_ACTIVE.put(overlayView, Boolean.TRUE);
@@ -1278,26 +1289,18 @@ public final class GboardNintypeRuntime {
 
     private static int resolveNintypeTrailColor(Context context, int stockRgb) {
         boolean darkMode = stockRgb >= 0
-                ? perceivedLuminance(stockRgb) >= 140f
+                ? MatrixGboardReflector.perceivedLuminance(stockRgb) >= 140f
                 : (context != null && (context.getResources().getConfiguration().uiMode
                         & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES);
         int tertiary = -1;
         int secondary = -1;
         if (context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            tertiary = resolveAndroidColorRgb(context,
+            tertiary = MatrixGboardReflector.resolveAndroidColorRgb(context,
                     darkMode ? android.R.color.system_accent3_200 : android.R.color.system_accent3_500);
-            secondary = resolveAndroidColorRgb(context,
+            secondary = MatrixGboardReflector.resolveAndroidColorRgb(context,
                     darkMode ? android.R.color.system_accent2_200 : android.R.color.system_accent2_500);
         }
         return chooseNintypeTrailColor(stockRgb, tertiary, secondary, darkMode);
-    }
-
-    private static int resolveAndroidColorRgb(Context context, int resId) {
-        try {
-            return context.getColor(resId) & 0x00ffffff;
-        } catch (Throwable ignored) {
-            return -1;
-        }
     }
 
     static int chooseNintypeTrailColor(
@@ -1325,13 +1328,6 @@ public final class GboardNintypeRuntime {
         int dg = ((rgbA >> 8) & 0xff) - ((rgbB >> 8) & 0xff);
         int db = (rgbA & 0xff) - (rgbB & 0xff);
         return (dr * dr + dg * dg + db * db) < (56 * 56);
-    }
-
-    private static float perceivedLuminance(int rgb) {
-        int r = (rgb >> 16) & 0xff;
-        int g = (rgb >> 8) & 0xff;
-        int b = rgb & 0xff;
-        return 0.299f * r + 0.587f * g + 0.114f * b;
     }
 
     private static int rotateMaterialAccentHue(int stockRgb, boolean darkKeyboard) {
