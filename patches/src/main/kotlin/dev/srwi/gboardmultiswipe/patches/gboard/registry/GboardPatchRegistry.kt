@@ -4,6 +4,10 @@ import app.morphe.patcher.patch.Compatibility
 import app.morphe.patcher.patch.Patch
 import app.morphe.patcher.patch.ResourcePatchBuilder
 import app.morphe.patcher.patch.resourcePatch
+import app.morphe.patcher.patch.stringOption
+import dev.srwi.gboardmultiswipe.patches.gboard.features.packagerename.applyGboardApplicationDisplayName
+import dev.srwi.gboardmultiswipe.patches.gboard.features.packagerename.gboardPackageRenameResourcePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.packagerename.isValidGboardAppDisplayName
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import dev.srwi.gboardmultiswipe.patches.gboard.features.matrixsuggestions.gboardMatrixSuggestionsBytecodePatch
@@ -65,10 +69,46 @@ val gboardNintypePatch = gboardPublicResourcePatch(
     )
 }
 
+@Suppress("unused")
+val gboardPackageRenamePatch = gboardPublicResourcePatch(
+    featureId = "package_rename",
+    name = "Package Rename",
+    description = "Rename the package to dev.srwi.com.google.android.inputmethod.latin and allow " +
+        "a custom app name so it can be installed alongside official Gboard.",
+    default = true,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    val appDisplayName = stringOption(
+        key = "app_display_name",
+        default = "Gboard Multiswipe",
+        values = linkedMapOf(
+            "Gboard" to "Gboard",
+            "Gboard Dev" to "Gboard Dev",
+            "Gboard Mod" to "Gboard Mod",
+            "Gboard Multiswipe" to "Gboard Multiswipe",
+        ),
+        title = "App Name",
+        description = "",
+        required = true,
+    ) { value ->
+        isValidGboardAppDisplayName(value)
+    }
+
+    dependsOn(
+        gboardPackageRenameResourcePatch,
+    )
+
+    finalize {
+        applyGboardApplicationDisplayName(displayName = checkNotNull(appDisplayName.value))
+    }
+}
+
 object GboardPublishedPatchCatalog {
     val morpheRegistrations: Set<Patch<*>> = linkedSetOf(
         gboardMatrixSuggestionsPatch,
         gboardNintypePatch,
+        gboardPackageRenamePatch,
     )
 
     fun publishedInventory(version: String): String {
