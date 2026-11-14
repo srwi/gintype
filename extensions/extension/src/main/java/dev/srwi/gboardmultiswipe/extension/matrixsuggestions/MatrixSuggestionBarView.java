@@ -134,7 +134,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 historyWheel.setIsActiveWord(false);
                 historyWheel.setAlpha(1.0f);
 
-                // Tapping center row of history column marks/selects that word in text field
+                // Tapping anywhere in the history column marks/selects that word in text field
                 historyWheel.setOnCenterClickListener((idx, word) -> {
                     selectHistoryWord(historyColIndex);
                     if (onHistoryClick != null) {
@@ -142,7 +142,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                     }
                 });
 
-                // Flicking or tapping top/bottom swaps that word's alternative
+                // Vertical flick swaps that word's alternative
                 historyWheel.setOnWordActionListener((newIndex, newWord) -> {
                     String oldWord = entry.getSelectedWord();
                     entry.selectedIndex = newIndex;
@@ -172,14 +172,14 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
             currentWheelView.setIsActiveWord(true);
             currentWheelView.setAlternatives(currentAlternatives, preferredSelected);
 
-            // Discrete flick or tap on top/bottom swaps the active unconfirmed word WITHOUT space
+            // Discrete vertical flick swaps the active unconfirmed word WITHOUT space
             currentWheelView.setOnWordActionListener((newIndex, newWord) -> {
                 if (onActiveSwap != null) {
                     onActiveSwap.onActiveWordSwapped(newIndex, newWord);
                 }
             });
 
-            // Tap on center pill commits/confirms the word WITH trailing space
+            // Tap anywhere in the column commits/confirms the word WITH trailing space
             currentWheelView.setOnCenterClickListener((index, word) -> {
                 if (onCommit != null) {
                     onCommit.onCommit(index, word);
@@ -191,8 +191,16 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         }
 
         // Auto-scroll all the way to the right so active word is docked on the right edge
-        post(() -> fullScroll(View.FOCUS_RIGHT));
-        postDelayed(() -> fullScroll(View.FOCUS_RIGHT), 30);
+        post(() -> {
+            if (selectedHistoryIndex < 0) {
+                fullScroll(View.FOCUS_RIGHT);
+            }
+        });
+        postDelayed(() -> {
+            if (selectedHistoryIndex < 0) {
+                fullScroll(View.FOCUS_RIGHT);
+            }
+        }, 30);
     }
 
     public void updateHistoryOnly(List<MatrixSentenceBuffer.WordEntry> history,
@@ -262,8 +270,16 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         }
 
         setVisibility(View.VISIBLE);
-        post(() -> fullScroll(View.FOCUS_RIGHT));
-        postDelayed(() -> fullScroll(View.FOCUS_RIGHT), 30);
+        post(() -> {
+            if (selectedHistoryIndex < 0) {
+                fullScroll(View.FOCUS_RIGHT);
+            }
+        });
+        postDelayed(() -> {
+            if (selectedHistoryIndex < 0) {
+                fullScroll(View.FOCUS_RIGHT);
+            }
+        }, 30);
     }
 
     public void selectHistoryWord(int historyIndex) {
@@ -294,6 +310,10 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 target = historyWheels.get(historyWheels.size() - 1);
             }
             if (target == null) return;
+            if (target.getWidth() == 0 && target.getLeft() == 0) {
+                post(() -> centerOnColumn(columnIndex));
+                return;
+            }
 
             int targetCenter = contentLayout.getLeft() + (target.getLeft() + target.getRight()) / 2;
             int scrollX = Math.max(0, targetCenter - barWidth / 2);

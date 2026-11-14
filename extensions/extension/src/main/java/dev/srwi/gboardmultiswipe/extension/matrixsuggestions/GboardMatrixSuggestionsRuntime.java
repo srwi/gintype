@@ -93,24 +93,19 @@ public final class GboardMatrixSuggestionsRuntime {
         // Cache non-prediction alternatives synchronously before fast space/punctuation commits clear them
         if (candidateListObj != null) {
             try {
-                List<CandidateItem> preItems = MatrixGboardReflector.extractCandidatesFromIterable(candidateListObj);
-                if (preItems.size() >= 2
-                        && !MatrixTextHelper.allPredictions(preItems)
-                        && !MatrixGboardReflector.hasUndoCandidate(preItems)) {
-                    List<String> preWords = new ArrayList<>(3);
-                    String primary = null;
-                    int limit = Math.min(3, preItems.size());
-                    for (int i = 0; i < limit; i++) {
-                        CandidateItem ci = preItems.get(i);
-                        preWords.add(ci.text);
-                        if (primary == null && (ci.isRaw || ci.isAutoCorrect)) {
-                            primary = ci.text;
+                ViewGroup preParent = (holderView.getParent() instanceof ViewGroup p) ? p : holderView;
+                MatrixSuggestionBarView existingBar = ACTIVE_BARS.get(preParent);
+                if (!isHistorySelectionSessionActive(holderView, existingBar)) {
+                    List<CandidateItem> preItems = MatrixGboardReflector.extractCandidatesFromIterable(candidateListObj);
+                    if (preItems.size() >= 2
+                            && !MatrixTextHelper.allPredictions(preItems)
+                            && !MatrixGboardReflector.hasUndoCandidate(preItems)) {
+                        String preActiveWord = MatrixTextHelper.getActiveWord(holderView, preItems);
+                        if (preActiveWord != null && !preActiveWord.isEmpty()) {
+                            List<String> preWords = buildTrimmedSuggestions(preItems, preActiveWord, new int[1]);
+                            cacheAlternativeGroup(preWords, preActiveWord);
                         }
                     }
-                    if (primary == null && !preWords.isEmpty()) {
-                        primary = preWords.get(0);
-                    }
-                    cacheAlternativeGroup(preWords, primary);
                 }
             } catch (Throwable ignored) {
             }
@@ -172,16 +167,6 @@ public final class GboardMatrixSuggestionsRuntime {
                 // Case 1: No active word being typed/swiped (cursor after manual space, punctuation, or empty)
                 if (currentWord == null || currentWord.isEmpty()) {
                     activeOriginalSuggestions = null;
-                    if (items.size() >= 2
-                            && !MatrixTextHelper.allPredictions(items)
-                            && !MatrixGboardReflector.hasUndoCandidate(items)) {
-                        List<String> extraAlts = new ArrayList<>(3);
-                        int limit = Math.min(3, items.size());
-                        for (int i = 0; i < limit; i++) {
-                            extraAlts.add(items.get(i).text);
-                        }
-                        cacheAlternativeGroup(extraAlts, extraAlts.get(0));
-                    }
                     if (MatrixTextHelper.isSentenceEnded(holderView) || MatrixTextHelper.isInputEmpty(holderView)) {
                         SENTENCE_BUFFER.clear();
                         hideJumpToEndArrow();
@@ -190,18 +175,7 @@ public final class GboardMatrixSuggestionsRuntime {
                     } else {
                         MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
                         if (!SENTENCE_BUFFER.isEmpty()) {
-                            barView.updateHistoryOnly(
-                                    SENTENCE_BUFFER.getEntries(),
-                                    (histColIdx, oldWord, newWord) -> {
-                                        lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
-                                        MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                                    },
-                                    createHistoryWordClickCallback(holderView, barView)
-                            );
-                            barView.setVisibility(View.VISIBLE);
-                            MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
-                            MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
-                            barView.bringToFront();
+                            showHistoryOnlyBar(holderView, barView);
                         } else {
                             hideJumpToEndArrow();
                             barView.setVisibility(View.GONE);
@@ -211,48 +185,16 @@ public final class GboardMatrixSuggestionsRuntime {
                     return;
                 }
 
-                // Check if currentWord is in items (case-insensitive)
-                int currentWordIdx = -1;
-                for (int i = 0; i < items.size(); i++) {
-                    if (currentWord.equalsIgnoreCase(items.get(i).text)) {
-                        currentWordIdx = i;
-                        break;
-                    }
-                }
-
-                // If items does not contain currentWord (e.g. glide typing or custom/English word like 'toggles'),
-                // inject currentWord into items as the active candidate!
-                if (currentWordIdx < 0) {
-                    CandidateItem activeItem = new CandidateItem(currentWord, -1, true, true, false, "GLIDE_ACTIVE", null, null);
-                    int insertPos = (items.size() >= 2) ? 1 : 0;
-                    items.add(insertPos, activeItem);
-                    currentWordIdx = insertPos;
-                }
-
-                int centerIndex = (currentWordIdx >= 0) ? currentWordIdx : determineCenterCandidateIndex(holderView, items, currentWord);
-
-                List<String> words = new ArrayList<>();
-                for (CandidateItem ci : items) {
-                    words.add(ci.text);
-                }
-
-                if (words.isEmpty()) {
-                    words.add(currentWord);
-                    centerIndex = 0;
-                }
-
-                // Enforce exact typed casing on the candidate matching currentWord
-                if (centerIndex >= 0 && centerIndex < words.size() && words.get(centerIndex).equalsIgnoreCase(currentWord)) {
-                    words.set(centerIndex, currentWord);
-                }
+                int[] centerIdxOut = new int[1];
+                List<String> words = buildTrimmedSuggestions(items, currentWord, centerIdxOut);
+                int centerIndex = centerIdxOut[0];
 
                 // Preserve original 3 suggestions during flick navigation so user can flick back and forth!
                 boolean isFromSelfReplace = lastSelfReplacedWord != null
                         && lastSelfReplacedWord.equalsIgnoreCase(currentWord)
                         && (SystemClock.uptimeMillis() - lastSelfReplaceTimestamp < 1500);
 
-                if (activeOriginalSuggestions != null && activeOriginalSuggestions.size() >= 2
-                        && isFromSelfReplace) {
+                if (shouldPreserveActiveSuggestions(activeOriginalSuggestions, currentWord, isFromSelfReplace, items)) {
                     words = new ArrayList<>(activeOriginalSuggestions);
                     int idx = -1;
                     for (int i = 0; i < words.size(); i++) {
@@ -265,22 +207,6 @@ public final class GboardMatrixSuggestionsRuntime {
                     words.set(centerIndex, currentWord);
                     Log.i(TAG, "onCandidatesUpdated: preserving original 3 suggestions: " + words + ", centerIndex=" + centerIndex);
                 } else {
-                    // New word session: trim to exactly 3 suggestions (active center + 2 alternatives)
-                    if (words.size() > 3) {
-                        if (centerIndex <= 0) {
-                            words = new ArrayList<>(words.subList(0, 3));
-                            centerIndex = 0;
-                        } else if (centerIndex >= words.size() - 1) {
-                            words = new ArrayList<>(words.subList(words.size() - 3, words.size()));
-                            centerIndex = 2;
-                        } else {
-                            words = new ArrayList<>(words.subList(centerIndex - 1, centerIndex + 2));
-                            centerIndex = 1;
-                        }
-                    }
-                    if (centerIndex >= 0 && centerIndex < words.size() && words.get(centerIndex).equalsIgnoreCase(currentWord)) {
-                        words.set(centerIndex, currentWord);
-                    }
                     activeOriginalSuggestions = new ArrayList<>(words);
                     cacheAlternativeGroup(words, currentWord);
                 }
@@ -438,18 +364,7 @@ public final class GboardMatrixSuggestionsRuntime {
 
                 MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
                 if (!SENTENCE_BUFFER.isEmpty()) {
-                    barView.updateHistoryOnly(
-                            SENTENCE_BUFFER.getEntries(),
-                            (histColIdx, oldWord, newWord) -> {
-                                lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
-                                MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                            },
-                            createHistoryWordClickCallback(holderView, barView)
-                    );
-                    barView.setVisibility(View.VISIBLE);
-                    MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
-                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
-                    barView.bringToFront();
+                    showHistoryOnlyBar(holderView, barView);
                 } else {
                     hideJumpToEndArrow();
                     barView.setVisibility(View.GONE);
@@ -645,12 +560,96 @@ public final class GboardMatrixSuggestionsRuntime {
         return new CandidateItem(word != null ? word : "", -1, false, false, false, "", null, null);
     }
 
+    private static List<String> buildTrimmedSuggestions(
+            List<CandidateItem> items,
+            String currentWord,
+            int[] outCenterIndex
+    ) {
+        int currentWordIdx = -1;
+        for (int i = 0; i < items.size(); i++) {
+            if (currentWord.equalsIgnoreCase(items.get(i).text)) {
+                currentWordIdx = i;
+                break;
+            }
+        }
+
+        // Inject currentWord when absent (e.g. glide typing or words absent from candidates)
+        if (currentWordIdx < 0) {
+            CandidateItem activeItem = new CandidateItem(currentWord, -1, true, true, false, "GLIDE_ACTIVE", null, null);
+            int insertPos = (items.size() >= 2) ? 1 : 0;
+            items.add(insertPos, activeItem);
+            currentWordIdx = insertPos;
+        }
+
+        int centerIndex = currentWordIdx;
+
+        List<String> words = new ArrayList<>();
+        for (CandidateItem ci : items) {
+            words.add(ci.text);
+        }
+
+        if (words.isEmpty()) {
+            words.add(currentWord);
+            centerIndex = 0;
+        }
+
+        if (words.size() > 3) {
+            if (centerIndex <= 0) {
+                words = new ArrayList<>(words.subList(0, 3));
+                centerIndex = 0;
+            } else if (centerIndex >= words.size() - 1) {
+                words = new ArrayList<>(words.subList(words.size() - 3, words.size()));
+                centerIndex = 2;
+            } else {
+                words = new ArrayList<>(words.subList(centerIndex - 1, centerIndex + 2));
+                centerIndex = 1;
+            }
+        }
+        if (centerIndex >= 0 && centerIndex < words.size() && words.get(centerIndex).equalsIgnoreCase(currentWord)) {
+            words.set(centerIndex, currentWord);
+        }
+        outCenterIndex[0] = centerIndex;
+        return words;
+    }
+
+    private static void showHistoryOnlyBar(ViewGroup holderView, MatrixSuggestionBarView barView) {
+        List<MatrixSentenceBuffer.WordEntry> entries = SENTENCE_BUFFER.getEntries();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < entries.size(); i++) {
+            if (i > 0) sb.append(" | ");
+            MatrixSentenceBuffer.WordEntry e = entries.get(i);
+            sb.append(e.committedWord).append(':').append(e.alternatives);
+        }
+        Log.i(TAG, "showHistoryOnlyBar: [" + sb + "]");
+        barView.updateHistoryOnly(
+                entries,
+                (histColIdx, oldWord, newWord) -> {
+                    lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
+                    MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
+                },
+                createHistoryWordClickCallback(holderView, barView)
+        );
+        ViewGroup parent = (ViewGroup) holderView.getParent();
+        ViewGroup attachTarget = parent != null ? parent : holderView;
+        barView.setVisibility(View.VISIBLE);
+        MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
+        MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
+        barView.bringToFront();
+    }
+
     private static void attachWordCursorNavigator(ViewGroup holderView, MatrixSuggestionBarView barView) {
         barView.setOnWordCursorNavigateCallback(direction -> {
             lastWordNavTimestamp = SystemClock.uptimeMillis();
+            activeOriginalSuggestions = null;
             boolean moved = MatrixTextHelper.moveCursorByWord(holderView, direction);
-            Log.i(TAG, "onNavigateWord: dir=" + direction + ", moved=" + moved);
+            boolean hadActiveWheel = barView.getCurrentWheelView().getParent() != null;
+            int prevHistoryCount = barView.getHistoryWheelCount();
+            MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+            Log.i(TAG, "onNavigateWord: dir=" + direction + ", moved=" + moved + ", syncedCount=" + SENTENCE_BUFFER.getEntries().size());
             if (!MatrixTextHelper.isCursorAtEnd(holderView)) {
+                if (!SENTENCE_BUFFER.isEmpty() && (hadActiveWheel || prevHistoryCount != SENTENCE_BUFFER.getEntries().size())) {
+                    showHistoryOnlyBar(holderView, barView);
+                }
                 if (!MatrixTextHelper.hasSelection(holderView)) {
                     barView.clearHistorySelection();
                     barView.centerOnColumn(0);
@@ -675,22 +674,8 @@ public final class GboardMatrixSuggestionsRuntime {
                 lastWordNavTimestamp = 0;
                 barView.clearHistorySelection();
                 hideJumpToEndArrow();
-                MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
                 if (!SENTENCE_BUFFER.isEmpty()) {
-                    barView.updateHistoryOnly(
-                            SENTENCE_BUFFER.getEntries(),
-                            (histColIdx, oldWord, newWord) -> {
-                                lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
-                                MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                            },
-                            createHistoryWordClickCallback(holderView, barView)
-                    );
-                    ViewGroup parent = (ViewGroup) holderView.getParent();
-                    ViewGroup attachTarget = parent != null ? parent : holderView;
-                    barView.setVisibility(View.VISIBLE);
-                    MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
-                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
-                    barView.bringToFront();
+                    showHistoryOnlyBar(holderView, barView);
                 }
                 barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
             }
@@ -761,6 +746,37 @@ public final class GboardMatrixSuggestionsRuntime {
         }
     }
 
+    static boolean shouldPreserveActiveSuggestions(
+            List<String> activeOriginalSuggestions,
+            String currentWord,
+            boolean isFromSelfReplace,
+            List<CandidateItem> items
+    ) {
+        if (activeOriginalSuggestions == null || activeOriginalSuggestions.isEmpty()) {
+            return false;
+        }
+        if (isFromSelfReplace && activeOriginalSuggestions.size() >= 2) {
+            return true;
+        }
+        if (currentWord == null || currentWord.isEmpty()) {
+            return false;
+        }
+        boolean containsCurrent = false;
+        for (String w : activeOriginalSuggestions) {
+            if (currentWord.equalsIgnoreCase(w)) {
+                containsCurrent = true;
+                break;
+            }
+        }
+        if (!containsCurrent) {
+            return false;
+        }
+        if (activeOriginalSuggestions.size() >= 2) {
+            return true;
+        }
+        return items != null && items.size() == 1;
+    }
+
     static void cacheAlternativeGroup(List<String> words) {
         String primary = (words != null && !words.isEmpty()) ? words.get(0) : null;
         cacheAlternativeGroup(words, primary);
@@ -774,6 +790,10 @@ public final class GboardMatrixSuggestionsRuntime {
             List<String> existing = WORD_ALTERNATIVES_CACHE.get(primaryKey);
             if (copy.size() >= 2 || existing == null || existing.isEmpty()) {
                 WORD_ALTERNATIVES_CACHE.put(primaryKey, copy);
+                try {
+                    Log.i(TAG, "cacheAlternativeGroup: primary='" + primaryKey + "' -> " + copy);
+                } catch (Throwable ignored) {
+                }
             }
         }
         for (String w : words) {

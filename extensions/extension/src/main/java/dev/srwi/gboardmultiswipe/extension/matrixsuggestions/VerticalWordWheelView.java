@@ -27,7 +27,7 @@ import java.util.List;
  * - Bottom: Next alternative (smaller, muted)
  *
  * Supports discrete vertical flick gestures (one word swap per flick, no endless spinning),
- * and direct tap on top/bottom rows to swap alternatives in place, or center row to commit.
+ * and tapping anywhere in the column to select/commit the current word.
  */
 public class VerticalWordWheelView extends LinearLayout {
 
@@ -358,45 +358,14 @@ public class VerticalWordWheelView extends LinearLayout {
             case MotionEvent.ACTION_UP:
                 getParent().requestDisallowInterceptTouchEvent(false);
                 if (!isFlickGesture) {
-                    // Tap gesture
-                    float upY = event.getY();
-                    float totalHeight = getHeight();
-                    if (totalHeight > 0) {
-                        if (upY < totalHeight * 0.32f && size > 1) {
-                            // Tapped top row: swap to top alternative
-                            selectedIndex = (selectedIndex - 1 + size) % size;
-                            updateDisplay();
-                            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                            String newWord = getSelectedWord();
-                            if (wordActionListener != null && newWord != null) {
-                                wordActionListener.onWordSwapped(selectedIndex, newWord);
-                            }
-                            if (changeListener != null && newWord != null) {
-                                changeListener.onWordChanged(selectedIndex, newWord);
-                            }
-                        } else if (upY > totalHeight * 0.68f && size > 1) {
-                            // Tapped bottom row: swap to bottom alternative
-                            selectedIndex = (selectedIndex + 1) % size;
-                            updateDisplay();
-                            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                            String newWord = getSelectedWord();
-                            if (wordActionListener != null && newWord != null) {
-                                wordActionListener.onWordSwapped(selectedIndex, newWord);
-                            }
-                            if (changeListener != null && newWord != null) {
-                                changeListener.onWordChanged(selectedIndex, newWord);
-                            }
-                        } else {
-                            // Tapped center row: commit/confirm action
-                            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                            String centerWord = getSelectedWord();
-                            if (centerClickListener != null && centerWord != null) {
-                                centerClickListener.onCenterClicked(selectedIndex, centerWord);
-                            }
-                            if (commitListener != null && centerWord != null) {
-                                commitListener.onWordCommitted(selectedIndex, centerWord);
-                            }
-                        }
+                    // Tapping anywhere in the column selects/commits without swapping alternatives
+                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                    String centerWord = getSelectedWord();
+                    if (centerClickListener != null && centerWord != null) {
+                        centerClickListener.onCenterClicked(selectedIndex, centerWord);
+                    }
+                    if (commitListener != null && centerWord != null) {
+                        commitListener.onWordCommitted(selectedIndex, centerWord);
                     }
                 }
                 hasFlicked = false;

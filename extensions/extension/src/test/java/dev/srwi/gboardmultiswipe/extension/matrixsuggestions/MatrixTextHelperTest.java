@@ -102,11 +102,37 @@ public final class MatrixTextHelperTest {
         List<GboardMatrixSuggestionsRuntime.CandidateItem> glideItems = Collections.singletonList(alt1);
         Assert.assertEquals("toggles", MatrixTextHelper.getActiveWord("toggles ", glideItems));
 
+        // 5b. Live single-candidate glide preview for the NEXT word while InputConnection still ends
+        // with "<prevWord> " must return null so <prevWord> is not paired with the next word.
+        GboardMatrixSuggestionsRuntime.CandidateItem nextWordPreview = new GboardMatrixSuggestionsRuntime.CandidateItem(
+                "sollten", 0, false, false, false, "RECOMMENDATION", null, null);
+        Assert.assertNull(MatrixTextHelper.getActiveWord("dann ", Collections.singletonList(nextWordPreview)));
+        Assert.assertEquals("sollten", MatrixTextHelper.getActiveWord("sollten ", Collections.singletonList(nextWordPreview)));
+
         // 6. When candidates are cleared (allowTrailingSpace = false, e.g. after swipe-delete or manual space):
         // Trailing space means word was committed, not currently composing
         Assert.assertNull(MatrixTextHelper.getActiveWord("toggles ", Collections.emptyList(), false));
         Assert.assertNull(MatrixTextHelper.getActiveWord("Hallo Welt ", Collections.emptyList(), false));
         Assert.assertEquals("toggles", MatrixTextHelper.getActiveWord("toggles", Collections.emptyList(), false));
+    }
+
+    @Test
+    public void preserveActiveSuggestionsDuringNextWordGlide() {
+        List<String> malAlts = Arrays.asList("mal", "Mark", "man");
+        GboardMatrixSuggestionsRuntime.CandidateItem liveGlideSchauen = new GboardMatrixSuggestionsRuntime.CandidateItem(
+                "schauen", 0, false, false, false, "RECOMMENDATION", null, null);
+        Assert.assertTrue(GboardMatrixSuggestionsRuntime.shouldPreserveActiveSuggestions(
+                malAlts, "mal", false, Collections.singletonList(liveGlideSchauen)));
+
+        // Single-candidate word ("jetzt") should also be preserved when live preview ("besser") arrives
+        Assert.assertTrue(GboardMatrixSuggestionsRuntime.shouldPreserveActiveSuggestions(
+                Collections.singletonList("jetzt"), "jetzt", false,
+                Collections.singletonList(new GboardMatrixSuggestionsRuntime.CandidateItem(
+                        "besser", 0, false, false, false, "RECOMMENDATION", null, null))));
+
+        // Once the new word commits ("schauen"), alternatives must update
+        Assert.assertFalse(GboardMatrixSuggestionsRuntime.shouldPreserveActiveSuggestions(
+                malAlts, "schauen", false, Collections.singletonList(liveGlideSchauen)));
     }
 
     @Test

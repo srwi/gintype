@@ -319,7 +319,8 @@ public final class MatrixTextHelper {
         if (len == 0) return null;
 
         int end = len;
-        if (Character.isWhitespace(s.charAt(len - 1))) {
+        boolean hasTrailingSpace = Character.isWhitespace(s.charAt(len - 1));
+        if (hasTrailingSpace) {
             if (!allowTrailingSpace) {
                 return null;
             }
@@ -349,6 +350,16 @@ public final class MatrixTextHelper {
         if (start < end - 1) {
             String word = s.substring(start + 1, end).trim();
             if (!word.isEmpty()) {
+                // During a live glide gesture for the next word (while the previously committed
+                // word + auto-space still remains in the InputConnection), Gboard emits a single
+                // non-prediction live preview recommendation (e.g. "sollten" after "dann ").
+                // Reject it so "dann" isn't paired with "sollten" and its alternatives overwritten.
+                if (hasTrailingSpace && items != null && items.size() == 1) {
+                    GboardMatrixSuggestionsRuntime.CandidateItem only = items.get(0);
+                    if (only != null && only.text != null && !only.text.trim().equalsIgnoreCase(word)) {
+                        return null;
+                    }
+                }
                 return word;
             }
         }
