@@ -8,7 +8,7 @@ This document provides portable instructions for developers, CI pipelines, and A
 
 `gboard-multiswipe` is a standalone Morphe/ReVanced patch repository providing Gboard patches:
 
-1. **Thicc Top Bar** (`thicc_top_bar`): 2D top-bar suggestions matrix with vertical wheel scrolling and sentence history.
+1. **Thicc Top Bar** (`thicc_top_bar`): Improved suggestion bar with vertical wheel scrolling and sentence history.
 2. **MultiSwipe** (`multiswipe`): Two-finger chorded swipe and tap+swipe gesture typing powered by the Kinetica algorithm and Gboard dictionary.
 3. **Package Rename** (`package_rename`): Renames the patched package to `dev.srwi.com.google.android.inputmethod.latin` with a customizable launcher/IME display name (`Gboard MultiSwipe` by default) so non-rooted devices can install it side-by-side alongside official Play Store or system-signed Gboard.
 
@@ -20,7 +20,7 @@ This document provides portable instructions for developers, CI pipelines, and A
 - **Independent ContentProvider Authority**: `${applicationId}.gboard_multiswipe`
 - **Coexistence**: Can be applied alone or combined with other Morphe/ReVanced patch bundles without settings collisions or provider crashes (enable `Package Rename` in at most one bundle).
 - **Language**: English only (all code, resource strings, tests, commit messages, and documentation).
-- **Module Guides**: See [`patches/AGENTS.md`](patches/AGENTS.md) for patch registry, target bindings compiler, and Runtime ABI contracts, and [`extensions/AGENTS.md`](extensions/AGENTS.md) for MultiSwipe/Kinetica runtime hooks, Matrix reflection, and settings codegen.
+- **Module Guides**: See [`patches/AGENTS.md`](patches/AGENTS.md) for patch registry, target bindings compiler, and Runtime ABI contracts, and [`extensions/AGENTS.md`](extensions/AGENTS.md) for MultiSwipe/Kinetica runtime hooks, Thicc Top Bar reflection, and settings codegen.
 
 ---
 
@@ -52,12 +52,12 @@ Output artifact: `patches/build/libs/patches-1.0.0.mpp`
 # Patches contract, manifest/settings/package-rename transform, and wiring tests
 ./gradlew :patches:test
 
-# Extension core logic unit tests (Matrix helpers and MultiSwipe gesture decoder/geometry/accent folding)
+# Extension core logic unit tests (Thicc Top Bar helpers and MultiSwipe gesture decoder/geometry/accent folding)
 ./gradlew :extensions:extension:testDebugUnitTest \
   --tests "dev.srwi.gboardmultiswipe.extension.thicctopbar.*" \
   --tests "dev.srwi.gboardmultiswipe.extension.multiswipe.*"
 ```
-> Note: Other Robolectric-based Android tests in `:extensions:extension` require Robolectric Android runtime JARs (not available offline or on ARM64 Termux hosts). The filtered Matrix + MultiSwipe unit suites above run cleanly in all environments.
+> Note: Other Robolectric-based Android tests in `:extensions:extension` require Robolectric Android runtime JARs (not available offline or on ARM64 Termux hosts). The filtered Thicc Top Bar + MultiSwipe unit suites above run cleanly in all environments.
 
 ### Refresh `patches-list.json`
 Run whenever patch names, descriptions, defaults, or options change:
@@ -195,7 +195,7 @@ adb logcat -d -s \
   GboardMultiSwipeTrace \
   ThiccTopBarGboardReflector | tail -n 50
 ```
-Open Gboard Settings -> **MultiSwipe & Thicc Top Bar** to configure MultiSwipe swipe timing, autospace, 2D Thicc Top Bar, and log export.
+Open Gboard Settings -> **MultiSwipe & Thicc Top Bar** to configure MultiSwipe swipe timing, autospace, Thicc Top Bar, and log export.
 
 ---
 

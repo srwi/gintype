@@ -12,8 +12,8 @@ patches/
 │   ├── shared/Constants.kt                          # Package IDs, COMPATIBILITY_GBOARD
 │   └── gboard/
 │       ├── features/
-│       │   ├── thicctopbar/                   # 2D Matrix hook & feature marker
-│       │   ├── multiswipe/                             # MultiSwipe gesture hooks & feature marker
+│       │   ├── thicctopbar/                   # Thicc Top Bar hook & feature marker
+│       │   ├── multiswipe/                    # MultiSwipe gesture hooks & feature marker
 │       │   └── packagerename/                       # Side-by-side manifest/label rename
 │       ├── registry/
 │       │   ├── GboardPatchRegistry.kt               # Public patch definitions & catalog

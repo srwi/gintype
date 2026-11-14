@@ -14,8 +14,8 @@ extensions/extension/src/main/
 └── java/dev/srwi/gboardmultiswipe/extension/
     ├── GboardPatchExtension.java                    # Carrier extension placeholder entry point
     ├── flagsettings/                                # Boolean flag/settings persistence helpers
-    ├── thicctopbar/                           # 2D Matrix suggestion bar & reflector
-    ├── multiswipe/                                     # Kinetica-ported MultiSwipe gesture decoder & hooks
+    ├── thicctopbar/                                # Thicc Top Bar suggestion bar & reflector
+    ├── multiswipe/                                 # Kinetica-ported MultiSwipe gesture decoder & hooks
     └── settings/                                    # MultiSwipe & Thicc Top Bar settings UI & diagnostics
 ```
 
@@ -38,7 +38,7 @@ extensions/extension/src/main/
 
 ### Thicc Top Bar (`thicctopbar/`)
 - **Runtime (`GboardThiccTopBarRuntime.java`, `ThiccTopBarGboardReflector.java`)**:
-  - Replaces/augments the top candidate strip with `ThiccTopBarView`, `VerticalWordWheelView`, `JumpToEndArrowView`, and `ThiccTopBarSentenceBuffer` for 2D alternative browsing and sentence history navigation.
+  - Replaces/augments the top candidate strip with `ThiccTopBarView`, `VerticalWordWheelView`, `JumpToEndArrowView`, and `ThiccTopBarSentenceBuffer` for alternative browsing and sentence history navigation.
   - Mirrors Gboard's normal trail/primary Material accent color via `ThiccTopBarGboardReflector` (`recordStockTrailAccent` / `resolveNormalAccentColor`) rather than borrowing the MultiSwipe trail color.
 
 ### Settings UI (`settings/`)
