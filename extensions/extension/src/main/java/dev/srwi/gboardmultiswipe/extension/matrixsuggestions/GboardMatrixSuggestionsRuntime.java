@@ -57,6 +57,8 @@ public final class GboardMatrixSuggestionsRuntime {
     }
 
     private static final Map<ViewGroup, MatrixSuggestionBarView> ACTIVE_BARS = new WeakHashMap<>();
+    private static final Map<View, Integer> BASE_HEADER_HEIGHTS =
+            Collections.synchronizedMap(new WeakHashMap<>());
     private static final MatrixSentenceBuffer SENTENCE_BUFFER = new MatrixSentenceBuffer();
     private static final Map<String, List<String>> WORD_ALTERNATIVES_CACHE = new LinkedHashMap<String, List<String>>() {
         @Override
@@ -75,6 +77,131 @@ public final class GboardMatrixSuggestionsRuntime {
     private static View currentVoiceButton = null;
     private static JumpToEndArrowView currentJumpToEndArrow = null;
     private static Runnable pendingJumpRunnable = null;
+
+    /**
+     * Hook called after SoftKeyboardView finishes inflating to apply the configured
+     * top bar scale before the first layout pass.
+     */
+    public static void onSoftKeyboardViewInflated(Object softKeyboardViewObj) {
+        try {
+            if (!(softKeyboardViewObj instanceof View view)) {
+                return;
+            }
+            if (!MatrixGboardReflector.isHeaderSoftKeyboardView(view)) {
+                return;
+            }
+            ViewGroup.LayoutParams lp = view.getLayoutParams();
+            if (lp == null || lp.height <= 0) {
+                return;
+            }
+            BASE_HEADER_HEIGHTS.put(view, lp.height);
+            applyHeaderViewHeight(view, readActiveTopbarScale(view.getContext()));
+        } catch (Throwable t) {
+            Log.e(TAG, "onSoftKeyboardViewInflated failed", t);
+        }
+    }
+
+    /**
+     * Hook called at the computed-height return of SoftKeyboardView target height
+     * calculation so Gboard's header and IME body size calculations match the scale.
+     */
+    public static int scaleHeaderTargetHeight(Object softKeyboardViewObj, int targetHeight) {
+        try {
+            if (targetHeight <= 0 || !(softKeyboardViewObj instanceof View view)) {
+                return targetHeight;
+            }
+            if (!MatrixGboardReflector.isHeaderSoftKeyboardView(view)) {
+                return targetHeight;
+            }
+            BASE_HEADER_HEIGHTS.put(view, targetHeight);
+            float scale = readActiveTopbarScale(view.getContext());
+            if (scale <= 1.001f) {
+                return targetHeight;
+            }
+            return Math.max(targetHeight, Math.round(targetHeight * scale));
+        } catch (Throwable t) {
+            Log.e(TAG, "scaleHeaderTargetHeight failed", t);
+            return targetHeight;
+        }
+    }
+
+    private static float readActiveTopbarScale(Context context) {
+        if (context == null || !GboardMatrixSuggestionsSettings.readEnabled(context)) {
+            return GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE;
+        }
+        return GboardMatrixSuggestionsSettings.readTopbarScale(context);
+    }
+
+    private static void syncHeaderHeight(ViewGroup holderView, float scale) {
+        if (holderView == null) {
+            return;
+        }
+        View headerView = MatrixGboardReflector.findSoftKeyboardView(holderView);
+        applyHeaderViewHeight(headerView, scale);
+    }
+
+    private static void applyHeaderViewHeight(View headerView, float scale) {
+        if (headerView == null) {
+            return;
+        }
+        ViewGroup.LayoutParams lp = headerView.getLayoutParams();
+        if (lp == null || lp.height <= 0) {
+            return;
+        }
+        Integer recordedBase = BASE_HEADER_HEIGHTS.get(headerView);
+        int baseHeight;
+        if (recordedBase != null && recordedBase > 0) {
+            baseHeight = recordedBase;
+        } else {
+            baseHeight = lp.height;
+            BASE_HEADER_HEIGHTS.put(headerView, baseHeight);
+        }
+        float sanitized = GboardMatrixSuggestionsSettings.sanitizeTopbarScale(scale);
+        int desiredHeight = sanitized > 1.001f
+                ? Math.max(baseHeight, Math.round(baseHeight * sanitized))
+                : baseHeight;
+        if (lp.height != desiredHeight) {
+            lp.height = desiredHeight;
+            headerView.setLayoutParams(lp);
+            headerView.requestLayout();
+            if (headerView.getParent() instanceof View parentView) {
+                parentView.requestLayout();
+            }
+        }
+    }
+
+    /** Immediately synchronizes tracked header views and suggestion bars after a settings change. */
+    public static void syncAllHeaderHeights(Context context) {
+        if (context == null) {
+            return;
+        }
+        float activeScale = readActiveTopbarScale(context);
+        List<View> trackedHeaders;
+        synchronized (BASE_HEADER_HEIGHTS) {
+            trackedHeaders = new ArrayList<>(BASE_HEADER_HEIGHTS.keySet());
+        }
+        for (View headerView : trackedHeaders) {
+            if (headerView != null) {
+                headerView.post(() -> applyHeaderViewHeight(headerView, activeScale));
+            }
+        }
+        for (MatrixSuggestionBarView bar : ACTIVE_BARS.values()) {
+            if (bar != null) {
+                bar.post(() -> bar.setScaleFactor(activeScale));
+            }
+        }
+    }
+
+    private static void handleDisabledState(ViewGroup holderView) {
+        syncHeaderHeight(holderView, GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE);
+        ViewGroup parent = (ViewGroup) holderView.getParent();
+        ViewGroup attachTarget = parent != null ? parent : holderView;
+        MatrixSuggestionBarView existing = ACTIVE_BARS.get(attachTarget);
+        if (existing != null && existing.getVisibility() != View.GONE) {
+            existing.setVisibility(View.GONE);
+            MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+        }
+    }
 
     private GboardMatrixSuggestionsRuntime() {
     }
@@ -115,13 +242,7 @@ public final class GboardMatrixSuggestionsRuntime {
         holderView.post(() -> {
             try {
                 if (!GboardMatrixSuggestionsSettings.readEnabled(holderView.getContext())) {
-                    ViewGroup parent = (ViewGroup) holderView.getParent();
-                    ViewGroup attachTarget = parent != null ? parent : holderView;
-                    MatrixSuggestionBarView existing = ACTIVE_BARS.get(attachTarget);
-                    if (existing != null && existing.getVisibility() != View.GONE) {
-                        existing.setVisibility(View.GONE);
-                        MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
-                    }
+                    handleDisabledState(holderView);
                     return;
                 }
 
@@ -271,13 +392,7 @@ public final class GboardMatrixSuggestionsRuntime {
         holderView.post(() -> {
             try {
                 if (!GboardMatrixSuggestionsSettings.readEnabled(holderView.getContext())) {
-                    ViewGroup parent = (ViewGroup) holderView.getParent();
-                    ViewGroup attachTarget = parent != null ? parent : holderView;
-                    MatrixSuggestionBarView existing = ACTIVE_BARS.get(attachTarget);
-                    if (existing != null && existing.getVisibility() != View.GONE) {
-                        existing.setVisibility(View.GONE);
-                        MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
-                    }
+                    handleDisabledState(holderView);
                     return;
                 }
 
@@ -377,6 +492,16 @@ public final class GboardMatrixSuggestionsRuntime {
     }
 
     private static MatrixSuggestionBarView getOrCreateBarView(ViewGroup holderView) {
+        float activeScale = readActiveTopbarScale(holderView.getContext());
+        syncHeaderHeight(holderView, activeScale);
+        MatrixSuggestionBarView bar = resolveOrCreateBarView(holderView);
+        if (bar != null) {
+            bar.setScaleFactor(activeScale);
+        }
+        return bar;
+    }
+
+    private static MatrixSuggestionBarView resolveOrCreateBarView(ViewGroup holderView) {
         ViewGroup parent = (ViewGroup) holderView.getParent();
         ViewGroup attachTarget = parent != null ? parent : holderView;
 
@@ -441,6 +566,10 @@ public final class GboardMatrixSuggestionsRuntime {
                 }
                 MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                 return;
+            }
+            if (finalBar.getVisibility() != View.VISIBLE
+                    && MatrixGboardReflector.getHolderCandidateCount(holderView) == 0) {
+                MatrixGboardReflector.hideStaleCandidateSlots(holderView);
             }
             if (v.getVisibility() != View.VISIBLE || (right - left <= 0)) {
                 if (isHistorySelectionSessionActive(holderView, finalBar)) {
@@ -842,7 +971,9 @@ public final class GboardMatrixSuggestionsRuntime {
     private static void showJumpToEndArrow(ViewGroup holderView, Runnable onJump) {
         pendingJumpRunnable = onJump;
         if (currentJumpToEndArrow != null && currentJumpToEndArrow.getParent() != null) {
-            currentJumpToEndArrow.updateIconColor();
+            currentJumpToEndArrow.setScaleFactor(
+                readActiveTopbarScale(currentJumpToEndArrow.getContext()));
+        currentJumpToEndArrow.updateIconColor();
             currentJumpToEndArrow.setVisibility(View.VISIBLE);
             currentJumpToEndArrow.bringToFront();
             return;
@@ -864,6 +995,8 @@ public final class GboardMatrixSuggestionsRuntime {
         if (currentJumpToEndArrow == null) {
             currentJumpToEndArrow = new JumpToEndArrowView(context);
         }
+        currentJumpToEndArrow.setScaleFactor(
+                readActiveTopbarScale(currentJumpToEndArrow.getContext()));
         currentJumpToEndArrow.updateIconColor();
         currentJumpToEndArrow.setOnJumpClickListener(() -> {
             if (pendingJumpRunnable != null) {

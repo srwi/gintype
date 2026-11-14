@@ -41,4 +41,44 @@ class GboardMatrixSuggestionsSmaliCompilationTest {
         )
         assertEquals(1, instructions.size)
     }
+
+    @Test
+    fun `verify SoftKeyboardView inflate hook compiles with 3 registers`() {
+        val smaliInflate = RuntimeCallEmitter.invoke(
+            RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_SOFT_KEYBOARD_VIEW_INFLATED,
+            "p0",
+        )
+        assertTrue(smaliInflate.startsWith("invoke-static"))
+
+        val instructions = InlineSmaliCompiler.compile(
+            instructions = smaliInflate,
+            parameters = "",
+            registers = 3,
+            forStaticMethod = false,
+        )
+        assertEquals(1, instructions.size)
+    }
+
+    @Test
+    fun `verify SoftKeyboardView target height scale wrapper compiles with 2 registers`() {
+        val scaleInvoke = RuntimeCallEmitter.invoke(
+            RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_SCALE_HEADER_TARGET_HEIGHT,
+            "p0, v0",
+        )
+        assertTrue(scaleInvoke.startsWith("invoke-static"))
+
+        val instructions = InlineSmaliCompiler.compile(
+            instructions = """
+                invoke-direct {p0}, Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;->gboardPatchesOriginalTargetHeight()I
+                move-result v0
+                $scaleInvoke
+                move-result v0
+                return v0
+            """.trimIndent(),
+            parameters = "",
+            registers = 2,
+            forStaticMethod = false,
+        )
+        assertEquals(5, instructions.size)
+    }
 }

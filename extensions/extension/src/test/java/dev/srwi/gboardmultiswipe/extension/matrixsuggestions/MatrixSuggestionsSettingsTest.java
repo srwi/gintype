@@ -68,6 +68,62 @@ public final class MatrixSuggestionsSettingsTest {
         Assert.assertTrue(MatrixGboardReflector.perceivedLuminance(0xFF845B38) < 140f);
     }
 
+    @Test
+    public void topbarScaleDefaultsAndPersistence() {
+        TestSharedPreferences prefs = new TestSharedPreferences();
+        Assert.assertEquals(
+                GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE,
+                GboardMatrixSuggestionsSettings.readTopbarScale(prefs),
+                0.0001f);
+
+        GboardMatrixSuggestionsSettings.ensureDefaults(prefs);
+        Assert.assertEquals(
+                GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE,
+                GboardMatrixSuggestionsSettings.readTopbarScale(prefs),
+                0.0001f);
+
+        GboardMatrixSuggestionsSettings.writeTopbarScale(prefs, 1.50f);
+        Assert.assertEquals(1.50f, GboardMatrixSuggestionsSettings.readTopbarScale(prefs), 0.0001f);
+
+        // Re-running ensureDefaults must preserve explicit user values.
+        GboardMatrixSuggestionsSettings.ensureDefaults(prefs);
+        Assert.assertEquals(1.50f, GboardMatrixSuggestionsSettings.readTopbarScale(prefs), 0.0001f);
+    }
+
+    @Test
+    public void topbarScaleSanitizesAndClampsOutOfRangeValues() {
+        TestSharedPreferences prefs = new TestSharedPreferences();
+
+        Assert.assertEquals(
+                GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE,
+                GboardMatrixSuggestionsSettings.sanitizeTopbarScale(Float.NaN),
+                0.0001f);
+        Assert.assertEquals(
+                GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE,
+                GboardMatrixSuggestionsSettings.sanitizeTopbarScale(Float.POSITIVE_INFINITY),
+                0.0001f);
+        Assert.assertEquals(
+                GboardMatrixSuggestionsSettings.MIN_TOPBAR_SCALE,
+                GboardMatrixSuggestionsSettings.sanitizeTopbarScale(0.5f),
+                0.0001f);
+        Assert.assertEquals(
+                GboardMatrixSuggestionsSettings.MAX_TOPBAR_SCALE,
+                GboardMatrixSuggestionsSettings.sanitizeTopbarScale(3.5f),
+                0.0001f);
+
+        prefs.values.put(GboardMatrixSuggestionsSettings.PREF_KEY_TOPBAR_SCALE, 2.75f);
+        Assert.assertEquals(
+                GboardMatrixSuggestionsSettings.MAX_TOPBAR_SCALE,
+                GboardMatrixSuggestionsSettings.readTopbarScale(prefs),
+                0.0001f);
+
+        prefs.values.put(GboardMatrixSuggestionsSettings.PREF_KEY_TOPBAR_SCALE, "invalid");
+        Assert.assertEquals(
+                GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE,
+                GboardMatrixSuggestionsSettings.readTopbarScale(prefs),
+                0.0001f);
+    }
+
     private static final class TestSharedPreferences implements SharedPreferences {
         final Map<String, Object> values = new HashMap<>();
 

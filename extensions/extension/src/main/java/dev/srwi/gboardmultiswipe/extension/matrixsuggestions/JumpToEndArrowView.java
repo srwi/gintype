@@ -26,6 +26,7 @@ public class JumpToEndArrowView extends FrameLayout {
     }
 
     private final ImageView iconView;
+    private float scaleFactor = GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE;
     private OnJumpClickListener jumpListener;
 
     public JumpToEndArrowView(Context context) {
@@ -42,8 +43,7 @@ public class JumpToEndArrowView extends FrameLayout {
         iconView = new ImageView(context);
         updateIconColor();
 
-        int sizePx = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 24f, getResources().getDisplayMetrics());
+        int sizePx = computeIconSizePx(scaleFactor);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(sizePx, sizePx, Gravity.CENTER);
         addView(iconView, lp);
 
@@ -53,6 +53,26 @@ public class JumpToEndArrowView extends FrameLayout {
                 jumpListener.onJumpClicked();
             }
         });
+    }
+
+    /** Scale the arrow icon size proportionally to the top bar height scale. */
+    public void setScaleFactor(float scale) {
+        float sanitized = GboardMatrixSuggestionsSettings.sanitizeTopbarScale(scale);
+        if (Math.abs(this.scaleFactor - sanitized) < 0.001f) {
+            return;
+        }
+        this.scaleFactor = sanitized;
+        int sizePx = computeIconSizePx(sanitized);
+        if (iconView.getLayoutParams() != null) {
+            iconView.getLayoutParams().width = sizePx;
+            iconView.getLayoutParams().height = sizePx;
+            iconView.requestLayout();
+        }
+    }
+
+    private int computeIconSizePx(float scale) {
+        return (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 24f * scale, getResources().getDisplayMetrics());
     }
 
     public void setOnJumpClickListener(OnJumpClickListener listener) {

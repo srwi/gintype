@@ -161,6 +161,21 @@
     <string name="gboard_patches_matrix_suggestions_section">
         <translation locale="en">Suggestions &amp; History</translation>
         </string>
+    <string name="gboard_patches_matrix_suggestions_topbar_scale_title">
+        <translation locale="en">Top bar size</translation>
+        </string>
+    <string name="gboard_patches_matrix_suggestions_topbar_scale_summary">
+        <translation locale="en">Adjust vertical height above the keyboard and scale top bar font sizes.</translation>
+        </string>
+    <string name="gboard_patches_matrix_suggestions_topbar_scale_value">
+        <translation locale="en">%.2fx</translation>
+        </string>
+    <string name="gboard_patches_matrix_suggestions_topbar_scale_value_default">
+        <translation locale="en">%.2fx (Default)</translation>
+        </string>
+    <string name="gboard_patches_matrix_suggestions_slider_default">
+        <translation locale="en">Default</translation>
+        </string>
     <string name="gboard_patches_section_settings">
         <translation locale="en">Settings</translation>
         </string>

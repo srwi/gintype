@@ -54,6 +54,29 @@ public class VerticalWordWheelView extends LinearLayout {
     private List<String> alternatives = Collections.emptyList();
     private int selectedIndex = 0;
     private boolean isActiveWord = false;
+    private float scaleFactor = GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE;
+
+    /** Update the top bar scale factor and refresh fonts and spacing if changed. */
+    public void setScaleFactor(float scale) {
+        float sanitized = GboardMatrixSuggestionsSettings.sanitizeTopbarScale(scale);
+        if (Math.abs(this.scaleFactor - sanitized) < 0.001f) {
+            return;
+        }
+        this.scaleFactor = sanitized;
+        applyScaledPadding();
+        updateColors();
+        requestLayout();
+    }
+
+    private void applyScaledPadding() {
+        int padH = dpToPx(3f * scaleFactor);
+        setPadding(padH, 0, padH, 0);
+    }
+
+    private int dpToPx(float dp) {
+        return (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
+    }
 
     private float downX = 0f;
     private float downY = 0f;
@@ -75,9 +98,7 @@ public class VerticalWordWheelView extends LinearLayout {
         setClipChildren(false);
         setClipToPadding(false);
 
-        int padH = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 3f, getResources().getDisplayMetrics());
-        setPadding(padH, 0, padH, 0);
+        applyScaledPadding();
 
         touchSlop = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 12f, getResources().getDisplayMetrics());
@@ -195,14 +216,19 @@ public class VerticalWordWheelView extends LinearLayout {
         int primaryColor = dark ? Color.WHITE : 0xff202124;
         int accentColor = MatrixGboardReflector.resolveNormalAccentColor(getContext(), dark);
 
+        float sideTextSp = 10.2f * scaleFactor;
+        float centerTextSp = 12.0f * scaleFactor;
+        int pillPadH = dpToPx(6f * scaleFactor);
+        int pillPadV = dpToPx(1f * scaleFactor);
+
         if (isActiveWord) {
             topView.setTextColor(primaryColor);
             topView.setAlpha(0.88f);
-            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
+            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, sideTextSp);
 
             centerView.setTextColor(accentColor);
             centerView.setAlpha(1.0f);
-            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.0f);
+            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, centerTextSp);
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
 
             // Active pill background matching the normal keyboard/trail accent
@@ -210,35 +236,27 @@ public class VerticalWordWheelView extends LinearLayout {
             int accentRgb = accentColor & 0x00ffffff;
             int fillColor = ((lightAccent ? 0x2E : 0x1F) << 24) | accentRgb;
             int strokeColor = ((lightAccent ? 0x4D : 0x33) << 24) | accentRgb;
-            centerView.setBackground(createPillDrawable(fillColor, strokeColor, 9f));
-            int padH = (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 6f, getResources().getDisplayMetrics());
-            int padV = (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
-            centerView.setPadding(padH, padV, padH, padV);
+            centerView.setBackground(createPillDrawable(fillColor, strokeColor, 9f * scaleFactor));
+            centerView.setPadding(pillPadH, pillPadV, pillPadH, pillPadV);
 
             bottomView.setTextColor(primaryColor);
             bottomView.setAlpha(0.88f);
-            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
+            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, sideTextSp);
         } else {
             topView.setTextColor(primaryColor);
             topView.setAlpha(0.85f);
-            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
+            topView.setTextSize(TypedValue.COMPLEX_UNIT_SP, sideTextSp);
 
             centerView.setTextColor(primaryColor);
             centerView.setAlpha(1.0f);
-            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.0f);
+            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, centerTextSp);
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
             centerView.setBackground(null);
-            int padH = (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 6f, getResources().getDisplayMetrics());
-            int padV = (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
-            centerView.setPadding(padH, padV, padH, padV);
+            centerView.setPadding(pillPadH, pillPadV, pillPadH, pillPadV);
 
             bottomView.setTextColor(primaryColor);
             bottomView.setAlpha(0.85f);
-            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.2f);
+            bottomView.setTextSize(TypedValue.COMPLEX_UNIT_SP, sideTextSp);
         }
     }
 

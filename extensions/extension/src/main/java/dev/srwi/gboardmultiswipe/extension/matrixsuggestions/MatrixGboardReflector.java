@@ -12,6 +12,7 @@ import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputConnection;
+import android.widget.LinearLayout;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -28,6 +29,63 @@ import java.util.WeakHashMap;
  * updates with renamed obfuscated fields/methods do not break functionality.
  */
 public final class MatrixGboardReflector {
+    /** Identify whether a SoftKeyboardView belongs to Gboard's top header strip. */
+    public static boolean isHeaderSoftKeyboardView(View view) {
+        if (view == null) {
+            return false;
+        }
+        Object tag = view.getTag();
+        if (tag instanceof CharSequence) {
+            String tagText = tag.toString();
+            if (tagText.contains("keyboard-header-area")) {
+                return true;
+            }
+            if (tagText.contains("keyboard-body-area")) {
+                return false;
+            }
+        }
+        if (view.getParent() instanceof View) {
+            String parentName = getResourceEntryNameOrNull((View) view.getParent());
+            if ("keyboard_header_view_holder".equals(parentName)) {
+                return true;
+            }
+            if ("keyboard_body_view_holder".equals(parentName)) {
+                return false;
+            }
+        }
+        return hasDescendantSimpleName(view, "LatinFixedCountCandidatesHolderView", 6);
+    }
+
+    private static String getResourceEntryNameOrNull(View view) {
+        int id = view.getId();
+        if (id == View.NO_ID) {
+            return null;
+        }
+        try {
+            return view.getResources().getResourceEntryName(id);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static boolean hasDescendantSimpleName(View view, String simpleName, int maxDepth) {
+        if (view == null || maxDepth < 0) {
+            return false;
+        }
+        if (simpleName.equals(view.getClass().getSimpleName())) {
+            return true;
+        }
+        if (maxDepth == 0 || !(view instanceof ViewGroup)) {
+            return false;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            if (hasDescendantSimpleName(group.getChildAt(i), simpleName, maxDepth - 1)) {
+                return true;
+            }
+        }
+        return false;
+    }
     private static final String TAG = "MatrixGboardReflector";
 
     private static boolean candidateFieldsLookupAttempted = false;
@@ -533,6 +591,45 @@ public final class MatrixGboardReflector {
     }
 
     /**
+     * Returns the active candidate count stored by LatinFixedCountCandidatesHolderView, or -1 if unknown.
+     */
+    public static int getHolderCandidateCount(ViewGroup holderView) {
+        if (holderView == null) {
+            return -1;
+        }
+        try {
+            Method countMethod = holderView.getClass().getDeclaredMethod("a");
+            if (countMethod.getReturnType() == int.class) {
+                countMethod.setAccessible(true);
+                Object result = countMethod.invoke(holderView);
+                if (result instanceof Integer count) {
+                    return count;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
+    /**
+     * Hides pooled candidate slot views inside holderView when Gboard's resize handler (onSizeChanged)
+     * re-displays stale previous candidates despite candidate count being zero.
+     */
+    public static void hideStaleCandidateSlots(ViewGroup holderView) {
+        if (holderView == null) {
+            return;
+        }
+        for (int i = 0; i < holderView.getChildCount(); i++) {
+            View child = holderView.getChildAt(i);
+            if (child instanceof LinearLayout || child.getClass().getName().contains("SoftKeyView")) {
+                if (child.getVisibility() == View.VISIBLE) {
+                    child.setVisibility(View.GONE);
+                }
+            }
+        }
+    }
+
+    /**
      * Manages header views visibility cleanly without tampering with parent ConstraintLayout.
      * When showMatrixBar is true:
      *   - holderView is set to INVISIBLE (preserves layout measurement while hiding native text and touch)
@@ -584,6 +681,9 @@ public final class MatrixGboardReflector {
                         holderView.setAlpha(0.0f);
                         holderView.setVisibility(View.GONE);
                     } else {
+                        if (getHolderCandidateCount(holderView) == 0) {
+                            hideStaleCandidateSlots(holderView);
+                        }
                         holderView.setAlpha(1.0f);
                         holderView.setVisibility(View.VISIBLE);
                     }

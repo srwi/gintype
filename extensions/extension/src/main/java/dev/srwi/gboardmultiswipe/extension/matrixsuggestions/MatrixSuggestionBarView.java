@@ -63,6 +63,36 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
     private final List<VerticalWordWheelView> historyWheels = new ArrayList<>();
     private final List<String> displayedColumnWords = new ArrayList<>();
     private int selectedHistoryIndex = -1;
+    private float scaleFactor = GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE;
+
+    /** Update the scale factor for all word wheels and column dividers. */
+    public void setScaleFactor(float scale) {
+        float sanitized = GboardMatrixSuggestionsSettings.sanitizeTopbarScale(scale);
+        if (Math.abs(this.scaleFactor - sanitized) < 0.001f) {
+            return;
+        }
+        this.scaleFactor = sanitized;
+        currentWheelView.setScaleFactor(sanitized);
+        for (VerticalWordWheelView wheel : historyWheels) {
+            wheel.setScaleFactor(sanitized);
+        }
+        int divMargin = dpToPx(2f * sanitized);
+        int divMarginV = dpToPx(4f * sanitized);
+        for (int i = 0; i < contentLayout.getChildCount(); i++) {
+            android.view.View child = contentLayout.getChildAt(i);
+            if (!(child instanceof VerticalWordWheelView)
+                    && child.getLayoutParams() instanceof LinearLayout.LayoutParams) {
+                LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) child.getLayoutParams();
+                lp.setMargins(divMargin, divMarginV, divMargin, divMarginV);
+                child.setLayoutParams(lp);
+            }
+        }
+    }
+
+    private int dpToPx(float dp) {
+        return (int) TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
+    }
 
     private ValueAnimator activeEntranceAnimator;
     private ViewTreeObserver.OnPreDrawListener pendingPreDrawListener;
@@ -209,12 +239,9 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
             return;
         }
 
-        int divWidth = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
-        int divMargin = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 2f, getResources().getDisplayMetrics());
-        int divMarginV = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
+        int divWidth = dpToPx(1f);
+        int divMargin = dpToPx(2f * scaleFactor);
+        int divMarginV = dpToPx(4f * scaleFactor);
         boolean dark = (getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         int dividerColor = dark ? Color.argb(45, 255, 255, 255) : Color.argb(35, 0, 0, 0);
@@ -224,6 +251,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
             final MatrixSentenceBuffer.WordEntry entry = history.get(i);
 
             VerticalWordWheelView historyWheel = new VerticalWordWheelView(getContext());
+            historyWheel.setScaleFactor(scaleFactor);
             historyWheel.setAlternatives(entry.alternatives, entry.selectedIndex);
             historyWheel.setIsActiveWord(false);
             historyWheel.setAlpha(1.0f);

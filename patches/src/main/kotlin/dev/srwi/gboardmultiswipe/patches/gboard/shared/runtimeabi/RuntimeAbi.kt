@@ -3,6 +3,8 @@ package dev.srwi.gboardmultiswipe.patches.gboard.shared.runtimeabi
 internal enum class RuntimeCallId(internal val encodedAbi: String) {
     MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_UPDATED("Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onCandidatesUpdated(Ljava/lang/Object;Ljava/lang/Object;)V"),
     MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED("Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onCandidatesCleared(Ljava/lang/Object;)V"),
+    MATRIX_SUGGESTIONS_RUNTIME_ON_SOFT_KEYBOARD_VIEW_INFLATED("Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onSoftKeyboardViewInflated(Ljava/lang/Object;)V"),
+    MATRIX_SUGGESTIONS_RUNTIME_SCALE_HEADER_TARGET_HEIGHT("Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->scaleHeaderTargetHeight(Ljava/lang/Object;I)I"),
     NINTYPE_RUNTIME_ON_GESTURE_EVENT_ENTRY("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
     NINTYPE_RUNTIME_SHOULD_START_GESTURE("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->shouldStartGesture(Ljava/lang/Object;Z)Z"),
     NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_DISPATCH("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->shouldInterceptGestureDispatch(Ljava/lang/Object;)Z"),
