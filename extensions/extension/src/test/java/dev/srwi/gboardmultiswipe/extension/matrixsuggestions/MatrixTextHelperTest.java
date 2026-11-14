@@ -136,6 +136,41 @@ public final class MatrixTextHelperTest {
     }
 
     @Test
+    public void newWordEntranceAnimationCalculations() {
+        // First word or incremental word addition should animate in; bulk initial population (>1 from 0),
+        // same-count refreshes, and deletions should not.
+        Assert.assertTrue(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(0, 1));
+        Assert.assertTrue(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(1, 2));
+        Assert.assertTrue(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(5, 6));
+        Assert.assertFalse(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(0, 4));
+        Assert.assertFalse(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(3, 3));
+        Assert.assertFalse(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(3, 2));
+
+        // First word enters by its full width; subsequent words enter by delta width
+        Assert.assertEquals(180f, MatrixSuggestionBarView.computeEntranceTranslationX(0, 0f, 180, 1080), 0.01f);
+        Assert.assertEquals(160f, MatrixSuggestionBarView.computeEntranceTranslationX(180, 0f, 340, 1080), 0.01f);
+        // Active in-flight translation accumulates seamlessly if another word arrives mid-animation
+        Assert.assertEquals(210f, MatrixSuggestionBarView.computeEntranceTranslationX(340, 50f, 500, 1080), 0.01f);
+        // Clamped to barWidth
+        Assert.assertEquals(1080f, MatrixSuggestionBarView.computeEntranceTranslationX(200, 0f, 1500, 1080), 0.01f);
+
+        // Sliding-window cap at 15+ words: count stays 16 -> 16, but window shifted left by 1 word
+        List<String> prev16 = Arrays.asList(
+                "ab", "einer", "gewissen", "Satzlaenge", "faengt", "die", "Animation", "an",
+                "nicht", "mehr", "zu", "passieren.", "die", "Woerter", "erscheinen", "dann");
+        List<String> next16Shifted = Arrays.asList(
+                "einer", "gewissen", "Satzlaenge", "faengt", "die", "Animation", "an", "nicht",
+                "mehr", "zu", "passieren.", "die", "Woerter", "erscheinen", "dann", "wieder");
+        List<String> prev16EditedInPlace = Arrays.asList(
+                "ab", "einer", "gewissen", "Satzlaenge", "faengt", "die", "Animation", "an",
+                "nicht", "mehr", "zu", "passieren.", "die", "Woerter", "erscheinen", "denn");
+        Assert.assertTrue(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(prev16, next16Shifted));
+        Assert.assertFalse(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(prev16, prev16EditedInPlace));
+        // Deleting backwards (shift right) must not animate as new word entrance
+        Assert.assertFalse(MatrixSuggestionBarView.shouldAnimateNewWordEntrance(next16Shifted, prev16));
+    }
+
+    @Test
     public void findHistoryWordPositionWithDuplicates() {
         // Text with three identical words: "toggles toggles toggles"
         String text = "toggles toggles toggles";

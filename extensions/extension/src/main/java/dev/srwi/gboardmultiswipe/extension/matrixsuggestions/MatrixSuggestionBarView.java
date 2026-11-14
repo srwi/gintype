@@ -1,5 +1,8 @@
 package dev.srwi.gboardmultiswipe.extension.matrixsuggestions;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -10,10 +13,14 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import android.view.ViewTreeObserver;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -49,10 +56,19 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         void onNavigateWord(int direction);
     }
 
+    private static final long ENTRANCE_ANIM_DURATION_MS = 250L;
+
     private final LinearLayout contentLayout;
     private final VerticalWordWheelView currentWheelView;
-    private final List<VerticalWordWheelView> historyWheels = new java.util.ArrayList<>();
+    private final List<VerticalWordWheelView> historyWheels = new ArrayList<>();
+    private final List<String> displayedColumnWords = new ArrayList<>();
     private int selectedHistoryIndex = -1;
+
+    private ValueAnimator activeEntranceAnimator;
+    private ViewTreeObserver.OnPreDrawListener pendingPreDrawListener;
+    private boolean pendingEntranceAnimation = false;
+    private int pendingEntrancePrevWidth = 0;
+    private boolean pendingEntranceUseNewestColOnly = false;
 
     private OnWordCursorNavigateCallback wordCursorNavigateCallback;
     private float navDownX = 0f;
@@ -66,7 +82,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         super(context);
         setHorizontalScrollBarEnabled(false);
         setFillViewport(true);
-        setClipChildren(false);
+        setClipChildren(true);
         setClipToPadding(false);
 
         navTouchSlopPx = TypedValue.applyDimension(
@@ -109,65 +125,21 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                              OnActiveWordSwapCallback onActiveSwap,
                              OnHistoryWordReplaceCallback onHistoryReplace,
                              OnHistoryWordClickCallback onHistoryClick) {
+        final boolean wasVisible = (getVisibility() == View.VISIBLE);
+        final List<String> prevWords = wasVisible
+                ? new ArrayList<>(displayedColumnWords)
+                : Collections.emptyList();
+        final int prevContentWidth = wasVisible ? getChildrenTotalWidth() : 0;
+
         contentLayout.removeAllViews();
         historyWheels.clear();
         selectedHistoryIndex = -1;
 
-        int divWidth = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
-        int divMargin = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 2f, getResources().getDisplayMetrics());
-        int divMarginV = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
-        boolean dark = (getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-        int dividerColor = dark ? Color.argb(45, 255, 255, 255) : Color.argb(35, 0, 0, 0);
-
-        // 1. Add historical sentence columns (from older to newer, left of current word)
-        if (history != null && !history.isEmpty()) {
-            for (int i = 0; i < history.size(); i++) {
-                final int historyColIndex = i;
-                final MatrixSentenceBuffer.WordEntry entry = history.get(i);
-
-                VerticalWordWheelView historyWheel = new VerticalWordWheelView(getContext());
-                historyWheel.setAlternatives(entry.alternatives, entry.selectedIndex);
-                historyWheel.setIsActiveWord(false);
-                historyWheel.setAlpha(1.0f);
-
-                // Tapping anywhere in the history column marks/selects that word in text field
-                historyWheel.setOnCenterClickListener((idx, word) -> {
-                    selectHistoryWord(historyColIndex);
-                    if (onHistoryClick != null) {
-                        onHistoryClick.onHistoryWordClicked(historyColIndex, word);
-                    }
-                });
-
-                // Vertical flick swaps that word's alternative
-                historyWheel.setOnWordActionListener((newIndex, newWord) -> {
-                    String oldWord = entry.getSelectedWord();
-                    entry.selectedIndex = newIndex;
-                    entry.committedWord = newWord;
-                    if (onHistoryReplace != null && oldWord != null && !oldWord.equals(newWord)) {
-                        onHistoryReplace.onHistoryWordReplaced(historyColIndex, oldWord, newWord);
-                    }
-                });
-
-                historyWheels.add(historyWheel);
-                contentLayout.addView(historyWheel, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
-
-                // Vertical separator line
-                View divider = new View(getContext());
-                divider.setBackgroundColor(dividerColor);
-                LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
-                        divWidth, ViewGroup.LayoutParams.MATCH_PARENT);
-                divParams.setMargins(divMargin, divMarginV, divMargin, divMarginV);
-                contentLayout.addView(divider, divParams);
-            }
-        }
+        boolean hasCurrent = (currentAlternatives != null && !currentAlternatives.isEmpty());
+        populateHistoryColumns(history, hasCurrent, onHistoryReplace, onHistoryClick);
 
         // 2. Add current active candidate wheel at the RIGHT edge
-        if (currentAlternatives != null && !currentAlternatives.isEmpty()) {
+        if (hasCurrent) {
             currentWheelView.setAlpha(1.0f);
             currentWheelView.setIsActiveWord(true);
             currentWheelView.setAlternatives(currentAlternatives, preferredSelected);
@@ -190,17 +162,10 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
 
-        // Auto-scroll all the way to the right so active word is docked on the right edge
-        post(() -> {
-            if (selectedHistoryIndex < 0) {
-                fullScroll(View.FOCUS_RIGHT);
-            }
-        });
-        postDelayed(() -> {
-            if (selectedHistoryIndex < 0) {
-                fullScroll(View.FOCUS_RIGHT);
-            }
-        }, 30);
+        List<String> newWords = collectColumnWords(history, hasCurrent ? currentAlternatives : null, preferredSelected);
+        displayedColumnWords.clear();
+        displayedColumnWords.addAll(newWords);
+        scheduleRightDockPositioning(prevWords, prevContentWidth, newWords);
     }
 
     public void updateHistoryOnly(List<MatrixSentenceBuffer.WordEntry> history,
@@ -211,12 +176,36 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
     public void updateHistoryOnly(List<MatrixSentenceBuffer.WordEntry> history,
                                   OnHistoryWordReplaceCallback onHistoryReplace,
                                   OnHistoryWordClickCallback onHistoryClick) {
+        final boolean wasVisible = (getVisibility() == View.VISIBLE);
+        final List<String> prevWords = wasVisible
+                ? new ArrayList<>(displayedColumnWords)
+                : Collections.emptyList();
+        final int prevContentWidth = wasVisible ? getChildrenTotalWidth() : 0;
+
         contentLayout.removeAllViews();
         historyWheels.clear();
         selectedHistoryIndex = -1;
 
         if (history == null || history.isEmpty()) {
+            displayedColumnWords.clear();
+            cancelEntranceAnimation();
             setVisibility(View.GONE);
+            return;
+        }
+
+        populateHistoryColumns(history, false, onHistoryReplace, onHistoryClick);
+        List<String> newWords = collectColumnWords(history, null, 0);
+        displayedColumnWords.clear();
+        displayedColumnWords.addAll(newWords);
+        setVisibility(View.VISIBLE);
+        scheduleRightDockPositioning(prevWords, prevContentWidth, newWords);
+    }
+
+    private void populateHistoryColumns(List<MatrixSentenceBuffer.WordEntry> history,
+                                        boolean trailingDivider,
+                                        OnHistoryWordReplaceCallback onHistoryReplace,
+                                        OnHistoryWordClickCallback onHistoryClick) {
+        if (history == null || history.isEmpty()) {
             return;
         }
 
@@ -239,6 +228,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
             historyWheel.setIsActiveWord(false);
             historyWheel.setAlpha(1.0f);
 
+            // Tapping anywhere in the history column marks/selects that word in text field
             historyWheel.setOnCenterClickListener((idx, word) -> {
                 selectHistoryWord(historyColIndex);
                 if (onHistoryClick != null) {
@@ -246,6 +236,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 }
             });
 
+            // Vertical flick swaps that word's alternative
             historyWheel.setOnWordActionListener((newIndex, newWord) -> {
                 String oldWord = entry.getSelectedWord();
                 entry.selectedIndex = newIndex;
@@ -259,7 +250,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
             contentLayout.addView(historyWheel, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-            if (i < history.size() - 1) {
+            if (i < history.size() - 1 || trailingDivider) {
                 View divider = new View(getContext());
                 divider.setBackgroundColor(dividerColor);
                 LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
@@ -268,18 +259,245 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
                 contentLayout.addView(divider, divParams);
             }
         }
+    }
 
-        setVisibility(View.VISIBLE);
-        post(() -> {
-            if (selectedHistoryIndex < 0) {
-                fullScroll(View.FOCUS_RIGHT);
+    private int getDisplayedColumnCount() {
+        return historyWheels.size() + (currentWheelView.getParent() == contentLayout ? 1 : 0);
+    }
+
+    private int getChildrenTotalWidth() {
+        int count = contentLayout.getChildCount();
+        if (count == 0) {
+            return 0;
+        }
+        View first = contentLayout.getChildAt(0);
+        View last = contentLayout.getChildAt(count - 1);
+        int span = last.getRight() - first.getLeft();
+        if (span > 0) {
+            return span;
+        }
+        int total = 0;
+        for (int i = 0; i < count; i++) {
+            View child = contentLayout.getChildAt(i);
+            total += child.getMeasuredWidth();
+            if (child.getLayoutParams() instanceof ViewGroup.MarginLayoutParams mlp) {
+                total += mlp.leftMargin + mlp.rightMargin;
             }
-        });
-        postDelayed(() -> {
-            if (selectedHistoryIndex < 0) {
-                fullScroll(View.FOCUS_RIGHT);
+        }
+        return total;
+    }
+
+    private int getNewestColumnSpanWidth() {
+        int count = contentLayout.getChildCount();
+        if (count == 0) {
+            return 0;
+        }
+        View last = contentLayout.getChildAt(count - 1);
+        if (count >= 3) {
+            View prevCol = contentLayout.getChildAt(count - 3);
+            int span = last.getRight() - prevCol.getRight();
+            if (span > 0) {
+                return span;
             }
-        }, 30);
+        }
+        return last.getWidth();
+    }
+
+    private static List<String> collectColumnWords(
+            List<MatrixSentenceBuffer.WordEntry> history,
+            List<String> currentAlternatives,
+            int preferredSelected
+    ) {
+        List<String> words = new ArrayList<>();
+        if (history != null) {
+            for (MatrixSentenceBuffer.WordEntry entry : history) {
+                String w = entry.getSelectedWord();
+                words.add(w != null ? w : (entry.committedWord != null ? entry.committedWord : ""));
+            }
+        }
+        if (currentAlternatives != null && !currentAlternatives.isEmpty()) {
+            int sel = (preferredSelected >= 0 && preferredSelected < currentAlternatives.size())
+                    ? preferredSelected
+                    : 0;
+            String cur = currentAlternatives.get(sel);
+            words.add(cur != null ? cur : "");
+        }
+        return words;
+    }
+
+    private static boolean equalsIgnoreCaseSafe(String a, String b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.equalsIgnoreCase(b);
+    }
+
+    static boolean isSlidingWindowShift(List<String> prevWords, List<String> newWords) {
+        if (prevWords == null || newWords == null) {
+            return false;
+        }
+        if (prevWords.size() != newWords.size() || newWords.size() < 15) {
+            return false;
+        }
+        int n = newWords.size();
+        boolean samePrefixInPlace = true;
+        for (int i = 0; i <= n - 3; i++) {
+            if (!equalsIgnoreCaseSafe(newWords.get(i), prevWords.get(i + 1))) {
+                return false;
+            }
+            if (!equalsIgnoreCaseSafe(newWords.get(i), prevWords.get(i))) {
+                samePrefixInPlace = false;
+            }
+        }
+        return !samePrefixInPlace || !equalsIgnoreCaseSafe(newWords.get(n - 1), prevWords.get(n - 1));
+    }
+
+    static boolean shouldAnimateNewWordEntrance(List<String> prevWords, List<String> newWords) {
+        int prevCount = prevWords != null ? prevWords.size() : 0;
+        int newCount = newWords != null ? newWords.size() : 0;
+        if (shouldAnimateNewWordEntrance(prevCount, newCount)) {
+            return true;
+        }
+        return isSlidingWindowShift(prevWords, newWords);
+    }
+
+    static boolean shouldAnimateNewWordEntrance(int prevVisibleColCount, int newColCount) {
+        return newColCount > prevVisibleColCount && (prevVisibleColCount > 0 || newColCount == 1);
+    }
+
+    static float computeEntranceTranslationX(
+            int prevVisibleContentWidth,
+            float prevTranslationX,
+            int newContentWidth,
+            int barWidth
+    ) {
+        if (barWidth <= 0 || newContentWidth <= 0) {
+            return 0f;
+        }
+        float addedWidth = (prevVisibleContentWidth > 0 && newContentWidth > prevVisibleContentWidth)
+                ? (newContentWidth - prevVisibleContentWidth)
+                : newContentWidth;
+        float totalShift = addedWidth + Math.max(0f, prevTranslationX);
+        return Math.min((float) barWidth, Math.max(0f, totalShift));
+    }
+
+    private void cancelEntranceAnimation() {
+        clearPendingPreDrawListener();
+        pendingEntranceAnimation = false;
+        pendingEntrancePrevWidth = 0;
+        pendingEntranceUseNewestColOnly = false;
+        if (activeEntranceAnimator != null) {
+            activeEntranceAnimator.cancel();
+            activeEntranceAnimator = null;
+        }
+        contentLayout.setTranslationX(0f);
+    }
+
+    private void clearPendingPreDrawListener() {
+        if (pendingPreDrawListener != null) {
+            ViewTreeObserver vto = getViewTreeObserver();
+            if (vto != null && vto.isAlive()) {
+                vto.removeOnPreDrawListener(pendingPreDrawListener);
+            }
+            pendingPreDrawListener = null;
+        }
+    }
+
+    private void scheduleRightDockPositioning(List<String> prevWords, int prevContentWidth, List<String> newWords) {
+        clearPendingPreDrawListener();
+        int prevColCount = prevWords != null ? prevWords.size() : 0;
+        int newColCount = newWords != null ? newWords.size() : 0;
+        boolean windowShift = isSlidingWindowShift(prevWords, newWords);
+
+        if (shouldAnimateNewWordEntrance(prevWords, newWords)) {
+            if (!pendingEntranceAnimation) {
+                pendingEntrancePrevWidth = prevContentWidth;
+                pendingEntranceUseNewestColOnly = windowShift;
+            } else if (windowShift) {
+                pendingEntranceUseNewestColOnly = true;
+            }
+            pendingEntranceAnimation = true;
+        } else if (newColCount < prevColCount || newColCount == 0) {
+            cancelEntranceAnimation();
+        }
+
+        ViewTreeObserver vto = getViewTreeObserver();
+        if (vto == null || !vto.isAlive()) {
+            return;
+        }
+        pendingPreDrawListener = new ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                if (selectedHistoryIndex >= 0 || getVisibility() != View.VISIBLE) {
+                    clearPendingPreDrawListener();
+                    pendingEntranceAnimation = false;
+                    pendingEntranceUseNewestColOnly = false;
+                    return true;
+                }
+                int barWidth = getWidth();
+                int containerWidth = contentLayout.getWidth();
+                int newChildrenWidth = getChildrenTotalWidth();
+                if (barWidth <= 0 || containerWidth <= 0 || newChildrenWidth <= 0) {
+                    return true;
+                }
+                clearPendingPreDrawListener();
+
+                int targetScrollX = Math.max(0, containerWidth - barWidth);
+                scrollTo(targetScrollX, 0);
+
+                if (pendingEntranceAnimation) {
+                    int prevWidth = pendingEntrancePrevWidth;
+                    boolean useNewestOnly = pendingEntranceUseNewestColOnly;
+                    pendingEntranceAnimation = false;
+                    pendingEntrancePrevWidth = 0;
+                    pendingEntranceUseNewestColOnly = false;
+
+                    float currentTranslation = contentLayout.getTranslationX();
+                    if (activeEntranceAnimator != null) {
+                        activeEntranceAnimator.cancel();
+                        activeEntranceAnimator = null;
+                    }
+                    float startTranslation = useNewestOnly
+                            ? Math.min((float) barWidth, Math.max(0f, getNewestColumnSpanWidth() + Math.max(0f, currentTranslation)))
+                            : computeEntranceTranslationX(prevWidth, currentTranslation, newChildrenWidth, barWidth);
+                    if (startTranslation > 1f) {
+                        contentLayout.setTranslationX(startTranslation);
+                        activeEntranceAnimator = ValueAnimator.ofFloat(startTranslation, 0f);
+                        activeEntranceAnimator.setDuration(ENTRANCE_ANIM_DURATION_MS);
+                        activeEntranceAnimator.setInterpolator(new DecelerateInterpolator(1.5f));
+                        activeEntranceAnimator.addUpdateListener(anim ->
+                                contentLayout.setTranslationX((Float) anim.getAnimatedValue()));
+                        activeEntranceAnimator.addListener(new AnimatorListenerAdapter() {
+                            @Override
+                            public void onAnimationEnd(Animator animation) {
+                                contentLayout.setTranslationX(0f);
+                                activeEntranceAnimator = null;
+                            }
+
+                            @Override
+                            public void onAnimationCancel(Animator animation) {
+                                activeEntranceAnimator = null;
+                            }
+                        });
+                        activeEntranceAnimator.start();
+                    } else {
+                        contentLayout.setTranslationX(0f);
+                    }
+                } else if (activeEntranceAnimator == null) {
+                    contentLayout.setTranslationX(0f);
+                }
+                return true;
+            }
+        };
+        vto.addOnPreDrawListener(pendingPreDrawListener);
+    }
+
+    @Override
+    public void setVisibility(int visibility) {
+        if (visibility != View.VISIBLE && getVisibility() == View.VISIBLE) {
+            displayedColumnWords.clear();
+            cancelEntranceAnimation();
+        }
+        super.setVisibility(visibility);
     }
 
     public void selectHistoryWord(int historyIndex) {
@@ -297,6 +515,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
     }
 
     public void centerOnColumn(int columnIndex) {
+        cancelEntranceAnimation();
         post(() -> {
             int barWidth = getWidth();
             if (barWidth <= 0) return;
