@@ -227,8 +227,12 @@ public final class MatrixTextHelper {
     public static boolean isInputEmpty(InputConnection ic) {
         if (ic == null) return true;
         try {
-            CharSequence cs = ic.getTextBeforeCursor(10, 0);
-            return cs == null || cs.length() == 0;
+            CharSequence before = ic.getTextBeforeCursor(10, 0);
+            if (before != null && before.length() > 0) return false;
+            CharSequence sel = ic.getSelectedText(0);
+            if (sel != null && sel.length() > 0) return false;
+            CharSequence after = ic.getTextAfterCursor(10, 0);
+            return after == null || after.length() == 0;
         } catch (Throwable ignored) {
             return false;
         }
@@ -242,6 +246,8 @@ public final class MatrixTextHelper {
     public static boolean isSentenceEnded(InputConnection ic) {
         if (ic == null) return false;
         try {
+            CharSequence sel = ic.getSelectedText(0);
+            if (sel != null && sel.length() > 0) return false;
             CharSequence cs = ic.getTextBeforeCursor(20, 0);
             return isSentenceEnded(cs);
         } catch (Throwable ignored) {
@@ -484,9 +490,19 @@ public final class MatrixTextHelper {
             }
 
             int deleteLen = text.length() - start;
+            int deleteAfter = 0;
+            if (end == text.length()) {
+                CharSequence csAfter = ic.getTextAfterCursor(100, 0);
+                if (csAfter != null && csAfter.length() > 0) {
+                    String after = csAfter.toString();
+                    while (deleteAfter < after.length() && !isBoundaryChar(after, deleteAfter)) {
+                        deleteAfter++;
+                    }
+                }
+            }
             if (deleteLen > 0 && deleteLen <= text.length()) {
                 ic.beginBatchEdit();
-                ic.deleteSurroundingText(deleteLen, 0);
+                ic.deleteSurroundingText(deleteLen, deleteAfter);
                 ic.commitText(newWord, 1);
                 ic.endBatchEdit();
                 logI(TAG, "replaceActiveWordInTextField: cleanly replaced '" + oldWord + "' with '" + newWord + "' (no space)");
@@ -496,6 +512,18 @@ public final class MatrixTextHelper {
             logE(TAG, "replaceActiveWordInTextField failed", t);
         }
         return false;
+    }
+
+    public static boolean hasSelection(View view) {
+        if (view == null) return false;
+        InputConnection ic = getInputConnection(view);
+        if (ic == null) return false;
+        try {
+            CharSequence sel = ic.getSelectedText(0);
+            return sel != null && sel.length() > 0;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     public static boolean isCursorAtEnd(View view) {
@@ -514,6 +542,18 @@ public final class MatrixTextHelper {
         }
     }
 
+    private static int computeDocOffset(InputConnection ic, String before) {
+        try {
+            ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+            if (et != null && et.selectionStart >= 0 && et.selectionEnd >= 0) {
+                int selMin = Math.min(et.selectionStart, et.selectionEnd);
+                return selMin - before.length();
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
     public static boolean selectHistoryWordInTextField(View view, MatrixSentenceBuffer buffer, int historyColIndex, String word) {
         InputConnection ic = getInputConnection(view);
         return selectHistoryWordInTextField(ic, buffer, historyColIndex, word);
@@ -522,6 +562,8 @@ public final class MatrixTextHelper {
     public static boolean selectHistoryWordInTextField(InputConnection ic, MatrixSentenceBuffer buffer, int historyColIndex, String word) {
         if (ic == null || buffer == null || word == null) return false;
         try {
+            ic.finishComposingText();
+
             CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
             CharSequence csSel = ic.getSelectedText(0);
             CharSequence csAfter = ic.getTextAfterCursor(2000, 0);
@@ -534,17 +576,10 @@ public final class MatrixTextHelper {
             if (text.isEmpty()) return false;
 
             List<MatrixSentenceBuffer.WordEntry> entries = buffer.getEntries();
-            int[] pos = findHistoryWordPosition(text, entries, historyColIndex, word);
+            int[] pos = findHistoryWordPositionInParagraph(text, before.length(), entries, historyColIndex, word);
 
             if (pos != null && pos[0] >= 0 && pos[1] <= text.length() && pos[0] < pos[1]) {
-                int docOffset = 0;
-                try {
-                    ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
-                    if (et != null && et.selectionStart >= 0) {
-                        docOffset = et.selectionStart - before.length();
-                    }
-                } catch (Throwable ignored) {
-                }
+                int docOffset = computeDocOffset(ic, before);
 
                 int selStart = Math.max(0, docOffset + pos[0]);
                 int selEnd = Math.max(0, docOffset + pos[1]);
@@ -557,6 +592,137 @@ public final class MatrixTextHelper {
             logE(TAG, "selectHistoryWordInTextField failed", t);
         }
         return false;
+    }
+
+    public static boolean moveCursorByWord(View view, int direction) {
+        InputConnection ic = getInputConnection(view);
+        return moveCursorByWord(ic, direction);
+    }
+
+    public static boolean moveCursorByWord(InputConnection ic, int direction) {
+        if (ic == null || direction == 0) return false;
+        try {
+            ic.finishComposingText();
+
+            CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
+            CharSequence csSel = ic.getSelectedText(0);
+            CharSequence csAfter = ic.getTextAfterCursor(2000, 0);
+
+            String before = csBefore != null ? csBefore.toString() : "";
+            String sel = csSel != null ? csSel.toString() : "";
+            String after = csAfter != null ? csAfter.toString() : "";
+
+            String fullText = before + sel + after;
+            if (fullText.isEmpty()) return false;
+
+            int docOffset = computeDocOffset(ic, before);
+            int pos = direction < 0 ? before.length() : before.length() + sel.length();
+            int len = fullText.length();
+
+            if (direction < 0) {
+                if (pos <= 0) return false;
+                int end = pos;
+                while (end > 0 && isBoundaryChar(fullText, end - 1)) {
+                    end--;
+                }
+                if (end <= 0) return false;
+                int start = end;
+                while (start > 0 && !isBoundaryChar(fullText, start - 1)) {
+                    start--;
+                }
+                while (end < len && !isBoundaryChar(fullText, end)) {
+                    end++;
+                }
+                ic.setSelection(Math.max(0, docOffset + start), Math.max(0, docOffset + end));
+                return true;
+            } else {
+                if (pos >= len) return false;
+                int start = pos;
+                while (start < len && isBoundaryChar(fullText, start)) {
+                    start++;
+                }
+                if (start >= len) {
+                    int endOffset = Math.max(0, docOffset + len);
+                    ic.setSelection(endOffset, endOffset);
+                    return true;
+                }
+                int end = start;
+                while (end < len && !isBoundaryChar(fullText, end)) {
+                    end++;
+                }
+                while (start > 0 && !isBoundaryChar(fullText, start - 1)) {
+                    start--;
+                }
+                ic.setSelection(Math.max(0, docOffset + start), Math.max(0, docOffset + end));
+                return true;
+            }
+        } catch (Throwable t) {
+            logE(TAG, "moveCursorByWord error", t);
+            return false;
+        }
+    }
+
+    public static int getWordIndexAtCursor(View view, MatrixSentenceBuffer buffer) {
+        InputConnection ic = getInputConnection(view);
+        return getWordIndexAtCursor(ic, buffer);
+    }
+
+    public static int getWordIndexAtCursor(InputConnection ic, MatrixSentenceBuffer buffer) {
+        if (ic == null || buffer == null) return -1;
+        try {
+            CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
+            CharSequence csSel = ic.getSelectedText(0);
+            CharSequence csAfter = ic.getTextAfterCursor(2000, 0);
+
+            String before = csBefore != null ? csBefore.toString() : "";
+            String sel = csSel != null ? csSel.toString() : "";
+            String after = csAfter != null ? csAfter.toString() : "";
+
+            String fullText = before + sel + after;
+            if (fullText.isEmpty()) return -1;
+
+            int cursorOffset = before.length();
+            int paraStart = 0;
+            for (int i = cursorOffset - 1; i >= 0; i--) {
+                char c = fullText.charAt(i);
+                if (c == '\n' || c == '\r') {
+                    paraStart = i + 1;
+                    break;
+                }
+            }
+            int paraEnd = fullText.length();
+            for (int i = cursorOffset; i < fullText.length(); i++) {
+                char c = fullText.charAt(i);
+                if (c == '\n' || c == '\r') {
+                    paraEnd = i;
+                    break;
+                }
+            }
+
+            String para = fullText.substring(paraStart, paraEnd);
+            int cursorInPara = cursorOffset - paraStart;
+            List<int[]> wordSpans = collectWordSpans(para);
+            if (wordSpans.isEmpty()) return -1;
+
+            int spanIdx = wordSpans.size() - 1;
+            for (int i = 0; i < wordSpans.size(); i++) {
+                int[] span = wordSpans.get(i);
+                if (cursorInPara <= span[1]) {
+                    spanIdx = i;
+                    break;
+                }
+            }
+
+            List<MatrixSentenceBuffer.WordEntry> history = buffer.getEntries();
+            int alignOffset = findHistoryAlignmentOffset(para, wordSpans, history);
+            if (alignOffset < 0) {
+                alignOffset = Math.max(0, wordSpans.size() - history.size());
+            }
+            return Math.max(0, spanIdx - alignOffset);
+        } catch (Throwable t) {
+            logE(TAG, "getWordIndexAtCursor error", t);
+            return -1;
+        }
     }
 
     public static void jumpToEndOfTextField(View view) {
@@ -619,23 +785,18 @@ public final class MatrixTextHelper {
             if (fullText.isEmpty()) return false;
 
             List<MatrixSentenceBuffer.WordEntry> entries = buffer.getEntries();
-            int[] pos = findHistoryWordPosition(fullText, entries, historyColIndex, oldWord);
+            int[] pos = findHistoryWordPositionInParagraph(fullText, before.length(), entries, historyColIndex, oldWord);
 
             if (pos != null && pos[0] >= 0 && pos[1] <= fullText.length() && pos[0] < pos[1]) {
                 TokenParts newParts = parseTokenParts(newWord);
                 String cleanNewWord = newParts.hasWord() ? newParts.word : newWord;
 
-                int docOffset = 0;
-                try {
-                    ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
-                    if (et != null && et.selectionStart >= 0) {
-                        docOffset = et.selectionStart - before.length();
-                    }
-                } catch (Throwable ignored) {
-                }
+                int docOffset = computeDocOffset(ic, before);
 
                 int selStart = Math.max(0, docOffset + pos[0]);
                 int selEnd = Math.max(0, docOffset + pos[1]);
+                int origSelStart = Math.max(0, docOffset + before.length());
+                int origSelEnd = Math.max(0, docOffset + before.length() + sel.length());
 
                 boolean wasCursorAtEnd = (after.isEmpty() && sel.isEmpty());
                 boolean wasTargetSelected = (!sel.isEmpty() && before.length() == pos[0] && (before.length() + sel.length()) == pos[1]);
@@ -649,6 +810,16 @@ public final class MatrixTextHelper {
                     ic.setSelection(newDocLen, newDocLen);
                 } else if (wasTargetSelected) {
                     ic.setSelection(selStart, selStart + cleanNewWord.length());
+                } else {
+                    int delta = cleanNewWord.length() - (pos[1] - pos[0]);
+                    if (origSelStart >= selEnd) {
+                        ic.setSelection(origSelStart + delta, origSelEnd + delta);
+                    } else if (origSelEnd <= selStart) {
+                        ic.setSelection(origSelStart, origSelEnd);
+                    } else {
+                        int endPos = selStart + cleanNewWord.length();
+                        ic.setSelection(endPos, endPos);
+                    }
                 }
                 ic.endBatchEdit();
 
@@ -663,6 +834,99 @@ public final class MatrixTextHelper {
         return false;
     }
 
+    public static int[] findHistoryWordPositionInParagraph(String text, int cursorOffset, List<MatrixSentenceBuffer.WordEntry> history, int targetColIndex, String oldWord) {
+        if (text == null || text.isEmpty()) return null;
+        int clampedCursor = Math.max(0, Math.min(cursorOffset, text.length()));
+        int paraStart = 0;
+        for (int i = clampedCursor - 1; i >= 0; i--) {
+            char c = text.charAt(i);
+            if (c == '\n' || c == '\r') {
+                paraStart = i + 1;
+                break;
+            }
+        }
+        int paraEnd = text.length();
+        for (int i = clampedCursor; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\n' || c == '\r') {
+                paraEnd = i;
+                break;
+            }
+        }
+        if (paraStart > 0 || paraEnd < text.length()) {
+            String para = text.substring(paraStart, paraEnd);
+            int[] pos = findHistoryWordPosition(para, history, targetColIndex, oldWord);
+            if (pos != null) {
+                return new int[]{paraStart + pos[0], paraStart + pos[1]};
+            }
+        }
+        return findHistoryWordPosition(text, history, targetColIndex, oldWord);
+    }
+
+    private static List<int[]> collectWordSpans(String text) {
+        List<int[]> wordSpans = new ArrayList<>();
+        if (text == null || text.isEmpty()) return wordSpans;
+        int len = text.length();
+        int idx = 0;
+        while (idx < len) {
+            while (idx < len && isBoundaryChar(text, idx)) {
+                idx++;
+            }
+            if (idx >= len) break;
+            int wStart = idx;
+            while (idx < len && !isBoundaryChar(text, idx)) {
+                idx++;
+            }
+            wordSpans.add(new int[]{wStart, idx});
+        }
+        return wordSpans;
+    }
+
+    private static int findHistoryAlignmentOffset(String text, List<int[]> wordSpans, List<MatrixSentenceBuffer.WordEntry> history) {
+        return findHistoryAlignmentOffset(text, wordSpans, history, -1, null, null);
+    }
+
+    private static int findHistoryAlignmentOffset(
+            String text,
+            List<int[]> wordSpans,
+            List<MatrixSentenceBuffer.WordEntry> history,
+            int targetColIndex,
+            String baseOldWord,
+            String oldWord
+    ) {
+        if (history == null || history.isEmpty() || wordSpans.size() < history.size()) {
+            return -1;
+        }
+        int hSize = history.size();
+        for (int offset = wordSpans.size() - hSize; offset >= 0; offset--) {
+            boolean allMatch = true;
+            for (int j = 0; j < hSize; j++) {
+                int[] span = wordSpans.get(offset + j);
+                String tokenWord = text.substring(span[0], span[1]);
+                MatrixSentenceBuffer.WordEntry entry = history.get(j);
+                String entryWord = entry.getSelectedWord();
+                if (entryWord == null) entryWord = entry.committedWord;
+                TokenParts ep = parseTokenParts(entryWord);
+                String baseEntryWord = ep.hasWord() ? ep.word : (entryWord != null ? entryWord : "");
+
+                boolean matches = tokenWord.equalsIgnoreCase(baseEntryWord)
+                        || (entryWord != null && tokenWord.equalsIgnoreCase(entryWord));
+                if (!matches && j == targetColIndex && oldWord != null) {
+                    matches = (baseOldWord != null && tokenWord.equalsIgnoreCase(baseOldWord))
+                            || tokenWord.equalsIgnoreCase(oldWord);
+                }
+                if (!matches) {
+                    allMatch = false;
+                    break;
+                }
+            }
+            if (allMatch) {
+                return offset;
+            }
+        }
+        return -1;
+    }
+
     public static int[] findHistoryWordPosition(String text, List<MatrixSentenceBuffer.WordEntry> history, int targetColIndex, String oldWord) {
         if (text == null || oldWord == null || text.isEmpty() || oldWord.isEmpty()) {
             return null;
@@ -670,6 +934,16 @@ public final class MatrixTextHelper {
 
         TokenParts oldParts = parseTokenParts(oldWord);
         String baseOldWord = oldParts.hasWord() ? oldParts.word : oldWord;
+
+        List<int[]> wordSpans = collectWordSpans(text);
+
+        // Primary strategy: align the history sequence against wordSpans from right to left
+        if (history != null && !history.isEmpty() && targetColIndex >= 0 && targetColIndex < history.size()) {
+            int offset = findHistoryAlignmentOffset(text, wordSpans, history, targetColIndex, baseOldWord, oldWord);
+            if (offset >= 0) {
+                return wordSpans.get(offset + targetColIndex);
+            }
+        }
 
         int wordsAfter = (history != null && targetColIndex >= 0 && targetColIndex < history.size())
                 ? (history.size() - 1 - targetColIndex)
@@ -695,12 +969,8 @@ public final class MatrixTextHelper {
                 if (currentWord.equalsIgnoreCase(baseOldWord) || currentWord.equalsIgnoreCase(oldWord)) {
                     return new int[]{start, end};
                 }
-            } else if (wordsSkipped < wordsAfter) {
-                wordsSkipped++;
-                end = start;
-                continue;
             }
-
+            wordsSkipped++;
             end = start;
         }
 

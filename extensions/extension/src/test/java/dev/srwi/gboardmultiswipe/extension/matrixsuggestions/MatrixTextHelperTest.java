@@ -702,6 +702,158 @@ public final class MatrixTextHelperTest {
         Assert.assertEquals(21, ic.getSelectionEnd());
     }
 
+    @Test
+    public void findHistoryWordPosition_ignoresTrailingActiveWord() {
+        String text = "Hallo Welt Hallo";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "Welt");
+
+        int[] pos = MatrixTextHelper.findHistoryWordPosition(text, buffer.getEntries(), 0, "Hallo");
+        Assert.assertNotNull(pos);
+        Assert.assertEquals(0, pos[0]);
+        Assert.assertEquals(5, pos[1]);
+    }
+
+    @Test
+    public void findHistoryWordPositionInParagraph_isolatesCurrentParagraph() {
+        String text = "Hallo Welt\nHallo Test";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "Test");
+
+        // Cursor in second paragraph (index 21)
+        int[] pos = MatrixTextHelper.findHistoryWordPositionInParagraph(text, 21, buffer.getEntries(), 0, "Hallo");
+        Assert.assertNotNull(pos);
+        Assert.assertEquals(11, pos[0]);
+        Assert.assertEquals(16, pos[1]);
+    }
+
+    @Test
+    public void replaceHistoryWord_preservesMiddleCursorPosition() {
+        // Cursor is at offset 15 (after "wie "), NOT at the end of the text field
+        TestInputConnection ic = new TestInputConnection("Hallo Welt wie geht", 15, 15);
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Hallo", "Welt", "wie", "geht");
+
+        boolean replaced = MatrixTextHelper.replaceHistoryWord(ic, buffer, 0, "Hallo", "Servus");
+        Assert.assertTrue(replaced);
+        Assert.assertEquals("Servus Welt wie geht", ic.getText());
+        // "Servus" (6) is 1 char longer than "Hallo" (5), so cursor should shift 15 -> 16
+        Assert.assertEquals(16, ic.getSelectionStart());
+        Assert.assertEquals(16, ic.getSelectionEnd());
+    }
+
+    @Test
+    public void replaceActiveWordInTextField_inMiddleOfWord() {
+        // Cursor is between "hal" and "lo"
+        TestInputConnection ic = new TestInputConnection("hallo welt", 3, 3);
+
+        boolean replaced = MatrixTextHelper.replaceActiveWordInTextField(ic, "super");
+        Assert.assertTrue(replaced);
+        Assert.assertEquals("super welt", ic.getText());
+        Assert.assertEquals(5, ic.getSelectionStart());
+        Assert.assertEquals(5, ic.getSelectionEnd());
+    }
+
+    @Test
+    public void findCandidateByWord_matchesExactTextEvenWhenTrimmed() {
+        GboardMatrixSuggestionsRuntime.CandidateItem a = new GboardMatrixSuggestionsRuntime.CandidateItem("Alpha", 0, false, false, false, "", null, null);
+        GboardMatrixSuggestionsRuntime.CandidateItem b = new GboardMatrixSuggestionsRuntime.CandidateItem("Beta", 1, false, false, false, "", null, null);
+        GboardMatrixSuggestionsRuntime.CandidateItem c = new GboardMatrixSuggestionsRuntime.CandidateItem("Gamma", 2, false, false, false, "", null, null);
+        GboardMatrixSuggestionsRuntime.CandidateItem d = new GboardMatrixSuggestionsRuntime.CandidateItem("Delta", 3, false, false, false, "", null, null);
+
+        List<GboardMatrixSuggestionsRuntime.CandidateItem> items = Arrays.asList(a, b, c, d);
+        GboardMatrixSuggestionsRuntime.CandidateItem found = GboardMatrixSuggestionsRuntime.findCandidateByWord(items, "Delta");
+        Assert.assertSame(d, found);
+    }
+
+    @Test
+    public void moveCursorByWord_navigatesLeftAndRightAcrossWords() {
+        String text = "Hallo Welt, wie geht's?";
+        TestInputConnection ic = new TestInputConnection(text, text.length(), text.length());
+
+        // Step 1 left from end -> selects "geht's" [16, 22]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(16, ic.getSelectionStart());
+        Assert.assertEquals(22, ic.getSelectionEnd());
+
+        // Step 2 left -> selects "wie" [12, 15]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(12, ic.getSelectionStart());
+        Assert.assertEquals(15, ic.getSelectionEnd());
+
+        // Step 3 left -> selects "Welt" [6, 10]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(6, ic.getSelectionStart());
+        Assert.assertEquals(10, ic.getSelectionEnd());
+
+        // Step 4 left -> selects "Hallo" [0, 5]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(0, ic.getSelectionStart());
+        Assert.assertEquals(5, ic.getSelectionEnd());
+
+        // Step 5 left at first word -> returns false, keeps "Hallo" selected
+        Assert.assertFalse(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(0, ic.getSelectionStart());
+        Assert.assertEquals(5, ic.getSelectionEnd());
+
+        // Step 1 right -> selects "Welt" [6, 10]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
+        Assert.assertEquals(6, ic.getSelectionStart());
+        Assert.assertEquals(10, ic.getSelectionEnd());
+
+        // Step 2 right -> selects "wie" [12, 15]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
+        Assert.assertEquals(12, ic.getSelectionStart());
+        Assert.assertEquals(15, ic.getSelectionEnd());
+
+        // Step 3 right -> selects "geht's" [16, 22]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
+        Assert.assertEquals(16, ic.getSelectionStart());
+        Assert.assertEquals(22, ic.getSelectionEnd());
+
+        // Step 4 right past last word -> moves cursor to end [23, 23]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
+        Assert.assertEquals(23, ic.getSelectionStart());
+        Assert.assertEquals(23, ic.getSelectionEnd());
+    }
+
+    @Test
+    public void getWordIndexAtCursor_tracksNavigatedWord() {
+        String text = "Eins Zwei Drei Vier";
+        MatrixSentenceBuffer buffer = createSentenceBuffer("Eins", "Zwei", "Drei", "Vier");
+        TestInputConnection ic = new TestInputConnection(text, text.length(), text.length());
+
+        // Move left to "Vier" (col 3)
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(3, MatrixTextHelper.getWordIndexAtCursor(ic, buffer));
+
+        // Move left to "Drei" (col 2)
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(2, MatrixTextHelper.getWordIndexAtCursor(ic, buffer));
+
+        // Move left to "Zwei" (col 1)
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(1, MatrixTextHelper.getWordIndexAtCursor(ic, buffer));
+
+        // Move left to "Eins" (col 0)
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(0, MatrixTextHelper.getWordIndexAtCursor(ic, buffer));
+    }
+
+    @Test
+    public void isInputEmptyAndSentenceEnded_falseWhenFirstWordSelected() {
+        // First word selected at [0, 5]: before is empty, sel is "Hallo", after is " Welt"
+        TestInputConnection icStart = new TestInputConnection("Hallo Welt", 0, 5);
+        Assert.assertFalse(MatrixTextHelper.isInputEmpty(icStart));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded(icStart));
+
+        // First word of second paragraph selected at [6, 11]: before ends with "\n"
+        TestInputConnection icPara = new TestInputConnection("Eins.\nHallo Welt", 6, 11);
+        Assert.assertFalse(MatrixTextHelper.isInputEmpty(icPara));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded(icPara));
+
+        // Truly empty input
+        TestInputConnection icEmpty = new TestInputConnection("", 0, 0);
+        Assert.assertTrue(MatrixTextHelper.isInputEmpty(icEmpty));
+    }
+
     private static MatrixSentenceBuffer createSentenceBuffer(String... words) {
         MatrixSentenceBuffer buf = new MatrixSentenceBuffer();
         for (String w : words) {

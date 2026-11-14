@@ -5,8 +5,11 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -42,10 +45,22 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         void onHistoryWordClicked(int historyIndex, String word);
     }
 
+    public interface OnWordCursorNavigateCallback {
+        void onNavigateWord(int direction);
+    }
+
     private final LinearLayout contentLayout;
     private final VerticalWordWheelView currentWheelView;
     private final List<VerticalWordWheelView> historyWheels = new java.util.ArrayList<>();
     private int selectedHistoryIndex = -1;
+
+    private OnWordCursorNavigateCallback wordCursorNavigateCallback;
+    private float navDownX = 0f;
+    private float navDownY = 0f;
+    private float navLastStepX = 0f;
+    private boolean isHorizontalNavigating = false;
+    private final float navTouchSlopPx;
+    private final float navStepThresholdPx;
 
     public MatrixSuggestionBarView(Context context) {
         super(context);
@@ -53,6 +68,11 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         setFillViewport(true);
         setClipChildren(false);
         setClipToPadding(false);
+
+        navTouchSlopPx = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 8f, getResources().getDisplayMetrics());
+        navStepThresholdPx = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 16f, getResources().getDisplayMetrics());
 
         contentLayout = new LinearLayout(context);
         contentLayout.setOrientation(LinearLayout.HORIZONTAL);
@@ -255,6 +275,30 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         if (currentWheelView != null) {
             currentWheelView.setIsActiveWord(historyIndex < 0);
         }
+        if (historyIndex >= 0) {
+            centerOnColumn(historyIndex);
+        }
+    }
+
+    public void centerOnColumn(int columnIndex) {
+        post(() -> {
+            int barWidth = getWidth();
+            if (barWidth <= 0) return;
+
+            View target = null;
+            if (columnIndex >= 0 && columnIndex < historyWheels.size()) {
+                target = historyWheels.get(columnIndex);
+            } else if (currentWheelView != null && currentWheelView.getParent() == contentLayout) {
+                target = currentWheelView;
+            } else if (!historyWheels.isEmpty()) {
+                target = historyWheels.get(historyWheels.size() - 1);
+            }
+            if (target == null) return;
+
+            int targetCenter = contentLayout.getLeft() + (target.getLeft() + target.getRight()) / 2;
+            int scrollX = Math.max(0, targetCenter - barWidth / 2);
+            smoothScrollTo(scrollX, 0);
+        });
     }
 
     public void clearHistorySelection() {
@@ -271,7 +315,113 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         return selectedHistoryIndex;
     }
 
+    public int getHistoryWheelCount() {
+        return historyWheels.size();
+    }
+
     public void clearCurrent() {
         currentWheelView.setAlternatives(null, 0);
+    }
+
+    public void setOnWordCursorNavigateCallback(OnWordCursorNavigateCallback callback) {
+        this.wordCursorNavigateCallback = callback;
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        if (wordCursorNavigateCallback == null) {
+            return super.onInterceptTouchEvent(ev);
+        }
+
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                navDownX = ev.getX();
+                navDownY = ev.getY();
+                navLastStepX = navDownX;
+                isHorizontalNavigating = false;
+                return false;
+
+            case MotionEvent.ACTION_MOVE:
+                if (isHorizontalNavigating) {
+                    return true;
+                }
+                float dX = ev.getX() - navDownX;
+                float dY = ev.getY() - navDownY;
+                if (Math.abs(dX) > navTouchSlopPx && Math.abs(dX) > Math.abs(dY)) {
+                    isHorizontalNavigating = true;
+                    navLastStepX = navDownX;
+                    ViewParent parent = getParent();
+                    if (parent != null) {
+                        parent.requestDisallowInterceptTouchEvent(true);
+                    }
+                    return true;
+                }
+                return false;
+
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                isHorizontalNavigating = false;
+                return false;
+        }
+        return super.onInterceptTouchEvent(ev);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent ev) {
+        if (wordCursorNavigateCallback == null) {
+            return super.onTouchEvent(ev);
+        }
+
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                navDownX = ev.getX();
+                navDownY = ev.getY();
+                navLastStepX = navDownX;
+                isHorizontalNavigating = false;
+                return true;
+
+            case MotionEvent.ACTION_MOVE:
+                if (!isHorizontalNavigating) {
+                    float dX = ev.getX() - navDownX;
+                    float dY = ev.getY() - navDownY;
+                    if (Math.abs(dX) > navTouchSlopPx && Math.abs(dX) > Math.abs(dY)) {
+                        isHorizontalNavigating = true;
+                        navLastStepX = navDownX;
+                        ViewParent parent = getParent();
+                        if (parent != null) {
+                            parent.requestDisallowInterceptTouchEvent(true);
+                        }
+                    }
+                }
+                if (isHorizontalNavigating) {
+                    float delta = ev.getX() - navLastStepX;
+                    while (delta <= -navStepThresholdPx) {
+                        wordCursorNavigateCallback.onNavigateWord(-1);
+                        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                        navLastStepX -= navStepThresholdPx;
+                        delta = ev.getX() - navLastStepX;
+                    }
+                    while (delta >= navStepThresholdPx) {
+                        wordCursorNavigateCallback.onNavigateWord(1);
+                        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+                        navLastStepX += navStepThresholdPx;
+                        delta = ev.getX() - navLastStepX;
+                    }
+                    return true;
+                }
+                return true;
+
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                if (isHorizontalNavigating) {
+                    ViewParent parent = getParent();
+                    if (parent != null) {
+                        parent.requestDisallowInterceptTouchEvent(false);
+                    }
+                }
+                isHorizontalNavigating = false;
+                return true;
+        }
+        return true;
     }
 }

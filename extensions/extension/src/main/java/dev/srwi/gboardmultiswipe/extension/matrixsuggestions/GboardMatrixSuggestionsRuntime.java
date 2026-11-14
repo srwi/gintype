@@ -69,6 +69,8 @@ public final class GboardMatrixSuggestionsRuntime {
     private static List<String> activeOriginalSuggestions = null;
     private static volatile long lastSelfReplaceTimestamp = 0;
     private static volatile String lastSelfReplacedWord = null;
+    private static volatile long lastHistoryInteractionTimestamp = 0;
+    private static volatile long lastWordNavTimestamp = 0;
 
     private static View currentVoiceButton = null;
     private static JumpToEndArrowView currentJumpToEndArrow = null;
@@ -123,7 +125,18 @@ public final class GboardMatrixSuggestionsRuntime {
                     return;
                 }
 
-                if (barView.getSelectedHistoryIndex() < 0 && MatrixTextHelper.isCursorAtEnd(holderView)) {
+                if (isHistorySelectionSessionActive(holderView, barView)) {
+                    barView.setVisibility(View.VISIBLE);
+                    MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
+                    barView.bringToFront();
+                    return;
+                }
+
+                if (barView.getSelectedHistoryIndex() >= 0 && MatrixTextHelper.isCursorAtEnd(holderView)) {
+                    barView.clearHistorySelection();
+                    hideJumpToEndArrow();
+                } else if (barView.getSelectedHistoryIndex() < 0 && MatrixTextHelper.isCursorAtEnd(holderView)) {
                     hideJumpToEndArrow();
                 }
 
@@ -144,6 +157,7 @@ public final class GboardMatrixSuggestionsRuntime {
                             barView.updateHistoryOnly(
                                     SENTENCE_BUFFER.getEntries(),
                                     (histColIdx, oldWord, newWord) -> {
+                                        lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
                                         MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                                     },
                                     createHistoryWordClickCallback(holderView, barView)
@@ -250,9 +264,7 @@ public final class GboardMatrixSuggestionsRuntime {
                             if (MatrixTextHelper.isCursorAtEnd(holderView)) {
                                 hideJumpToEndArrow();
                             }
-                            CandidateItem chosen = (selectedIndex >= 0 && selectedIndex < finalItems.size())
-                                    ? finalItems.get(selectedIndex)
-                                    : new CandidateItem(word, selectedIndex, false, false, false, "", null, null);
+                            CandidateItem chosen = findCandidateByWord(finalItems, word);
                             commitCandidate(holderView, chosen, finalItems);
                         },
                         // onActiveSwap: Flick UP/DOWN or tap Top/Bottom swaps active word WITHOUT space
@@ -267,6 +279,7 @@ public final class GboardMatrixSuggestionsRuntime {
                         },
                         // onHistoryReplace: Flick or tap on a history column swaps that past word in sentence
                         (histColIdx, oldWord, newWord) -> {
+                            lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
                             MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                         },
                         createHistoryWordClickCallback(holderView, barView)
@@ -323,7 +336,18 @@ public final class GboardMatrixSuggestionsRuntime {
                     return;
                 }
 
-                if (barView.getSelectedHistoryIndex() < 0 && MatrixTextHelper.isCursorAtEnd(holderView)) {
+                if (isHistorySelectionSessionActive(holderView, barView)) {
+                    barView.setVisibility(View.VISIBLE);
+                    MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
+                    barView.bringToFront();
+                    return;
+                }
+
+                if (barView.getSelectedHistoryIndex() >= 0 && MatrixTextHelper.isCursorAtEnd(holderView)) {
+                    barView.clearHistorySelection();
+                    hideJumpToEndArrow();
+                } else if (barView.getSelectedHistoryIndex() < 0 && MatrixTextHelper.isCursorAtEnd(holderView)) {
                     hideJumpToEndArrow();
                 }
 
@@ -360,6 +384,7 @@ public final class GboardMatrixSuggestionsRuntime {
                                 MatrixTextHelper.replaceActiveWordInTextField(holderView, newWord);
                             },
                             (histColIdx, oldWord, newWord) -> {
+                                lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
                                 MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                             },
                             createHistoryWordClickCallback(holderView, barView)
@@ -376,6 +401,7 @@ public final class GboardMatrixSuggestionsRuntime {
                     barView.updateHistoryOnly(
                             SENTENCE_BUFFER.getEntries(),
                             (histColIdx, oldWord, newWord) -> {
+                                lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
                                 MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                             },
                             createHistoryWordClickCallback(holderView, barView)
@@ -409,6 +435,7 @@ public final class GboardMatrixSuggestionsRuntime {
             View child = attachTarget.getChildAt(i);
             if (child instanceof MatrixSuggestionBarView existing && MATRIX_BAR_TAG.equals(existing.getTag())) {
                 ACTIVE_BARS.put(attachTarget, existing);
+                attachWordCursorNavigator(holderView, existing);
                 return existing;
             }
         }
@@ -417,6 +444,7 @@ public final class GboardMatrixSuggestionsRuntime {
         Context context = attachTarget.getContext();
         bar = new MatrixSuggestionBarView(context);
         bar.setTag(MATRIX_BAR_TAG);
+        attachWordCursorNavigator(holderView, bar);
         MatrixGboardReflector.applyKeyboardBackground(bar, holderView);
 
         ViewGroup.LayoutParams lp;
@@ -460,6 +488,9 @@ public final class GboardMatrixSuggestionsRuntime {
                 return;
             }
             if (v.getVisibility() != View.VISIBLE || (right - left <= 0)) {
+                if (isHistorySelectionSessionActive(holderView, finalBar)) {
+                    return;
+                }
                 if (MatrixTextHelper.isSentenceEnded(v) || MatrixTextHelper.isInputEmpty(v)) {
                     if (finalBar.getVisibility() != View.GONE) {
                         finalBar.setVisibility(View.GONE);
@@ -558,10 +589,68 @@ public final class GboardMatrixSuggestionsRuntime {
         SENTENCE_BUFFER.addWord(selectedItem.text, altStrings, selIdx >= 0 ? selIdx : 0);
     }
 
+    static CandidateItem findCandidateByWord(List<CandidateItem> items, String word) {
+        if (items != null && word != null) {
+            for (CandidateItem ci : items) {
+                if (word.equals(ci.text)) {
+                    return ci;
+                }
+            }
+            for (CandidateItem ci : items) {
+                if (word.equalsIgnoreCase(ci.text)) {
+                    return ci;
+                }
+            }
+        }
+        return new CandidateItem(word != null ? word : "", -1, false, false, false, "", null, null);
+    }
+
+    private static void attachWordCursorNavigator(ViewGroup holderView, MatrixSuggestionBarView barView) {
+        barView.setOnWordCursorNavigateCallback(direction -> {
+            lastWordNavTimestamp = SystemClock.uptimeMillis();
+            boolean moved = MatrixTextHelper.moveCursorByWord(holderView, direction);
+            Log.i(TAG, "onNavigateWord: dir=" + direction + ", moved=" + moved);
+            if (!MatrixTextHelper.isCursorAtEnd(holderView)) {
+                int colIdx = MatrixTextHelper.getWordIndexAtCursor(holderView, SENTENCE_BUFFER);
+                if (colIdx >= 0 && colIdx < barView.getHistoryWheelCount()) {
+                    barView.selectHistoryWord(colIdx);
+                } else {
+                    barView.clearHistorySelection();
+                    if (colIdx >= 0) {
+                        barView.centerOnColumn(colIdx);
+                    }
+                }
+                showJumpToEndArrow(holderView, () -> {
+                    MatrixTextHelper.jumpToEndOfTextField(holderView);
+                    barView.clearHistorySelection();
+                    hideJumpToEndArrow();
+                    barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
+                });
+            } else {
+                barView.clearHistorySelection();
+                hideJumpToEndArrow();
+                barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
+            }
+        });
+    }
+
+    private static boolean isHistorySelectionSessionActive(ViewGroup holderView, MatrixSuggestionBarView barView) {
+        if ((SystemClock.uptimeMillis() - lastWordNavTimestamp) < 600) {
+            return true;
+        }
+        if (barView == null || barView.getSelectedHistoryIndex() < 0) {
+            return false;
+        }
+        boolean withinGrace = (SystemClock.uptimeMillis() - lastHistoryInteractionTimestamp) < 600;
+        return MatrixTextHelper.hasSelection(holderView) || withinGrace;
+    }
+
     private static void replaceActiveCandidateViaInputConnection(ViewGroup holderView, CandidateItem selectedItem) {
         try {
             InputConnection ic = MatrixTextHelper.getInputConnection(holderView);
             if (ic == null) return;
+
+            ic.finishComposingText();
 
             CharSequence cs = ic.getTextBeforeCursor(200, 0);
             if (cs == null) {
@@ -580,24 +669,26 @@ public final class GboardMatrixSuggestionsRuntime {
             }
             String lastWord = lastBoundary >= 0 ? trimmed.substring(lastBoundary + 1) : trimmed;
 
-            if (lastWord.equalsIgnoreCase(selectedItem.text)) {
-                // Word is already in the text field; ensure trailing space
+            if (lastWord.equals(selectedItem.text)) {
+                // Word is already in the text field with exact casing; ensure trailing space
                 if (!text.endsWith(" ")) {
                     ic.commitText(" ", 1);
                 }
                 return;
             }
 
-            int lastWordStart = text.lastIndexOf(lastWord);
-            if (lastWordStart >= 0) {
-                int deleteLen = text.length() - lastWordStart;
-                if (deleteLen > 0 && deleteLen <= text.length()) {
-                    ic.beginBatchEdit();
-                    ic.deleteSurroundingText(deleteLen, 0);
-                    ic.commitText(selectedItem.text + " ", 1);
-                    ic.endBatchEdit();
-                    Log.i(TAG, "replaceActiveCandidateViaInputConnection: cleanly replaced '" + lastWord + "' with '" + selectedItem.text + "'");
-                    return;
+            if (!lastWord.isEmpty()) {
+                int lastWordStart = text.lastIndexOf(lastWord);
+                if (lastWordStart >= 0) {
+                    int deleteLen = text.length() - lastWordStart;
+                    if (deleteLen > 0 && deleteLen <= text.length()) {
+                        ic.beginBatchEdit();
+                        ic.deleteSurroundingText(deleteLen, 0);
+                        ic.commitText(selectedItem.text + " ", 1);
+                        ic.endBatchEdit();
+                        Log.i(TAG, "replaceActiveCandidateViaInputConnection: cleanly replaced '" + lastWord + "' with '" + selectedItem.text + "'");
+                        return;
+                    }
                 }
             }
 
@@ -620,6 +711,7 @@ public final class GboardMatrixSuggestionsRuntime {
     private static MatrixSuggestionBarView.OnHistoryWordClickCallback createHistoryWordClickCallback(
             ViewGroup holderView, MatrixSuggestionBarView barView) {
         return (histColIdx, word) -> {
+            lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
             boolean selected = MatrixTextHelper.selectHistoryWordInTextField(holderView, SENTENCE_BUFFER, histColIdx, word);
             if (selected) {
                 showJumpToEndArrow(holderView, () -> {
