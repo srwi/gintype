@@ -37,7 +37,7 @@ Because Gboard Multiswipe is isolated into its own namespace and settings menu (
 - A clean copy of Gboard **`18.5.4.993608717-release-arm64-v8a`** (`.apk`, `.xapk`, `.apkm`, or `.apks`)
 
 ### Using Morphe Manager (Android)
-1. Download the latest `patches-*.mpp` bundle from the [Releases](https://github.com/srwi/gboard-multiswipe/releases) page (or import the source repository in Morphe Manager).
+1. Import this source repository in Morphe Manager, or build the patches bundle locally with `./gradlew :patches:buildAndroid`.
 2. Select a clean Gboard **`18.5.4.993608717-release-arm64-v8a`** installer file.
 3. Choose the patches you want (**Matrix Word Suggestions**, **Nintype Multi-Touch Swipe**, and keep **Package Rename** enabled on non-rooted devices).
 4. Patch and install the generated APK.

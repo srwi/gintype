@@ -45,7 +45,7 @@ export PATH="$ANDROID_HOME/platform-tools:$PATH"
 ```bash
 ./gradlew :extensions:extension:compileReleaseJavaWithJavac :patches:buildAndroid
 ```
-Output artifact: `patches/build/libs/patches-4.2.0.mpp`
+Output artifact: `patches/build/libs/patches-1.0.0.mpp`
 
 ### Run Tests
 ```bash
@@ -100,7 +100,7 @@ Useful `patch-gboard.sh` flags:
 Note that in Morphe CLI, `-O<key>=<value>` applies to the preceding `-e "<Patch Name>"`:
 ```bash
 java -jar morphe-cli.jar patch \
-  --patches=patches/build/libs/patches-4.2.0.mpp \
+  --patches=patches/build/libs/patches-1.0.0.mpp \
   --exclusive \
   -e "Matrix Word Suggestions" \
   -e "Nintype Multi-Touch Swipe" \
@@ -113,7 +113,7 @@ java -jar morphe-cli.jar patch \
 ### Combining with Other Patch Bundles
 ```bash
 java -jar morphe-cli.jar patch \
-  --patches=patches/build/libs/patches-4.2.0.mpp \
+  --patches=patches/build/libs/patches-1.0.0.mpp \
   --patches=/path/to/other-gboard-patches.mpp \
   -e "Matrix Word Suggestions" \
   -e "Nintype Multi-Touch Swipe" \

@@ -1,67 +1,100 @@
-name: Bug Report
-description: Report patching, installation, crashes, or unexpected behavior.
+name: Bug report
+description: Create a bug report
 title: "[Bug] "
 labels: [bug]
 body:
-  - type: markdown
+  - type: checkboxes
     attributes:
-      value: |
-        Please write issues in English and report one problem per issue.
-
-        If you also apply patches from other bundles, test first on an unmodified Gboard APK using only Gboard Multiswipe to confirm where the issue originates.
-  - type: textarea
-    id: bug-description
+      label: Preflight checklist
+      description: Please complete these checks before submitting the report.
+      options:
+        - label: I have read the [README](https://github.com/srwi/gboard-multiswipe/blob/master/README.md) and it did not solve the problem.
+          required: true
+        - label: I have searched the [open and closed issues](https://github.com/srwi/gboard-multiswipe/issues?q=) for the same problem without success.
+          required: true
+        - label: I tested with only Gboard Multiswipe applied, without other patch bundles.
+          required: true
+  - type: input
+    id: patches-version
     attributes:
-      label: What happened?
-      description: Describe the actual behavior and what you expected to happen.
+      label: Gboard Multiswipe version
+      description: What patch bundle version are you using?
+      placeholder: "e.g. 1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: gboard-version
+    attributes:
+      label: Gboard version
+      description: Include the exact Gboard package version shown by Morphe or the installed APK.
+      placeholder: "e.g. 18.5.4.993608717-release-arm64-v8a"
+    validations:
+      required: true
+  - type: input
+    id: morphe-version
+    attributes:
+      label: Morphe Manager / CLI version
+      description: Which Morphe version did you use to patch Gboard?
+      placeholder: "e.g. Morphe Manager 1.0.0 or morphe-cli 1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: device-and-system
+    attributes:
+      label: Device and Android version
+      description: What device and Android version are you using?
       placeholder: |
-        Actual behavior:
-
-        Expected behavior:
+        Device: Pixel 9
+        Android: Android 16
     validations:
       required: true
   - type: textarea
     id: steps-to-reproduce
     attributes:
       label: Steps to reproduce
-      description: If the problem is intermittent, describe how often it happens and under which conditions.
+      description: Describe exactly how to reproduce the problem.
       placeholder: |
         1. Open ...
         2. Enable ...
-        3. ...
-    validations:
-      required: true
-  - type: input
-    id: patches-version
-    attributes:
-      label: Gboard Multiswipe version
-      description: Find this in Gboard Settings > Multiswipe & Matrix > About (or release tag).
-      placeholder: Exact patch bundle version (e.g. 4.2.0)
+        3. Observe ...
     validations:
       required: true
   - type: textarea
-    id: device-and-system
+    id: expected-behavior
     attributes:
-      label: Device and Android version
-      description: Include your device model and Android version.
-      placeholder: |
-        Device: Pixel 9
-        Android: Android 16
+      label: Expected behavior
+      description: What did you expect to happen?
     validations:
       required: true
-  - type: input
-    id: manager-version
+  - type: textarea
+    id: actual-behavior
     attributes:
-      label: Morphe Manager / CLI version
-      description: Required for patching or installation failures.
-      placeholder: Exact Morphe Manager or CLI version
+      label: Actual behavior
+      description: What happened instead? Include any error messages.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots or a screen recording to help explain the problem.
+  - type: textarea
+    id: log-output
+    attributes:
+      label: Log output
+      description: If applicable, paste relevant Logcat output, especially lines tagged GboardPatches, GboardMatrixSuggestions, or GboardNintype.
+      render: text
+  - type: textarea
+    id: additional-information
+    attributes:
+      label: Additional information
+      description: Add any other details that may be relevant, such as selected patches, custom settings, or other installed keyboard patches.
   - type: checkboxes
-    id: checklist
     attributes:
-      label: Checklist
-      description: Confirm both items before submitting.
+      label: Final checklist
+      description: Please confirm that the report contains enough detail to investigate.
       options:
-        - label: I have checked existing issues and this is not a duplicate.
+        - label: I have provided clear steps and enough information to reproduce the problem.
           required: true
-        - label: I reproduced this using the supported Gboard target version (18.5.4.993608717-release-arm64-v8a).
+        - label: I am reporting one problem per issue.
           required: true
