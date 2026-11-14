@@ -614,13 +614,6 @@ public final class GboardMatrixSuggestionsRuntime {
 
     private static void showHistoryOnlyBar(ViewGroup holderView, MatrixSuggestionBarView barView) {
         List<MatrixSentenceBuffer.WordEntry> entries = SENTENCE_BUFFER.getEntries();
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < entries.size(); i++) {
-            if (i > 0) sb.append(" | ");
-            MatrixSentenceBuffer.WordEntry e = entries.get(i);
-            sb.append(e.committedWord).append(':').append(e.alternatives);
-        }
-        Log.i(TAG, "showHistoryOnlyBar: [" + sb + "]");
         barView.updateHistoryOnly(
                 entries,
                 (histColIdx, oldWord, newWord) -> {
@@ -641,11 +634,10 @@ public final class GboardMatrixSuggestionsRuntime {
         barView.setOnWordCursorNavigateCallback(direction -> {
             lastWordNavTimestamp = SystemClock.uptimeMillis();
             activeOriginalSuggestions = null;
-            boolean moved = MatrixTextHelper.moveCursorByWord(holderView, direction);
+            MatrixTextHelper.moveCursorByWord(holderView, direction);
             boolean hadActiveWheel = barView.getCurrentWheelView().getParent() != null;
             int prevHistoryCount = barView.getHistoryWheelCount();
             MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
-            Log.i(TAG, "onNavigateWord: dir=" + direction + ", moved=" + moved + ", syncedCount=" + SENTENCE_BUFFER.getEntries().size());
             if (!MatrixTextHelper.isCursorAtEnd(holderView)) {
                 if (!SENTENCE_BUFFER.isEmpty() && (hadActiveWheel || prevHistoryCount != SENTENCE_BUFFER.getEntries().size())) {
                     showHistoryOnlyBar(holderView, barView);
@@ -790,10 +782,6 @@ public final class GboardMatrixSuggestionsRuntime {
             List<String> existing = WORD_ALTERNATIVES_CACHE.get(primaryKey);
             if (copy.size() >= 2 || existing == null || existing.isEmpty()) {
                 WORD_ALTERNATIVES_CACHE.put(primaryKey, copy);
-                try {
-                    Log.i(TAG, "cacheAlternativeGroup: primary='" + primaryKey + "' -> " + copy);
-                } catch (Throwable ignored) {
-                }
             }
         }
         for (String w : words) {
