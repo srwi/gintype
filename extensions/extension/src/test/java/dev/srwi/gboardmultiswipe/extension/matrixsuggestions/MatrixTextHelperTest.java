@@ -788,30 +788,46 @@ public final class MatrixTextHelperTest {
         Assert.assertEquals(0, ic.getSelectionStart());
         Assert.assertEquals(5, ic.getSelectionEnd());
 
-        // Step 5 left at first word -> returns false, keeps "Hallo" selected
+        // Step 5 left from first word "Hallo" -> collapses to cursor at start [0, 0]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(0, ic.getSelectionStart());
+        Assert.assertEquals(0, ic.getSelectionEnd());
+
+        // Step 6 left at cursor [0, 0] -> returns false, stays at [0, 0]
         Assert.assertFalse(MatrixTextHelper.moveCursorByWord(ic, -1));
+        Assert.assertEquals(0, ic.getSelectionStart());
+        Assert.assertEquals(0, ic.getSelectionEnd());
+
+        // Step 1 right from [0, 0] -> selects "Hallo" [0, 5]
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
         Assert.assertEquals(0, ic.getSelectionStart());
         Assert.assertEquals(5, ic.getSelectionEnd());
 
-        // Step 1 right -> selects "Welt" [6, 10]
+        // Step 2 right -> selects "Welt" [6, 10]
         Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
         Assert.assertEquals(6, ic.getSelectionStart());
         Assert.assertEquals(10, ic.getSelectionEnd());
 
-        // Step 2 right -> selects "wie" [12, 15]
+        // Step 3 right -> selects "wie" [12, 15]
         Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
         Assert.assertEquals(12, ic.getSelectionStart());
         Assert.assertEquals(15, ic.getSelectionEnd());
 
-        // Step 3 right -> selects "geht's" [16, 22]
+        // Step 4 right -> selects "geht's" [16, 22]
         Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
         Assert.assertEquals(16, ic.getSelectionStart());
         Assert.assertEquals(22, ic.getSelectionEnd());
 
-        // Step 4 right past last word -> moves cursor to end [23, 23]
+        // Step 5 right past last word -> moves cursor to end [23, 23]
         Assert.assertTrue(MatrixTextHelper.moveCursorByWord(ic, 1));
         Assert.assertEquals(23, ic.getSelectionStart());
         Assert.assertEquals(23, ic.getSelectionEnd());
+
+        // Also test right end without trailing punctuation: "Hallo Welt" with "Welt" selected
+        TestInputConnection icNoPunct = new TestInputConnection("Hallo Welt", 6, 10);
+        Assert.assertTrue(MatrixTextHelper.moveCursorByWord(icNoPunct, 1));
+        Assert.assertEquals(10, icNoPunct.getSelectionStart());
+        Assert.assertEquals(10, icNoPunct.getSelectionEnd());
     }
 
     @Test

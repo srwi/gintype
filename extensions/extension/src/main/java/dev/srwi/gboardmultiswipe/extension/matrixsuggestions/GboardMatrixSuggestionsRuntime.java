@@ -611,13 +611,18 @@ public final class GboardMatrixSuggestionsRuntime {
             boolean moved = MatrixTextHelper.moveCursorByWord(holderView, direction);
             Log.i(TAG, "onNavigateWord: dir=" + direction + ", moved=" + moved);
             if (!MatrixTextHelper.isCursorAtEnd(holderView)) {
-                int colIdx = MatrixTextHelper.getWordIndexAtCursor(holderView, SENTENCE_BUFFER);
-                if (colIdx >= 0 && colIdx < barView.getHistoryWheelCount()) {
-                    barView.selectHistoryWord(colIdx);
-                } else {
+                if (!MatrixTextHelper.hasSelection(holderView)) {
                     barView.clearHistorySelection();
-                    if (colIdx >= 0) {
-                        barView.centerOnColumn(colIdx);
+                    barView.centerOnColumn(0);
+                } else {
+                    int colIdx = MatrixTextHelper.getWordIndexAtCursor(holderView, SENTENCE_BUFFER);
+                    if (colIdx >= 0 && colIdx < barView.getHistoryWheelCount()) {
+                        barView.selectHistoryWord(colIdx);
+                    } else {
+                        barView.clearHistorySelection();
+                        if (colIdx >= 0) {
+                            barView.centerOnColumn(colIdx);
+                        }
                     }
                 }
                 showJumpToEndArrow(holderView, () -> {

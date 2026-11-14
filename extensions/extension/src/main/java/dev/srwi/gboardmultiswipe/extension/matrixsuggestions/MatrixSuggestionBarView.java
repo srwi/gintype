@@ -116,7 +116,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         int divWidth = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
         int divMargin = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
+                TypedValue.COMPLEX_UNIT_DIP, 2f, getResources().getDisplayMetrics());
         int divMarginV = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
         boolean dark = (getResources().getConfiguration().uiMode
@@ -215,7 +215,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
         int divWidth = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
         int divMargin = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
+                TypedValue.COMPLEX_UNIT_DIP, 2f, getResources().getDisplayMetrics());
         int divMarginV = (int) TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 4f, getResources().getDisplayMetrics());
         boolean dark = (getResources().getConfiguration().uiMode

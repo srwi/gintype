@@ -618,14 +618,29 @@ public final class MatrixTextHelper {
             int docOffset = computeDocOffset(ic, before);
             int pos = direction < 0 ? before.length() : before.length() + sel.length();
             int len = fullText.length();
+            boolean hadSelection = !sel.isEmpty();
 
             if (direction < 0) {
-                if (pos <= 0) return false;
+                if (pos <= 0) {
+                    if (hadSelection) {
+                        int startOffset = Math.max(0, docOffset);
+                        ic.setSelection(startOffset, startOffset);
+                        return true;
+                    }
+                    return false;
+                }
                 int end = pos;
                 while (end > 0 && isBoundaryChar(fullText, end - 1)) {
                     end--;
                 }
-                if (end <= 0) return false;
+                if (end <= 0) {
+                    if (hadSelection) {
+                        int startOffset = Math.max(0, docOffset);
+                        ic.setSelection(startOffset, startOffset);
+                        return true;
+                    }
+                    return false;
+                }
                 int start = end;
                 while (start > 0 && !isBoundaryChar(fullText, start - 1)) {
                     start--;
@@ -636,7 +651,14 @@ public final class MatrixTextHelper {
                 ic.setSelection(Math.max(0, docOffset + start), Math.max(0, docOffset + end));
                 return true;
             } else {
-                if (pos >= len) return false;
+                if (pos >= len) {
+                    if (hadSelection) {
+                        int endOffset = Math.max(0, docOffset + len);
+                        ic.setSelection(endOffset, endOffset);
+                        return true;
+                    }
+                    return false;
+                }
                 int start = pos;
                 while (start < len && isBoundaryChar(fullText, start)) {
                     start++;

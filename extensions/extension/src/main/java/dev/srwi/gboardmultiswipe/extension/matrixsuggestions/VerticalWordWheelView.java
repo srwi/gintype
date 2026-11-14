@@ -76,7 +76,7 @@ public class VerticalWordWheelView extends LinearLayout {
         setClipToPadding(false);
 
         int padH = (int) TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 6f, getResources().getDisplayMetrics());
+                TypedValue.COMPLEX_UNIT_DIP, 3f, getResources().getDisplayMetrics());
         setPadding(padH, 0, padH, 0);
 
         touchSlop = TypedValue.applyDimension(
@@ -202,7 +202,7 @@ public class VerticalWordWheelView extends LinearLayout {
 
             centerView.setTextColor(accentColor);
             centerView.setAlpha(1.0f);
-            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f);
+            centerView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.0f);
             centerView.setTypeface(Typeface.DEFAULT_BOLD);
 
             // Active pill background matching the normal keyboard/trail accent
@@ -212,7 +212,7 @@ public class VerticalWordWheelView extends LinearLayout {
             int strokeColor = ((lightAccent ? 0x4D : 0x33) << 24) | accentRgb;
             centerView.setBackground(createPillDrawable(fillColor, strokeColor, 9f));
             int padH = (int) TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 8f, getResources().getDisplayMetrics());
+                    TypedValue.COMPLEX_UNIT_DIP, 6f, getResources().getDisplayMetrics());
             int padV = (int) TypedValue.applyDimension(
                     TypedValue.COMPLEX_UNIT_DIP, 1f, getResources().getDisplayMetrics());
             centerView.setPadding(padH, padV, padH, padV);
