@@ -145,13 +145,13 @@ public final class MatrixSuggestionsSettingsTest {
 
     @Test
     public void computeSwappedIndexRespectsInvertDirection() {
-        // Normal: flick up selects previous (-1), flick down selects next (+1).
-        Assert.assertEquals(2, VerticalWordWheelView.computeSwappedIndex(0, 3, true, false));
-        Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 3, false, false));
+        // Default (wheel-roll): flick up moves bottom word into center (+1), flick down moves top into center (-1).
+        Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 3, true, false));
+        Assert.assertEquals(2, VerticalWordWheelView.computeSwappedIndex(0, 3, false, false));
 
-        // Inverted: flick up moves bottom word into center (+1), flick down moves top into center (-1).
-        Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 3, true, true));
-        Assert.assertEquals(2, VerticalWordWheelView.computeSwappedIndex(0, 3, false, true));
+        // Inverted: flick up selects top word (-1), flick down selects bottom word (+1).
+        Assert.assertEquals(2, VerticalWordWheelView.computeSwappedIndex(0, 3, true, true));
+        Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 3, false, true));
 
         // Wrap-around on 2-item list swaps cleanly in either mode.
         Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 2, true, false));

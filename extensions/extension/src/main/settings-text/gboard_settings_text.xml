@@ -180,7 +180,7 @@
         <translation locale="en">Invert vertical swipe direction</translation>
         </string>
     <string name="gboard_patches_matrix_suggestions_invert_swipe_summary">
-        <translation locale="en">Swipe up to move the bottom suggestion into the center, and swipe down for the top suggestion.</translation>
+        <translation locale="en">Swipe up to select the top suggestion, and swipe down for the bottom suggestion.</translation>
         </string>
     <string name="gboard_patches_section_settings">
         <translation locale="en">Settings</translation>

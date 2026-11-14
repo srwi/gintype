@@ -57,7 +57,7 @@ public class VerticalWordWheelView extends LinearLayout {
     private float scaleFactor = GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE;
     private boolean invertVerticalSwipe = GboardMatrixSuggestionsSettings.DEFAULT_INVERT_SWIPE;
 
-    /** Set whether vertical flick gestures rotate the wheel in the inverted direction. */
+    /** Set whether vertical flick gestures use the inverted direction instead of wheel-roll default. */
     public void setInvertVerticalSwipe(boolean invert) {
         this.invertVerticalSwipe = invert;
     }
@@ -66,7 +66,7 @@ public class VerticalWordWheelView extends LinearLayout {
         if (size <= 0) {
             return 0;
         }
-        int delta = (flickUp ^ invert) ? -1 : 1;
+        int delta = (flickUp ^ invert) ? 1 : -1;
         return (currentIndex + delta + size) % size;
     }
 
