@@ -7,9 +7,9 @@ import dev.srwi.gboardmultiswipe.patches.gboard.shared.generated.GboardTargetAdm
 internal object Constants {
     const val GBOARD_PACKAGE_NAME = "com.google.android.inputmethod.latin"
     const val GBOARD_PATCHED_PACKAGE_NAME = "dev.srwi.com.google.android.inputmethod.latin"
-    const val GBOARD_PATCH_AUTHOR = "jasonwu1994"
-    const val GBOARD_PATCH_AUTHOR_URL = "https://github.com/jasonwu1994"
-    const val GBOARD_PATCH_REPOSITORY_URL = "https://github.com/jasonwu1994/Gboard-patches"
+    const val GBOARD_PATCH_AUTHOR = "srwi"
+    const val GBOARD_PATCH_AUTHOR_URL = "https://github.com/srwi"
+    const val GBOARD_PATCH_REPOSITORY_URL = "https://github.com/srwi/gboard-multiswipe"
     val GBOARD_PATCH_VERSION = PatchBuildInfo.VERSION
 
     val COMPATIBILITY_GBOARD = Compatibility(

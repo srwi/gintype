@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/jasonwu1994/gboard-patches/schemas/gboard-port-product-catalog.schema.json",
+  "$id": "https://github.com/srwi/gboard-multiswipe/schemas/gboard-port-product-catalog.schema.json",
   "title": "Gboard port product catalog",
   "type": "object",
   "additionalProperties": false,
@@ -115,7 +115,7 @@
         "feature_marker": {
           "oneOf": [
             { "type": "null" },
-            { "type": "string", "pattern": "^dev\\.jason\\.gboardpatches\\.feature\\.[a-z0-9_]+$" }
+            { "type": "string", "pattern": "^dev\\.srwi\\.gboardmultiswipe\\.feature\\.[a-z0-9_]+$" }
           ]
         },
         "target_family_ids": {

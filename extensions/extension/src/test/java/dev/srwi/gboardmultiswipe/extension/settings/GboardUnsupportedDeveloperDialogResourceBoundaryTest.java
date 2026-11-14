@@ -25,7 +25,7 @@ public final class GboardUnsupportedDeveloperDialogResourceBoundaryTest {
     private static final int TITLE = R.string.gboard_patches_developer_options_package_warning_title;
     private static final int CLOSE = R.string.gboard_patches_dialog_close;
     private static final int TRY_ANYWAY = R.string.gboard_patches_developer_options_try_anyway;
-    private static final String PACKAGE = "dev.jason.unsupported.test";
+    private static final String PACKAGE = "dev.srwi.unsupported.test";
 
     @Test public void missingModuleTitleStillShowsTheRealWarning() throws Throwable {
         assertProductionWarning(new int[]{TITLE}, true);

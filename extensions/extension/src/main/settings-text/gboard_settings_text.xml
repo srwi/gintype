@@ -112,7 +112,7 @@
         <translation locale="en">Open keyboard</translation>
         </string>
     <string name="gboard_patches_keyboard_preview_title">
-        <translation locale="en">Gboard Patches</translation>
+        <translation locale="en">Gboard Multiswipe</translation>
         </string>
     <string name="gboard_patches_keyboard_preview_input_accessibility">
         <translation locale="en">Keyboard test field</translation>
@@ -315,7 +315,7 @@
         <translation locale="en">Unsupported Gboard package</translation>
         </string>
     <string name="gboard_patches_developer_options_package_warning_message">
-        <translation locale="en">The current Gboard package is %1$s. Gboard Patches supports only the official package com.google.android.inputmethod.latin and dev.jason.com.google.android.inputmethod.latin. Mixing Gboard builds from multiple sources may cause instability.</translation>
+        <translation locale="en">The current Gboard package is %1$s. Gboard Multiswipe supports only the official package com.google.android.inputmethod.latin and dev.srwi.com.google.android.inputmethod.latin. Mixing Gboard builds from multiple sources may cause instability.</translation>
         </string>
     <string name="gboard_patches_developer_options_try_anyway">
         <translation locale="en">Try anyway</translation>

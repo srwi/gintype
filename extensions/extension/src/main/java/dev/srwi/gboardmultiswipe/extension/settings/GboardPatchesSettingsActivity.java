@@ -112,10 +112,8 @@ public final class GboardPatchesSettingsActivity extends Activity
             "18.5.4.993608717-release-arm64-v8a";
     private static final String GBOARD_PACKAGE_STABLE =
             "com.google.android.inputmethod.latin";
-    private static final String GBOARD_PACKAGE_JASON_DEV =
-            "com.google.android.inputmethod.latin.jason.dev";
-    private static final String GBOARD_PACKAGE_REVERSED_DEV =
-            "dev.jason.com.google.android.inputmethod.latin";
+    private static final String GBOARD_PACKAGE_RENAMED =
+            "dev.srwi.com.google.android.inputmethod.latin";
     private static final String LIVE_TRANSCRIBE_PACKAGE_NAME =
             "com.google.audio.hearing.visualization.accessibility.scribe";
     private static final String SPEECH_SERVICES_PACKAGE_NAME =
@@ -165,9 +163,8 @@ public final class GboardPatchesSettingsActivity extends Activity
     private static final float ROW_SUMMARY_SP = 13.5f;
     private static final int NO_SCROLL_POSITION_REQUESTED = -1;
     private static final String TOOLBAR_TITLE_PATCHES = "Patches";
-    private static final String ABOUT_AUTHOR_URL = "https://github.com/jasonwu1994";
-    private static final String ABOUT_PATCH_REPOSITORY_URL =
-            "https://github.com/jasonwu1994/Gboard-patches";
+    private static final String ABOUT_AUTHOR_URL = BuildConfig.PATCH_AUTHOR_URL;
+    private static final String ABOUT_PATCH_REPOSITORY_URL = BuildConfig.PATCH_REPOSITORY_URL;
     private static final String DOCUMENT_TYPE_FALLBACK = "text/plain";
     private static final String DOCUMENT_PICKER_FAILED = "Unable to open file picker.";
     private static final String DOCUMENT_WRITE_FAILED = "Failed to export file.";
@@ -507,8 +504,7 @@ public final class GboardPatchesSettingsActivity extends Activity
             packageNames.add(currentPackage);
         }
         packageNames.add(GBOARD_PACKAGE_STABLE);
-        packageNames.add(GBOARD_PACKAGE_JASON_DEV);
-        packageNames.add(GBOARD_PACKAGE_REVERSED_DEV);
+        packageNames.add(GBOARD_PACKAGE_RENAMED);
         return new ArrayList<String>(packageNames);
     }
 
@@ -518,8 +514,7 @@ public final class GboardPatchesSettingsActivity extends Activity
 
     private static boolean isSupportedTargetPackage(String packageName) {
         return GBOARD_PACKAGE_STABLE.equals(packageName)
-                || GBOARD_PACKAGE_JASON_DEV.equals(packageName)
-                || GBOARD_PACKAGE_REVERSED_DEV.equals(packageName);
+                || GBOARD_PACKAGE_RENAMED.equals(packageName);
     }
 
     @Override

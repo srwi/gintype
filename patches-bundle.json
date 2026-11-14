@@ -1,6 +1,6 @@
 {
     "created_at": "2026-11-14T00:00:00",
-    "description": "### ✨ Gboard Multiswipe Patches\n\n* **Nintype Multi-Touch Swipe:** Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.\n* **Matrix Word Suggestions:** Vertical word suggestions with up/down swipe and 2D sentence matrix.\n* **Coexistence / Isolated Namespace:** Independent package `dev.srwi.gboardmultiswipe` and settings entry `Multiswipe & Matrix`, fully compatible alongside upstream Morphe Gboard patches without collisions.",
+    "description": "### ✨ Gboard Multiswipe Patches\n\n* **Nintype Multi-Touch Swipe:** Two-finger swipe and tap+swipe chorded gesture typing powered by the Kinetica algorithm and Gboard dictionary.\n* **Matrix Word Suggestions:** Vertical word suggestions with up/down swipe and 2D sentence matrix.\n* **Package Rename:** Optional side-by-side package rename (`dev.srwi.com.google.android.inputmethod.latin`) for non-rooted installation alongside official Gboard.\n* **Isolated Namespace:** Independent package `dev.srwi.gboardmultiswipe` and settings entry `Multiswipe & Matrix`, compatible alongside other Morphe Gboard patch bundles without collisions.",
     "download_url": "https://github.com/srwi/gboard-multiswipe/releases/download/v4.2.0/patches-4.2.0.mpp",
     "signature_download_url": "",
     "version": "4.2.0"

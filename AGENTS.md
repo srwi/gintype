@@ -18,8 +18,9 @@ This document provides portable instructions for developers, CI pipelines, and A
 - **Isolated Extension Namespace**: `dev.srwi.gboardmultiswipe`
 - **Independent Settings Entry Key**: `gboard_multiswipe_entry` ("Multiswipe & Matrix")
 - **Independent ContentProvider Authority**: `${applicationId}.gboard_multiswipe`
-- **Coexistence**: Can be applied alone or combined with upstream Morphe/ReVanced patch bundles without settings collisions or provider crashes (enable `Package Rename` in at most one bundle).
+- **Coexistence**: Can be applied alone or combined with other Morphe/ReVanced patch bundles without settings collisions or provider crashes (enable `Package Rename` in at most one bundle).
 - **Language**: English only (all code, resource strings, tests, commit messages, and documentation).
+- **Module Guides**: See [`patches/AGENTS.md`](patches/AGENTS.md) for patch registry, target bindings compiler, and Runtime ABI contracts, and [`extensions/AGENTS.md`](extensions/AGENTS.md) for Nintype/Kinetica runtime hooks, Matrix reflection, and settings codegen.
 
 ---
 
@@ -109,16 +110,15 @@ java -jar morphe-cli.jar patch \
   /path/to/gboard-18.5.4.xapk
 ```
 
-### Combining with Upstream Morphe Patches
+### Combining with Other Patch Bundles
 ```bash
 java -jar morphe-cli.jar patch \
   --patches=patches/build/libs/patches-4.2.0.mpp \
-  --patches=/path/to/upstream-morphe-patches.mpp \
+  --patches=/path/to/other-gboard-patches.mpp \
   -e "Matrix Word Suggestions" \
   -e "Nintype Multi-Touch Swipe" \
   -e "Package Rename" \
-  -e "Custom Symbols" \
-  -e "Latin Globe Key Ignore Interval" \
+  -e "<Other Patch Name>" \
   -o ./gboard-all-patches.apk \
   /path/to/gboard-18.5.4.xapk
 ```
@@ -204,4 +204,4 @@ Open Gboard Settings -> **Multiswipe & Matrix** to configure Nintype swipe timin
 - **Language**: English exclusively across commit messages, code, comments, resource strings, tests, and documentation.
 - **Commit Cadence**: Commit after each logical, verified step using conventional commits (`feat`, `refactor`, `fix`, `docs`).
 - **Scope**: Maintain only `Matrix Word Suggestions`, `Nintype Multi-Touch Swipe`, and `Package Rename` unless explicitly asked otherwise.
-- **Namespace Integrity**: Always use `dev.srwi.gboardmultiswipe` for extension/patch code and `dev.srwi.com.google.android.inputmethod.latin` for renamed Gboard manifests; never revert to `dev.jason.gboardpatches`.
+- **Namespace Integrity**: Always use `dev.srwi.gboardmultiswipe` for extension/patch code and `dev.srwi.com.google.android.inputmethod.latin` for renamed Gboard manifests.
