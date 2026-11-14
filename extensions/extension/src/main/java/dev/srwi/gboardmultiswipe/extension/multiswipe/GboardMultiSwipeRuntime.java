@@ -23,7 +23,6 @@ import dev.srwi.gboardmultiswipe.extension.thicctopbar.GboardThiccTopBarRuntime;
 import dev.srwi.gboardmultiswipe.extension.thicctopbar.ThiccTopBarGboardReflector;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeDictionaryManager.LanguagePack;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeGeometry.KeySpec;
-import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeInputToken.TouchPoint;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeInputToken.WordCandidate;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -46,42 +45,9 @@ import java.util.WeakHashMap;
 public final class GboardMultiSwipeRuntime {
 
     private static final String TAG = "GboardMultiSwipe";
-    private static final float MULTI_TOUCH_SWIPE_THRESHOLD_PX = 22f;
-    private static final int TEXT_SNAPSHOT_CHARS = 256;
-    private static final int MAX_ROLLBACK_EXTRA_CHARS = 32;
-    private static final long MAX_PASSIVE_TAP_GAP_MS = 750L;
-    private static final int MAX_PASSIVE_TAP_TOKENS = 8;
+    private static final int TEXT_SNAPSHOT_CHARS = MultiSwipeWordSession.TEXT_SNAPSHOT_CHARS;
 
-    static final class PointerTrack {
-        final int pointerId;
-        final float startX;
-        final float startY;
-        final long startTimeMs;
-        final char startKeyChar;
-        final boolean startedOnLetter;
-        final int slot; // 0 = LEFT, 1 = RIGHT
-        final List<TouchPoint> points = new ArrayList<>(48);
-        final List<MultiSwipeInputToken.KeyContact> contacts = new ArrayList<>(12);
-        final List<MultiSwipeInputToken.Dwell> dwells = new ArrayList<>(KineticaConstants.MAX_DWELL_SEGMENTS);
-        float lastX;
-        float lastY;
-        long lastTimeMs;
-        float pathLengthPx = 0f;
-        float maxDispSqPx = 0f;
-        boolean overlapped = false;
-        char currentKeyChar;
-        int currentCode = -1;
-        long currentEnterTimeMs;
-        int runAnchorIdx = 0;
-        float runAnchorXKw;
-        float runAnchorYKw;
-        long runAnchorTimeMs;
-        int runLastIdx = 0;
-        long runLastTimeMs;
-        boolean dwellInitialized = false;
-        boolean contactsFinalized = false;
-        boolean finished = false;
-
+    static final class PointerTrack extends MultiSwipeWordSession.PointerTrack {
         PointerTrack(
                 int pointerId,
                 float x,
@@ -92,174 +58,13 @@ public final class GboardMultiSwipeRuntime {
                 int slot,
                 MultiSwipeGeometry geometry
         ) {
-            this.pointerId = pointerId;
-            this.startX = x;
-            this.startY = y;
-            this.lastX = x;
-            this.lastY = y;
-            this.startTimeMs = timeMs;
-            this.lastTimeMs = timeMs;
-            this.startKeyChar = startKeyChar;
-            this.currentKeyChar = startKeyChar;
-            this.startedOnLetter = startedOnLetter;
-            this.slot = slot;
-            this.points.add(new TouchPoint(x, y, timeMs, pointerId));
-
-            if (geometry != null && geometry.isValid() && geometry.keyWidthPx > 0f) {
-                float xKw = x / geometry.keyWidthPx;
-                float yKw = y / geometry.keyWidthPx;
-                this.runAnchorXKw = xKw;
-                this.runAnchorYKw = yKw;
-                this.runAnchorTimeMs = timeMs;
-                this.runLastTimeMs = timeMs;
-                this.dwellInitialized = true;
-                this.currentCode = geometry.keyAtKw(xKw, yKw);
-                this.currentEnterTimeMs = timeMs;
-            }
-        }
-
-        void addPoint(float x, float y, long timeMs, MultiSwipeGeometry geometry) {
-            long ts = Math.max(lastTimeMs, timeMs);
-            float dx = x - lastX;
-            float dy = y - lastY;
-            float dist = (float) Math.hypot(dx, dy);
-            float dStartX = x - startX;
-            float dStartY = y - startY;
-            float dispSq = dStartX * dStartX + dStartY * dStartY;
-            if (dispSq > maxDispSqPx) {
-                maxDispSqPx = dispSq;
-            }
-            if (dist < 1.5f && !points.isEmpty()) {
-                if (ts > lastTimeMs) {
-                    lastTimeMs = ts;
-                    trackDwell(points.size() - 1, x, y, ts, geometry);
-                }
-                return;
-            }
-            pathLengthPx += dist;
-            lastX = x;
-            lastY = y;
-            lastTimeMs = ts;
-            points.add(new TouchPoint(x, y, ts, pointerId));
-
-            int idx = points.size() - 1;
-            trackDwell(idx, x, y, ts, geometry);
-
-            if (geometry != null && geometry.isValid() && geometry.keyWidthPx > 0f) {
-                float xKw = x / geometry.keyWidthPx;
-                float yKw = y / geometry.keyWidthPx;
-                if (currentCode == -1
-                        || !geometry.insideInflatedKw(xKw, yKw, currentCode, KineticaConstants.STICKY_INFLATE_KW)) {
-                    int newCode = geometry.keyAtKw(xKw, yKw);
-                    if (newCode != -1 && newCode != currentCode) {
-                        if (currentCode != -1) {
-                            contacts.add(new MultiSwipeInputToken.KeyContact(currentCode, currentEnterTimeMs, ts));
-                        }
-                        currentCode = newCode;
-                        currentEnterTimeMs = ts;
-                    }
-                }
-            }
-        }
-
-        private void trackDwell(int idx, float xPx, float yPx, long ts, MultiSwipeGeometry geometry) {
-            if (geometry == null || !geometry.isValid() || geometry.keyWidthPx <= 0f) return;
-            float xKw = xPx / geometry.keyWidthPx;
-            float yKw = yPx / geometry.keyWidthPx;
-            if (!dwellInitialized) {
-                runAnchorIdx = idx;
-                runAnchorXKw = xKw;
-                runAnchorYKw = yKw;
-                runAnchorTimeMs = ts;
-                runLastIdx = idx;
-                runLastTimeMs = ts;
-                dwellInitialized = true;
-                return;
-            }
-            float dx = xKw - runAnchorXKw;
-            float dy = yKw - runAnchorYKw;
-            float rSq = KineticaConstants.DWELL_RADIUS_KW * KineticaConstants.DWELL_RADIUS_KW;
-            if (dx * dx + dy * dy <= rSq) {
-                runLastIdx = idx;
-                runLastTimeMs = ts;
-                return;
-            }
-            closeDwellRun();
-            runAnchorIdx = idx;
-            runAnchorXKw = xKw;
-            runAnchorYKw = yKw;
-            runAnchorTimeMs = ts;
-            runLastIdx = idx;
-            runLastTimeMs = ts;
-        }
-
-        private void closeDwellRun() {
-            if (runLastTimeMs - runAnchorTimeMs < KineticaConstants.DWELL_MIN_MS) return;
-            dwells.add(new MultiSwipeInputToken.Dwell(runAnchorIdx, runLastIdx, runAnchorTimeMs, runLastTimeMs));
-            if (dwells.size() < KineticaConstants.MAX_DWELL_SEGMENTS) return;
-            int shortest = 0;
-            for (int i = 1; i < dwells.size(); i++) {
-                long dCur = dwells.get(i).tExit - dwells.get(i).tEnter;
-                long dBest = dwells.get(shortest).tExit - dwells.get(shortest).tEnter;
-                if (dCur < dBest) shortest = i;
-            }
-            dwells.remove(shortest);
-        }
-
-        boolean isSwipe(float swipeThresholdPx) {
-            if (points.size() < 2) return false;
-            return maxDispSqPx >= swipeThresholdPx * swipeThresholdPx;
-        }
-
-        boolean isRestingFinger(float swipeThresholdPx) {
-            return overlapped
-                    && !isSwipe(swipeThresholdPx)
-                    && (lastTimeMs - startTimeMs) >= KineticaConstants.RESTING_FINGER_MIN_MS;
-        }
-
-        MultiSwipeInputToken toToken(float swipeThresholdPx) {
-            if (!contactsFinalized) {
-                contactsFinalized = true;
-                if (currentCode != -1) {
-                    contacts.add(new MultiSwipeInputToken.KeyContact(currentCode, currentEnterTimeMs, lastTimeMs));
-                }
-            }
-            if (isSwipe(swipeThresholdPx)) {
-                return MultiSwipeInputToken.swipe(
-                        pointerId,
-                        slot,
-                        new ArrayList<>(points),
-                        pathLengthPx,
-                        startTimeMs,
-                        lastTimeMs,
-                        new ArrayList<>(contacts),
-                        new ArrayList<>(dwells),
-                        false,
-                        false
-                );
-            }
-            if (startedOnLetter && startKeyChar != '\0') {
-                return MultiSwipeInputToken.tap(
-                        pointerId,
-                        slot,
-                        startKeyChar,
-                        startX,
-                        startY,
-                        startTimeMs,
-                        lastTimeMs
-                );
-            }
-            return null;
+            super(pointerId, x, y, timeMs, startKeyChar, startedOnLetter, slot, geometry);
         }
     }
 
     private static final class HandlerSession {
-        final SparseArray<PointerTrack> activePointers = new SparseArray<>(4);
-        final List<MultiSwipeInputToken> completedTokens = new ArrayList<>(4);
-        final List<MultiSwipeInputToken> wordTokens = new ArrayList<>(16);
-        final MultiSwipeGeometry geometry = new MultiSwipeGeometry();
-        final int[] pointerBySlot = new int[] {-1, -1};
-        final SparseIntArray slotByPointer = new SparseIntArray(4);
+        final MultiSwipeWordSession core = new MultiSwipeWordSession();
+        final MultiSwipeGeometry geometry = core.geometry;
         final Handler mainHandler = new Handler(Looper.getMainLooper());
 
         boolean geometryReady = false;
@@ -267,56 +72,14 @@ public final class GboardMultiSwipeRuntime {
         Object lastNativeLayoutObj = null;
         int lastKeyboardWidth = 0;
         int lastKeyboardHeight = 0;
-        boolean sawMultiTouch = false;
-        boolean multiswipeTakeoverActive = false;
-        boolean multiswipeWordActive = false;
-        boolean sawNonLetterThisSession = false;
-        String textSnapshotAtActionDown = null;
-        boolean leadingSpaceEvaluated = false;
-        boolean suppressNextLeadingSpace = false;
-        String lastObservedTextBeforeCursor = null;
-        String lastCommittedWord = null;
-        long lastTouchUpTimeMs = 0L;
-        int restingDroppedThisSession = 0;
-        int lastPromotedPassiveCount = 0;
-        final PassiveTapBuffer passiveTapBuffer = new PassiveTapBuffer();
-        final SingleTouchCombineBuffer singleTouchCombineBuffer = new SingleTouchCombineBuffer();
-
-        // Auto-space & Live Composing (WordComposer) state
-        String currentComposingWord = null;
-        List<String> currentAlternativeWords = null;
-        boolean autospaceInserted = false;
-        boolean autospaceTimerPending = false;
         Runnable autospaceRunnable = null;
 
         void cancelAutospaceTimer() {
-            if (autospaceTimerPending && autospaceRunnable != null) {
+            if (autospaceRunnable != null) {
                 mainHandler.removeCallbacks(autospaceRunnable);
-                autospaceTimerPending = false;
+                autospaceRunnable = null;
             }
-        }
-
-        void resetGestureState() {
-            activePointers.clear();
-            completedTokens.clear();
-            pointerBySlot[0] = -1;
-            pointerBySlot[1] = -1;
-            slotByPointer.clear();
-            sawMultiTouch = false;
-            multiswipeTakeoverActive = false;
-            sawNonLetterThisSession = false;
-            restingDroppedThisSession = 0;
-        }
-
-        void clearWordBuffer() {
-            cancelAutospaceTimer();
-            wordTokens.clear();
-            currentComposingWord = null;
-            currentAlternativeWords = null;
-            multiswipeWordActive = false;
-            leadingSpaceEvaluated = false;
-            lastTouchUpTimeMs = 0L;
-            lastPromotedPassiveCount = 0;
+            core.autospaceTimerPending = false;
         }
     }
 
@@ -358,8 +121,6 @@ public final class GboardMultiSwipeRuntime {
     private static volatile Context cachedContext = null;
     private static volatile Object cachedSampleKeyView = null;
     private static volatile Object lastGestureHandler = null;
-    private static volatile long lastActionDownTimeMs = 0L;
-    private static volatile boolean lastDownOnLetterArea = false;
     private static volatile boolean multiswipeEnabledCached = true;
     private static volatile boolean crashHandlerInstalled = false;
 
@@ -460,77 +221,19 @@ public final class GboardMultiSwipeRuntime {
             int actionMasked = event.getActionMasked();
             int actionIndex = event.getActionIndex();
             long eventTime = event.getEventTime();
-            float multiSwipeThreshold = Math.max(
-                    MULTI_TOUCH_SWIPE_THRESHOLD_PX, session.geometry.keyWidthPx * 0.24f);
+            MultiSwipeWordSession.SettingsSnapshot settings = readSettingsSnapshot(context);
+            MultiSwipeWordSession.EditorAdapter editor = createEditorAdapter(handler, context);
+            MultiSwipeWordSession.DecodePort decoder = createDecodePort(context, session, activeLang);
+            MultiSwipeWordSession.LifecycleCallbacks callbacks =
+                    createCallbacks(handler, session, context, activeLang, editor);
+            float multiSwipeThreshold = session.core.multiSwipeThresholdPx();
 
             switch (actionMasked) {
                 case MotionEvent.ACTION_DOWN: {
                     int pid = event.getPointerId(0);
                     float x = event.getX(0);
                     float y = event.getY(0);
-                    lastActionDownTimeMs = eventTime;
-                    boolean downOnLetter = session.geometry.isOnLetterArea(x, y);
-                    lastDownOnLetterArea = downOnLetter;
-
-                    // Clear any lingering trail segment for this pointer
-                    finishTrailForPointer(handler, pid, false);
-
-                    // 1. Kinetica eatBefore: retract automatically inserted space if a hugging punctuation is tapped
-                    if (session.autospaceInserted) {
-                        KeySpec hit = session.geometry.findKeyAt(x, y);
-                        if (hit == null) {
-                            hit = session.geometry.nearestAnyKey(x, y);
-                        }
-                        if (hit != null && session.geometry.isPunctuationChar(hit.character)) {
-                            InputConnection ic = resolveActiveInputConnection(handler, context);
-                            if (ic != null) {
-                                CharSequence before = ic.getTextBeforeCursor(1, 0);
-                                if (before != null && before.length() > 0 && before.charAt(before.length() - 1) == ' ') {
-                                    ic.deleteSurroundingText(1, 0);
-                                }
-                            }
-                        }
-                        session.autospaceInserted = false;
-                    }
-
-                    // 2. WordComposer continuation:
-                    // If the user touches another letter within 380ms of last lift (or autospace timer was ticking),
-                    // cancel autospace and keep existing wordTokens to continue the word in progress.
-                    // Tapping outside the letter area (Space/Enter/Backspace) always clears the word buffer.
-                    long timeSinceLastUp = (session.lastTouchUpTimeMs > 0)
-                            ? (eventTime - session.lastTouchUpTimeMs)
-                            : Long.MAX_VALUE;
-                    boolean wasAutospacing = session.autospaceTimerPending;
-                    session.cancelAutospaceTimer();
-
-                    boolean isWordContinuing = downOnLetter && session.multiswipeWordActive
-                            && (wasAutospacing
-                            || (timeSinceLastUp <= (GboardMultiSwipeSettings.readAutoSpaceDelayMs(context) + 80L)
-                                    && !session.wordTokens.isEmpty())
-                            || (session.activePointers.size() > 0));
-
-                    session.resetGestureState();
-
-                    if (!isWordContinuing) {
-                        session.clearWordBuffer();
-                        String snapshotNow = readTextBeforeCursorSnapshot(handler, context);
-                        if (shouldSuppressLeadingSpaceAfterDeletion(
-                                session.lastObservedTextBeforeCursor, snapshotNow)) {
-                            session.suppressNextLeadingSpace = true;
-                        } else if (snapshotNow != null && !snapshotNow.isEmpty()
-                                && !Character.isLetterOrDigit(snapshotNow.charAt(snapshotNow.length() - 1))) {
-                            session.suppressNextLeadingSpace = false;
-                        }
-                        session.lastObservedTextBeforeCursor = snapshotNow;
-                        session.textSnapshotAtActionDown = snapshotNow;
-                        session.passiveTapBuffer.validateOnActionDown(snapshotNow, downOnLetter, eventTime);
-                        int combineDelayMs = GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(context);
-                        session.singleTouchCombineBuffer.validateOnActionDown(
-                                snapshotNow, downOnLetter, eventTime, combineDelayMs);
-                    }
-                    setMultiSwipeTrailAccentActive(handler, isWordContinuing, context);
-
-                    registerPointerDown(session, pid, x, y, eventTime);
+                    session.core.onActionDown(pid, x, y, eventTime, settings, editor, callbacks);
                     break;
                 }
 
@@ -539,8 +242,7 @@ public final class GboardMultiSwipeRuntime {
                     float x = event.getX(actionIndex);
                     float y = event.getY(actionIndex);
                     finishTrailForPointer(handler, pid, false);
-                    registerPointerDown(session, pid, x, y, eventTime);
-                    session.sawMultiTouch = true;
+                    session.core.onPointerDown(pid, x, y, eventTime);
                     markNativeLetterStarted(handler);
                     ensureSoftKeyMapPopulated(handler, session, event);
                     maybeActivateTakeover(handler, session, multiSwipeThreshold, false);
@@ -553,10 +255,10 @@ public final class GboardMultiSwipeRuntime {
 
                     for (int p = 0; p < pointerCount; p++) {
                         int pid = event.getPointerId(p);
-                        PointerTrack track = session.activePointers.get(pid);
+                        MultiSwipeWordSession.PointerTrack track = session.core.activePointers.get(pid);
                         if (track == null) {
-                            track = registerPointerDown(
-                                    session, pid, event.getX(p), event.getY(p), eventTime);
+                            track = session.core.registerPointerDown(
+                                    pid, event.getX(p), event.getY(p), eventTime);
                         }
                         for (int h = 0; h < historySize; h++) {
                             track.addPoint(
@@ -570,15 +272,15 @@ public final class GboardMultiSwipeRuntime {
                     }
 
                     if (pointerCount >= 2) {
-                        session.sawMultiTouch = true;
+                        session.core.sawMultiTouch = true;
                     }
 
-                    if (session.sawMultiTouch) {
+                    if (session.core.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
                         sanitizeTrailIndices(handler);
                     }
 
-                    if (session.sawMultiTouch || !session.completedTokens.isEmpty()) {
+                    if (session.core.sawMultiTouch || !session.core.completedTokens.isEmpty()) {
                         markNativeLetterStarted(handler);
                     }
 
@@ -588,35 +290,19 @@ public final class GboardMultiSwipeRuntime {
 
                 case MotionEvent.ACTION_POINTER_UP: {
                     int pid = event.getPointerId(actionIndex);
-                    PointerTrack track = session.activePointers.get(pid);
-                    boolean isSwipe = false;
-                    if (track != null) {
-                        track.addPoint(
-                                event.getX(actionIndex),
-                                event.getY(actionIndex),
-                                eventTime,
-                                session.geometry
-                        );
-                        track.finished = true;
-                        session.activePointers.remove(pid);
-                        if (!track.isRestingFinger(multiSwipeThreshold)) {
-                            isSwipe = track.isSwipe(multiSwipeThreshold);
-                            MultiSwipeInputToken token = track.toToken(multiSwipeThreshold);
-                            if (token != null) {
-                                session.completedTokens.add(token);
-                            }
-                        } else {
-                            session.restingDroppedThisSession++;
-                        }
-                    }
-                    releasePointerSlot(session, pid);
-                    finishTrailForPointer(handler, pid, isSwipe);
+                    session.core.onPointerUp(
+                            pid,
+                            event.getX(actionIndex),
+                            event.getY(actionIndex),
+                            eventTime,
+                            true,
+                            callbacks);
 
-                    if (session.sawMultiTouch) {
+                    if (session.core.sawMultiTouch) {
                         ensureSoftKeyMapPopulated(handler, session, event);
                     }
 
-                    if (session.sawMultiTouch || !session.completedTokens.isEmpty()) {
+                    if (session.core.sawMultiTouch || !session.core.completedTokens.isEmpty()) {
                         markNativeLetterStarted(handler);
                     }
 
@@ -625,12 +311,7 @@ public final class GboardMultiSwipeRuntime {
                 }
 
                 case MotionEvent.ACTION_UP: {
-                    boolean isMultiSwipeGesture = session.sawMultiTouch
-                            || session.multiswipeTakeoverActive
-                            || (session.multiswipeWordActive && !session.wordTokens.isEmpty());
-                    boolean anySwipeThisSession = false;
-                    for (int i = 0; i < session.activePointers.size(); i++) {
-                        PointerTrack track = session.activePointers.valueAt(i);
+                    for (MultiSwipeWordSession.PointerTrack track : session.core.activePointers.values()) {
                         int pIdx = event.findPointerIndex(track.pointerId);
                         if (pIdx >= 0) {
                             track.addPoint(
@@ -640,175 +321,15 @@ public final class GboardMultiSwipeRuntime {
                                     session.geometry
                             );
                         }
-                        track.finished = true;
-                        if (track.isRestingFinger(multiSwipeThreshold)) {
-                            session.restingDroppedThisSession++;
-                            if (isMultiSwipeGesture) {
-                                finishTrailForPointer(handler, track.pointerId, false);
-                            }
-                            continue;
-                        }
-                        boolean isSwipe = track.isSwipe(multiSwipeThreshold);
-                        if (isSwipe) {
-                            anySwipeThisSession = true;
-                        }
-                        MultiSwipeInputToken token = track.toToken(multiSwipeThreshold);
-                        if (token != null) {
-                            session.completedTokens.add(token);
-                        }
-                        if (isMultiSwipeGesture) {
-                            finishTrailForPointer(handler, track.pointerId, isSwipe);
-                        }
                     }
-                    session.activePointers.clear();
-                    session.lastTouchUpTimeMs = eventTime;
-
-                    boolean hasSwipe = anySwipeThisSession;
-                    if (!hasSwipe) {
-                        for (int i = 0; i < session.completedTokens.size(); i++) {
-                            if (session.completedTokens.get(i).kind == MultiSwipeInputToken.Kind.SWIPE) {
-                                hasSwipe = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!hasSwipe) {
-                        for (int i = 0; i < session.wordTokens.size(); i++) {
-                            if (session.wordTokens.get(i).kind == MultiSwipeInputToken.Kind.SWIPE) {
-                                hasSwipe = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (isMultiSwipeGesture && !hasSwipe && trailActiveBoolField != null) {
-                        try {
-                            Object tm = trailManagerField.get(handler);
-                            if (tm != null) {
-                                trailActiveBoolField.setBoolean(tm, false);
-                            }
-                        } catch (Throwable ignored) {
-                        }
-                    }
-
-                    // Only run MultiSwipe decoding for multi-touch gestures (or continuations of an active
-                    // MultiSwipe word / multi-touch tap prefix) that contain at least one swipe,
-                    // OR sequential single-touch strokes combined within singleTouchCombineDelayMs.
-                    int combineDelayMs = GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(context);
-                    boolean promoteMultiTouchPassive = !session.multiswipeWordActive
-                            && session.passiveTapBuffer.canPromoteMultiTouchSwipe(session.completedTokens);
-                    boolean promoteSingleTouchCombine = !session.multiswipeWordActive
-                            && combineDelayMs > 0
-                            && session.singleTouchCombineBuffer.canPromoteWith(
-                                    session.completedTokens, session.sawNonLetterThisSession);
-                    boolean shouldDecodeNow = ((isMultiSwipeGesture || promoteMultiTouchPassive) && hasSwipe)
-                            || promoteSingleTouchCombine;
-
-                    if (shouldDecodeNow) {
-                        boolean wasMultiSwipeWordActive = session.multiswipeWordActive;
-                        session.multiswipeTakeoverActive = true;
-                        session.multiswipeWordActive = true;
-                        setMultiSwipeTrailAccentActive(handler, true, context);
-                        activateMultiSwipeTakeoverOnFinish(handler);
-
-                        if (!wasMultiSwipeWordActive) {
-                            int beforePromoted = session.wordTokens.size();
-                            if (promoteSingleTouchCombine && !promoteMultiTouchPassive) {
-                                session.textSnapshotAtActionDown =
-                                        session.singleTouchCombineBuffer.promoteInto(
-                                                session.wordTokens, session.textSnapshotAtActionDown);
-                                session.passiveTapBuffer.clear();
-                            } else {
-                                session.textSnapshotAtActionDown = session.passiveTapBuffer.promoteInto(
-                                        session.wordTokens, session.textSnapshotAtActionDown);
-                                session.singleTouchCombineBuffer.clear();
-                            }
-                            session.lastPromotedPassiveCount += Math.max(
-                                    0, session.wordTokens.size() - beforePromoted);
-                        } else {
-                            session.passiveTapBuffer.clear();
-                            session.singleTouchCombineBuffer.clear();
-                        }
-
-                        // Accumulate all completed tokens into persistent word buffer
-                        session.wordTokens.addAll(session.completedTokens);
-                        session.completedTokens.clear();
-
-                        // 1. Live Composing Text preview (exact Kinetica WordComposer)
-                        decodeAndPreviewSession(handler, session, context, activeLang);
-
-                        // 2. Schedule configurable autospace timer from lift
-                        int autoSpaceDelayMs = GboardMultiSwipeSettings.readAutoSpaceDelayMs(context);
-                        session.cancelAutospaceTimer();
-                        session.autospaceTimerPending = true;
-                        session.autospaceRunnable = () -> finalizeComposingAndAutospace(handler, session, context, activeLang);
-                        session.mainHandler.postDelayed(session.autospaceRunnable, autoSpaceDelayMs);
-                    } else {
-                        // Single-finger input and pure multi-touch rollover taps stay on stock Gboard,
-                        // while passively recording anchors in case a following stroke within timeout combines.
-                        setMultiSwipeTrailAccentActive(handler, false, context);
-                        String tapBaselineAtDown = session.textSnapshotAtActionDown;
-                        boolean strokeHadMultiTouch = session.sawMultiTouch;
-                        boolean sawNonLetter = session.sawNonLetterThisSession;
-                        int restingDropped = session.restingDroppedThisSession;
-                        List<MultiSwipeInputToken> completedCopy = new ArrayList<>(session.completedTokens);
-                        session.clearWordBuffer();
-                        session.completedTokens.clear();
-                        session.passiveTapBuffer.recordStroke(
-                                completedCopy,
-                                hasSwipe,
-                                sawNonLetter,
-                                strokeHadMultiTouch,
-                                tapBaselineAtDown,
-                                eventTime);
-                        session.singleTouchCombineBuffer.recordStroke(
-                                completedCopy,
-                                hasSwipe,
-                                sawNonLetter,
-                                tapBaselineAtDown,
-                                eventTime,
-                                combineDelayMs);
-                        if (hasSwipe || strokeHadMultiTouch || restingDropped > 0
-                                || !session.passiveTapBuffer.tokens.isEmpty()) {
-                            String reason = !hasSwipe
-                                    ? (strokeHadMultiTouch ? "rollover_no_swipe" : "tap_only")
-                                    : "single_touch_swipe";
-                            GboardMultiSwipeTraceLogger.logSkippedGesture(
-                                    context,
-                                    session.geometry,
-                                    session.geometryFromNativeLayout,
-                                    session.lastKeyboardWidth,
-                                    session.lastKeyboardHeight,
-                                    activeLang,
-                                    reason,
-                                    hasSwipe,
-                                    strokeHadMultiTouch,
-                                    session.passiveTapBuffer.tokens.size(),
-                                    restingDropped,
-                                    tapBaselineAtDown,
-                                    completedCopy);
-                        }
-                    }
+                    session.core.onActionUp(eventTime, settings, editor, decoder, callbacks);
                     break;
                 }
 
                 case MotionEvent.ACTION_CANCEL: {
-                    setMultiSwipeTrailAccentActive(handler, false, context);
-                    session.resetGestureState();
-                    session.clearWordBuffer();
-                    session.passiveTapBuffer.clear();
-                    session.singleTouchCombineBuffer.clear();
+                    session.core.onActionCancel(callbacks);
                     for (int i = 0; i < 10; i++) {
                         finishTrailForPointer(handler, i, false);
-                    }
-                    if (trailActiveBoolField != null) {
-                        try {
-                            Object tm = trailManagerField.get(handler);
-                            if (tm != null) {
-                                trailActiveBoolField.setBoolean(tm, false);
-                            }
-                        } catch (Throwable ignored) {
-                        }
                     }
                     break;
                 }
@@ -838,37 +359,16 @@ public final class GboardMultiSwipeRuntime {
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return stockShouldStart;
 
-            boolean multiswipeControlled = session.sawMultiTouch
-                    || session.multiswipeTakeoverActive
-                    || session.multiswipeWordActive;
-
-            if (stockShouldStart) {
-                if (multiswipeControlled) {
-                    ensureTrailRecorderEnabled(handler);
-                    session.multiswipeTakeoverActive = true;
-                    ensureGestureHandlerOwnsDispatcher(handler);
-                }
-                return true;
-            }
-
-            // Gboard's [0494]..[04cd] transition block must only run when `this.v` is currently false.
-            if (isGestureAlreadyActive(handler)) {
-                if (multiswipeControlled) {
-                    ensureTrailRecorderEnabled(handler);
-                }
-                return false;
-            }
-
-            // When multi-touch is detected (both thumbs active) or continuing an active MultiSwipe word,
-            // start gesture as soon as any thumb moves >= multiSwipeThreshold
-            float multiSwipeThreshold = Math.max(
-                    MULTI_TOUCH_SWIPE_THRESHOLD_PX, session.geometry.keyWidthPx * 0.24f);
-            if (multiswipeControlled && hasAnySwipingPointer(session, multiSwipeThreshold)) {
-                session.multiswipeTakeoverActive = true;
+            boolean alreadyActive = !stockShouldStart && isGestureAlreadyActive(handler);
+            boolean shouldStart = session.core.shouldStartGesture(
+                    multiswipeEnabledCached, stockShouldStart, alreadyActive);
+            if (alreadyActive && session.core.isControlled()) {
+                ensureTrailRecorderEnabled(handler);
+            } else if (shouldStart && session.core.isControlled()) {
                 ensureTrailRecorderEnabled(handler);
                 ensureGestureHandlerOwnsDispatcher(handler);
-                return true;
             }
+            return shouldStart;
         } catch (Throwable t) {
             Log.w(TAG, "shouldStartGesture error", t);
         }
@@ -887,9 +387,7 @@ public final class GboardMultiSwipeRuntime {
                 return stockLetterStarted;
             }
             HandlerSession session = SESSIONS.get(handler);
-            if (session != null && (session.sawMultiTouch
-                    || session.multiswipeTakeoverActive
-                    || !session.completedTokens.isEmpty())) {
+            if (session != null && session.core.resolveLetterStarted(multiswipeEnabledCached, false)) {
                 markNativeLetterStarted(handler);
                 return true;
             }
@@ -908,9 +406,7 @@ public final class GboardMultiSwipeRuntime {
         try {
             lastGestureHandler = handler;
             HandlerSession session = SESSIONS.get(handler);
-            return session != null && (session.activePointers.size() > 0
-                    || session.sawMultiTouch
-                    || session.multiswipeTakeoverActive);
+            return session != null && session.core.shouldReceiveEventsDuringOtherOwner(multiswipeEnabledCached);
         } catch (Throwable ignored) {
             return false;
         }
@@ -923,12 +419,12 @@ public final class GboardMultiSwipeRuntime {
      */
     public static boolean shouldSuppressBasicMotionEventHandler(Object basicHandler, MotionEvent event) {
         if (!multiswipeEnabledCached || event == null) return false;
-        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) return false;
+        boolean isActionDown = (event.getActionMasked() == MotionEvent.ACTION_DOWN);
         try {
             Object gestureHandler = lastGestureHandler;
             if (gestureHandler == null) return false;
             HandlerSession session = SESSIONS.get(gestureHandler);
-            return session != null && session.multiswipeTakeoverActive;
+            return session != null && session.core.shouldSuppressBasicHandler(multiswipeEnabledCached, isActionDown);
         } catch (Throwable ignored) {
             return false;
         }
@@ -946,25 +442,21 @@ public final class GboardMultiSwipeRuntime {
             Object gestureHandler = lastGestureHandler;
             if (gestureHandler == null) return false;
             HandlerSession session = SESSIONS.get(gestureHandler);
-            if (session == null || !session.geometryReady) return false;
-            if (session.multiswipeTakeoverActive) return true;
+            if (session == null) return false;
 
-            long deltaMs = event.getEventTime() - lastActionDownTimeMs;
-            if (!lastDownOnLetterArea || deltaMs < 0L || deltaMs > 220L) {
-                return false;
-            }
             int actionIdx = event.getActionIndex();
             if (actionIdx < 0 || actionIdx >= event.getPointerCount()) return false;
-            float newX = event.getX(actionIdx);
-            float newY = event.getY(actionIdx);
-            if (!session.geometry.isOnLetterArea(newX, newY)) return false;
-
-            if (event.getPointerCount() >= 2) {
-                float firstX = event.getX(0);
-                float firstY = event.getY(0);
-                return session.geometry.isOnLetterArea(firstX, firstY);
-            }
-            return true;
+            boolean hasFirst = event.getPointerCount() >= 2;
+            return session.core.shouldSuppressRolloverCommit(
+                    multiswipeEnabledCached,
+                    true,
+                    session.geometryReady,
+                    event.getEventTime(),
+                    event.getX(actionIdx),
+                    event.getY(actionIdx),
+                    hasFirst,
+                    hasFirst ? event.getX(0) : 0f,
+                    hasFirst ? event.getY(0) : 0f);
         } catch (Throwable ignored) {
             return false;
         }
@@ -980,7 +472,7 @@ public final class GboardMultiSwipeRuntime {
     public static boolean shouldInterceptGestureDispatch(Object handler) {
         if (handler == null) return false;
         HandlerSession session = SESSIONS.get(handler);
-        return session != null && session.multiswipeTakeoverActive;
+        return session != null && session.core.shouldInterceptGestureDispatch();
     }
 
     /**
@@ -995,17 +487,10 @@ public final class GboardMultiSwipeRuntime {
         try {
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return false;
-
-            boolean protectMultiSwipeSession = session.activePointers.size() > 0
-                    && (session.sawMultiTouch
-                    || session.multiswipeTakeoverActive
-                    || session.multiswipeWordActive);
-            if (protectMultiSwipeSession) {
+            if (session.core.shouldInterceptGestureReset()) {
                 ensureGestureHandlerOwnsDispatcher(handler);
                 return true;
             }
-
-            session.resetGestureState();
             return false;
         } catch (Throwable t) {
             Log.w(TAG, "shouldInterceptGestureReset error", t);
@@ -1034,10 +519,10 @@ public final class GboardMultiSwipeRuntime {
             float multiSwipeThreshold,
             boolean claimDispatcher
     ) {
-        if (!session.sawMultiTouch || !hasAnySwipingPointer(session, multiSwipeThreshold)) {
+        if (!session.core.sawMultiTouch || !session.core.hasAnySwipingPointer(multiSwipeThreshold)) {
             return;
         }
-        session.multiswipeTakeoverActive = true;
+        session.core.multiswipeTakeoverActive = true;
         setMultiSwipeTrailAccentActive(handler, true, null);
         ensureTrailRecorderEnabled(handler);
         if (claimDispatcher) {
@@ -1389,66 +874,6 @@ public final class GboardMultiSwipeRuntime {
         return (r << 16) | (g << 8) | b;
     }
 
-    private static void releasePointerSlot(HandlerSession session, int pointerId) {
-        if (session == null) return;
-        int slot = session.slotByPointer.get(pointerId, -1);
-        if (slot >= 0 && slot < 2 && session.pointerBySlot[slot] == pointerId) {
-            session.pointerBySlot[slot] = -1;
-        }
-        session.slotByPointer.delete(pointerId);
-    }
-
-    private static PointerTrack registerPointerDown(
-            HandlerSession session,
-            int pointerId,
-            float x,
-            float y,
-            long timeMs
-    ) {
-        float midX = (session.geometry != null && session.geometry.isValid())
-                ? session.geometry.midlinePx()
-                : 540f;
-        int slot = (x < midX) ? 0 : 1;
-        int other = 1 - slot;
-        int currentOwner = session.pointerBySlot[slot];
-        if (currentOwner != -1 && session.activePointers.indexOfKey(currentOwner) >= 0) {
-            slot = other;
-        }
-        session.slotByPointer.put(pointerId, slot);
-        session.pointerBySlot[slot] = pointerId;
-
-        boolean onLetter = session.geometry.isOnLetterArea(x, y);
-        if (!onLetter) {
-            session.sawNonLetterThisSession = true;
-        }
-        KeySpec nearest = session.geometry.nearestLetterKey(x, y);
-        char keyChar = nearest != null ? nearest.character : '\0';
-        PointerTrack track = new PointerTrack(pointerId, x, y, timeMs, keyChar, onLetter, slot, session.geometry);
-        if (session.activePointers.size() > 0) {
-            track.overlapped = true;
-            for (int i = 0; i < session.activePointers.size(); i++) {
-                session.activePointers.valueAt(i).overlapped = true;
-            }
-        }
-        session.activePointers.put(pointerId, track);
-        return track;
-    }
-
-    private static boolean hasAnySwipingPointer(HandlerSession session, float swipeThreshold) {
-        for (int i = 0; i < session.activePointers.size(); i++) {
-            PointerTrack t = session.activePointers.valueAt(i);
-            if (t.startedOnLetter && t.isSwipe(swipeThreshold)) {
-                return true;
-            }
-        }
-        for (int i = 0; i < session.completedTokens.size(); i++) {
-            if (session.completedTokens.get(i).kind == MultiSwipeInputToken.Kind.SWIPE) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private static boolean isGestureAlreadyActive(Object handler) {
         probeHandlerFields(handler);
         try {
@@ -1487,150 +912,250 @@ public final class GboardMultiSwipeRuntime {
         }
     }
 
-    private static void decodeAndPreviewSession(
+    private static MultiSwipeWordSession.SettingsSnapshot readSettingsSnapshot(Context context) {
+        boolean enabled = (context == null) || GboardMultiSwipeSettings.readEnabled(context);
+        boolean autoSpaceEnabled = (context == null) || GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
+        int autoSpaceDelayMs = (context != null)
+                ? GboardMultiSwipeSettings.readAutoSpaceDelayMs(context)
+                : GboardMultiSwipeSettings.DEFAULT_AUTO_SPACE_DELAY_MS;
+        int combineDelayMs = (context != null)
+                ? GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(context)
+                : GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS;
+        return new MultiSwipeWordSession.SettingsSnapshot(
+                enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs);
+    }
+
+    private static MultiSwipeWordSession.EditorAdapter createEditorAdapter(
+            Object handler,
+            Context context
+    ) {
+        return new MultiSwipeWordSession.EditorAdapter() {
+            @Override
+            public String readTextBeforeCursorSnapshot() {
+                return GboardMultiSwipeRuntime.readTextBeforeCursorSnapshot(handler, context);
+            }
+
+            @Override
+            public String readCharBeforeCursor() {
+                InputConnection ic = resolveActiveInputConnection(handler, context);
+                if (ic == null) return null;
+                try {
+                    CharSequence before = ic.getTextBeforeCursor(1, 0);
+                    return (before != null) ? before.toString() : null;
+                } catch (Throwable ignored) {
+                    return null;
+                }
+            }
+
+            @Override
+            public void deleteCharsBeforeCursor(int count) {
+                if (count <= 0) return;
+                InputConnection ic = resolveActiveInputConnection(handler, context);
+                if (ic != null) {
+                    try {
+                        ic.deleteSurroundingText(count, 0);
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+
+            @Override
+            public int previewWord(String word, String baselineBeforeText, boolean prependLeadingSpace) {
+                InputConnection ic = resolveActiveInputConnection(handler, context);
+                if (ic == null) return 0;
+                return previewWordToInputConnection(ic, word, baselineBeforeText, prependLeadingSpace);
+            }
+
+            @Override
+            public void commitFinishedWord(String word, boolean appendSpace) {
+                InputConnection ic = resolveActiveInputConnection(handler, context);
+                if (ic == null) return;
+                try {
+                    ic.beginBatchEdit();
+                    try {
+                        ic.finishComposingText();
+                        if (appendSpace) {
+                            ic.commitText(" ", 1);
+                        }
+                    } finally {
+                        ic.endBatchEdit();
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "commitFinishedWord failed", t);
+                }
+            }
+        };
+    }
+
+    private static MultiSwipeWordSession.DecodePort createDecodePort(
+            Context context,
+            HandlerSession session,
+            String activeLang
+    ) {
+        return (tokens, prevWord) -> {
+            try {
+                LanguagePack pack = GboardMultiSwipeDictionaryManager.loadBlockingIfNeeded(
+                        context, activeLang, session.geometry.hasDedicatedUmlauts());
+                if (pack == null) {
+                    return Collections.emptyList();
+                }
+                GboardMultiSwipeSettings.syncDecoderConstants(context);
+                KineticaDtwDecoder decoder = new KineticaDtwDecoder();
+                return decoder.decode(tokens, pack.trie, pack.bigrams, session.geometry, prevWord);
+            } catch (Throwable t) {
+                Log.e(TAG, "decodePort failed", t);
+                return Collections.emptyList();
+            }
+        };
+    }
+
+    private static MultiSwipeWordSession.LifecycleCallbacks createCallbacks(
             Object handler,
             HandlerSession session,
             Context context,
-            String lang
+            String activeLang,
+            MultiSwipeWordSession.EditorAdapter editor
     ) {
-        try {
-            LanguagePack pack = GboardMultiSwipeDictionaryManager.loadBlockingIfNeeded(
-                    context, lang, session.geometry.hasDedicatedUmlauts());
-            if (pack == null) {
-                return;
+        return new MultiSwipeWordSession.LifecycleCallbacks() {
+            @Override
+            public void onTrailAccentChanged(boolean active) {
+                setMultiSwipeTrailAccentActive(handler, active, context);
             }
 
-            GboardMultiSwipeSettings.syncDecoderConstants(context);
-            KineticaDtwDecoder decoder = new KineticaDtwDecoder();
-            InputConnection ic = resolveActiveInputConnection(handler, context);
-            String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
+            @Override
+            public void onTakeoverActivatedOnFinish() {
+                activateMultiSwipeTakeoverOnFinish(handler);
+            }
 
-            // Re-decode full wordTokens buffer using Kinetica's continuous DTW engine
-            List<WordCandidate> candidates = decoder.decode(
-                    session.wordTokens,
-                    pack.trie,
-                    pack.bigrams,
-                    session.geometry,
-                    prevWord
-            );
-            if (candidates.isEmpty()) {
+            @Override
+            public void onPointerFinished(int pointerId, boolean isSwipe, boolean inMultiSwipeGesture) {
+                finishTrailForPointer(handler, pointerId, isSwipe);
+            }
+
+            @Override
+            public void onClearTrailManagerActive() {
+                if (trailActiveBoolField != null) {
+                    try {
+                        Object tm = trailManagerField.get(handler);
+                        if (tm != null) {
+                            trailActiveBoolField.setBoolean(tm, false);
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+
+            @Override
+            public void onScheduleAutospaceTimer(long delayMs) {
+                session.cancelAutospaceTimer();
+                session.core.autospaceTimerPending = true;
+                final MultiSwipeWordSession.LifecycleCallbacks self = this;
+                session.autospaceRunnable = () -> {
+                    boolean autoSpaceEnabled = (context == null)
+                            || GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
+                    session.core.finalizeAutospace(autoSpaceEnabled, editor, self);
+                };
+                session.mainHandler.postDelayed(session.autospaceRunnable, delayMs);
+            }
+
+            @Override
+            public void onCancelAutospaceTimer() {
+                session.cancelAutospaceTimer();
+            }
+
+            @Override
+            public void onWordDecoded(
+                    String word,
+                    List<String> alternatives,
+                    List<MultiSwipeInputToken> tokens,
+                    boolean capitalizeFirst,
+                    String prevWord,
+                    String baseline,
+                    int promotedPassiveCount,
+                    int rollbackDeleted,
+                    int restingDropped,
+                    List<WordCandidate> candidates
+            ) {
                 GboardMultiSwipeTraceLogger.logWordDecode(
                         context,
                         session.geometry,
                         session.geometryFromNativeLayout,
                         session.lastKeyboardWidth,
                         session.lastKeyboardHeight,
-                        lang,
-                        session.wordTokens,
-                        null,
-                        false,
+                        activeLang,
+                        tokens,
+                        word,
+                        capitalizeFirst,
                         prevWord,
-                        session.textSnapshotAtActionDown,
-                        session.lastPromotedPassiveCount,
-                        0,
-                        session.restingDroppedThisSession,
+                        baseline,
+                        promotedPassiveCount,
+                        rollbackDeleted,
+                        restingDropped,
                         candidates);
-                return;
-            }
-
-            boolean autoSpaceEnabled = GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
-            boolean prependLeadingSpace = !session.leadingSpaceEvaluated
-                    && !session.suppressNextLeadingSpace
-                    && shouldPrependLeadingSpace(session.textSnapshotAtActionDown, autoSpaceEnabled);
-            boolean attachingToWord = isAttachingDirectlyToWord(
-                    session.textSnapshotAtActionDown, prependLeadingSpace);
-
-            String bestWord = candidates.get(0).word;
-            boolean capitalizeFirst = !attachingToWord
-                    && shouldCapitalizeFirstLetter(session.textSnapshotAtActionDown, ic);
-            if (attachingToWord && bestWord.length() > 0) {
-                bestWord = lowercaseFirstChar(bestWord);
-            } else if (capitalizeFirst && bestWord.length() > 0) {
-                bestWord = capitalizeFirstChar(bestWord);
-            }
-
-            List<String> alternativeWords = new ArrayList<>(candidates.size());
-            for (int i = 0; i < candidates.size(); i++) {
-                String w = candidates.get(i).word;
-                if (attachingToWord && w.length() > 0) {
-                    w = lowercaseFirstChar(w);
-                } else if (capitalizeFirst && w.length() > 0) {
-                    w = capitalizeFirstChar(w);
-                }
-                if (!alternativeWords.contains(w)) {
-                    alternativeWords.add(w);
+                if (word != null) {
+                    GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(word, alternatives);
                 }
             }
 
-            session.currentComposingWord = bestWord;
-            session.currentAlternativeWords = alternativeWords;
-
-            int rollbackDeleted = 0;
-            if (ic != null) {
-                rollbackDeleted = previewWordToInputConnection(
-                        ic, bestWord, session.textSnapshotAtActionDown, prependLeadingSpace);
-                if (prependLeadingSpace && session.textSnapshotAtActionDown != null) {
-                    session.textSnapshotAtActionDown = session.textSnapshotAtActionDown + " ";
+            @Override
+            public void onWordCommitted(
+                    String word,
+                    boolean autospaceInserted,
+                    String prevWord,
+                    List<String> alternatives
+            ) {
+                GboardMultiSwipeDictionaryManager.recordCommittedWord(prevWord, word, activeLang);
+                GboardMultiSwipeTraceLogger.logCommit(context, word, autospaceInserted, prevWord);
+                if (alternatives != null) {
+                    GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(word, alternatives);
                 }
-                session.leadingSpaceEvaluated = true;
-                session.suppressNextLeadingSpace = false;
             }
 
-            GboardMultiSwipeTraceLogger.logWordDecode(
-                    context,
-                    session.geometry,
-                    session.geometryFromNativeLayout,
-                    session.lastKeyboardWidth,
-                    session.lastKeyboardHeight,
-                    lang,
-                    session.wordTokens,
-                    bestWord,
-                    capitalizeFirst,
-                    prevWord,
-                    session.textSnapshotAtActionDown,
-                    session.lastPromotedPassiveCount,
-                    rollbackDeleted,
-                    session.restingDroppedThisSession,
-                    candidates);
-
-            GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(bestWord, alternativeWords);
-        } catch (Throwable t) {
-            Log.e(TAG, "decodeAndPreviewSession failed", t);
-        }
+            @Override
+            public void onSkippedGesture(
+                    String reason,
+                    boolean hasSwipe,
+                    boolean strokeHadMultiTouch,
+                    int passiveBufferSize,
+                    int restingDropped,
+                    String baseline,
+                    List<MultiSwipeInputToken> completedTokens
+            ) {
+                GboardMultiSwipeTraceLogger.logSkippedGesture(
+                        context,
+                        session.geometry,
+                        session.geometryFromNativeLayout,
+                        session.lastKeyboardWidth,
+                        session.lastKeyboardHeight,
+                        activeLang,
+                        reason,
+                        hasSwipe,
+                        strokeHadMultiTouch,
+                        passiveBufferSize,
+                        restingDropped,
+                        baseline,
+                        completedTokens);
+            }
+        };
     }
 
     static boolean shouldPrependLeadingSpace(String baselineBeforeText, boolean autoSpaceEnabled) {
-        if (!autoSpaceEnabled || baselineBeforeText == null || baselineBeforeText.isEmpty()) {
-            return false;
-        }
-        char last = baselineBeforeText.charAt(baselineBeforeText.length() - 1);
-        return Character.isLetterOrDigit(last);
+        return MultiSwipeWordSession.shouldPrependLeadingSpace(baselineBeforeText, autoSpaceEnabled);
     }
 
     static boolean shouldSuppressLeadingSpaceAfterDeletion(
             String previousSnapshot,
             String currentSnapshot
     ) {
-        if (previousSnapshot == null || currentSnapshot == null) {
-            return false;
-        }
-        return currentSnapshot.length() < previousSnapshot.length()
-                && !currentSnapshot.isEmpty()
-                && Character.isLetterOrDigit(currentSnapshot.charAt(currentSnapshot.length() - 1));
+        return MultiSwipeWordSession.didDeleteTrailingChars(previousSnapshot, currentSnapshot);
     }
 
     static boolean isAttachingDirectlyToWord(String baselineBeforeText, boolean prependLeadingSpace) {
-        if (prependLeadingSpace || baselineBeforeText == null || baselineBeforeText.isEmpty()) {
-            return false;
-        }
-        return Character.isLetterOrDigit(baselineBeforeText.charAt(baselineBeforeText.length() - 1));
+        return MultiSwipeWordSession.isAttachingDirectlyToWord(baselineBeforeText, prependLeadingSpace);
     }
 
     static String lowercaseFirstChar(String word) {
-        if (word == null || word.isEmpty()) {
-            return word;
-        }
-        return Character.toLowerCase(word.charAt(0)) + word.substring(1);
+        return MultiSwipeWordSession.lowercaseFirstChar(word);
     }
 
     private static int previewWordToInputConnection(
@@ -1675,59 +1200,6 @@ public final class GboardMultiSwipeRuntime {
         return extraChars;
     }
 
-    private static void finalizeComposingAndAutospace(
-            Object handler,
-            HandlerSession session,
-            Context context,
-            String lang
-    ) {
-        try {
-            if (!session.autospaceTimerPending) return;
-            session.autospaceTimerPending = false;
-
-            // Autospace fires only after all thumbs have lifted
-            if (session.activePointers.size() > 0) return;
-
-            InputConnection ic = resolveActiveInputConnection(handler, context);
-            String committedWord = session.currentComposingWord;
-
-            if (ic != null && committedWord != null && !committedWord.isEmpty()) {
-                ic.beginBatchEdit();
-                try {
-                    // 1) Finish composing text
-                    ic.finishComposingText();
-
-                    // 2) Append space BEHIND the committed word (exact Kinetica autospace)
-                    boolean autospaceEnabled = GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
-                    if (autospaceEnabled) {
-                        ic.commitText(" ", 1);
-                        session.autospaceInserted = true;
-                    } else {
-                        session.autospaceInserted = false;
-                    }
-                } finally {
-                    ic.endBatchEdit();
-                }
-
-                String prevWord = extractPreviousWord(session.textSnapshotAtActionDown, ic, session.lastCommittedWord);
-                session.lastCommittedWord = committedWord;
-                GboardMultiSwipeDictionaryManager.recordCommittedWord(prevWord, committedWord, lang);
-                GboardMultiSwipeTraceLogger.logCommit(context, committedWord, session.autospaceInserted, prevWord);
-                if (session.currentAlternativeWords != null) {
-                    GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(committedWord, session.currentAlternativeWords);
-                }
-            }
-
-            session.clearWordBuffer();
-            session.passiveTapBuffer.clear();
-            session.singleTouchCombineBuffer.clear();
-            session.resetGestureState();
-            setMultiSwipeTrailAccentActive(handler, false, context);
-        } catch (Throwable t) {
-            Log.w(TAG, "finalizeComposingAndAutospace failed", t);
-        }
-    }
-
     private static String readTextBeforeCursorSnapshot(Object handler, Context context) {
         InputConnection ic = resolveActiveInputConnection(handler, context);
         if (ic == null) return null;
@@ -1739,106 +1211,9 @@ public final class GboardMultiSwipeRuntime {
         }
     }
 
-    /**
-     * Shared buffer state for retaining short prefix strokes and rolling back Stock Gboard's
-     * committed prefix if a subsequent stroke promotes into MultiSwipe.
-     */
-    static abstract class PendingStrokeBufferBase {
-        final List<MultiSwipeInputToken> tokens = new ArrayList<>();
-        String baselineText = null;
-        long lastUpTimeMs = 0L;
-
-        void clear() {
-            tokens.clear();
-            baselineText = null;
-            lastUpTimeMs = 0L;
-        }
-
-        protected abstract boolean isValidTypedPrefix(String typedPrefix);
-
-        protected final void validateGapAndPrefix(
-                String snapshotNow,
-                boolean downOnLetter,
-                long eventTimeMs,
-                long maxGapMs
-        ) {
-            if (tokens.isEmpty()) return;
-            long gapMs = (lastUpTimeMs > 0L) ? (eventTimeMs - lastUpTimeMs) : Long.MAX_VALUE;
-            if (!downOnLetter || gapMs < 0L || gapMs > maxGapMs) {
-                clear();
-                return;
-            }
-            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, snapshotNow);
-            if (!isValidTypedPrefix(typedPrefix)) {
-                clear();
-            }
-        }
-
-        protected final boolean appendTokensWithinCap(
-                List<MultiSwipeInputToken> additions,
-                String baselineAtDown,
-                long eventTimeMs
-        ) {
-            if (additions == null || additions.isEmpty() || baselineAtDown == null) {
-                clear();
-                return false;
-            }
-            if (tokens.isEmpty()) {
-                if (additions.size() > MAX_PASSIVE_TAP_TOKENS) {
-                    clear();
-                    return false;
-                }
-                baselineText = baselineAtDown;
-            } else if (tokens.size() + additions.size() > MAX_PASSIVE_TAP_TOKENS) {
-                clear();
-                return false;
-            }
-            tokens.addAll(additions);
-            lastUpTimeMs = eventTimeMs;
-            return true;
-        }
-
-        String promoteInto(List<MultiSwipeInputToken> destWordTokens, String textSnapshotAtActionDown) {
-            if (tokens.isEmpty()) return textSnapshotAtActionDown;
-            String restoredSnapshot = textSnapshotAtActionDown;
-            String typedPrefix = extractTypedPrefixSinceBaseline(baselineText, textSnapshotAtActionDown);
-            if (isValidTypedPrefix(typedPrefix)) {
-                destWordTokens.addAll(tokens);
-                restoredSnapshot = baselineText;
-            }
-            clear();
-            return restoredSnapshot;
-        }
-    }
-
-    /**
-     * Pure-JVM passive pre-swipe tap buffer: retains tap-only prefix strokes and their pre-tap
-     * baseline so a subsequent MultiSwipe swipe in the same word can roll back Stock Gboard's partial
-     * prefix (e.g. "fn", "in", "um") and decode the full multi-stroke word.
-     */
-    static final class PassiveTapBuffer extends PendingStrokeBufferBase {
-        boolean hadMultiTouch = false;
-
-        @Override
-        void clear() {
-            super.clear();
-            hadMultiTouch = false;
-        }
-
-        @Override
-        protected boolean isValidTypedPrefix(String typedPrefix) {
-            return isPureLetterPrefix(typedPrefix, tokens.size());
-        }
-
+    static final class PassiveTapBuffer extends MultiSwipeWordSession.PassiveTapBuffer {
         void validateOnActionDown(String snapshotNow, boolean downOnLetter, long eventTimeMs) {
-            validateGapAndPrefix(snapshotNow, downOnLetter, eventTimeMs, MAX_PASSIVE_TAP_GAP_MS);
-        }
-
-        boolean canPromoteMultiTouchSwipe(List<MultiSwipeInputToken> completedTokens) {
-            return hadMultiTouch
-                    && !tokens.isEmpty()
-                    && completedTokens != null
-                    && !completedTokens.isEmpty();
+            super.validateOnActionDown(snapshotNow, downOnLetter, eventTimeMs, true);
         }
 
         void recordStroke(
@@ -1849,59 +1224,25 @@ public final class GboardMultiSwipeRuntime {
                 String tapBaselineAtDown,
                 long eventTimeMs
         ) {
-            List<MultiSwipeInputToken> tapOnlyTokens = (!hasSwipe && !sawNonLetter)
-                    ? collectPureTapTokens(completedTokens)
-                    : null;
-            boolean hadExisting = !tokens.isEmpty();
-            if (!appendTokensWithinCap(tapOnlyTokens, tapBaselineAtDown, eventTimeMs)) {
-                return;
-            }
-            hadMultiTouch = hadExisting ? (hadMultiTouch | strokeHadMultiTouch) : strokeHadMultiTouch;
+            super.recordStroke(
+                    completedTokens,
+                    hasSwipe,
+                    sawNonLetter,
+                    strokeHadMultiTouch,
+                    tapBaselineAtDown,
+                    eventTimeMs,
+                    true);
         }
     }
 
-    /**
-     * Pure-JVM buffer retaining a brief single-touch stock Gboard swipe or tap stroke so a
-     * rapidly following swipe or tap within the combine timeout promotes both into MultiSwipe.
-     */
-    static final class SingleTouchCombineBuffer extends PendingStrokeBufferBase {
-        boolean hasSwipeToken = false;
-
-        @Override
-        void clear() {
-            super.clear();
-            hasSwipeToken = false;
-        }
-
-        @Override
-        protected boolean isValidTypedPrefix(String typedPrefix) {
-            return isCombinePrefix(typedPrefix);
-        }
-
+    static final class SingleTouchCombineBuffer extends MultiSwipeWordSession.SingleTouchCombineBuffer {
         void validateOnActionDown(
                 String snapshotNow,
                 boolean downOnLetter,
                 long eventTimeMs,
                 int combineDelayMs
         ) {
-            if (combineDelayMs <= 0) {
-                clear();
-                return;
-            }
-            validateGapAndPrefix(snapshotNow, downOnLetter, eventTimeMs, combineDelayMs);
-        }
-
-        boolean canPromoteWith(List<MultiSwipeInputToken> completedTokens, boolean sawNonLetter) {
-            if (sawNonLetter || tokens.isEmpty() || completedTokens == null || completedTokens.isEmpty()) {
-                return false;
-            }
-            if (hasSwipeToken) return true;
-            for (int i = 0; i < completedTokens.size(); i++) {
-                if (completedTokens.get(i).kind == MultiSwipeInputToken.Kind.SWIPE) {
-                    return true;
-                }
-            }
-            return false;
+            super.validateOnActionDown(snapshotNow, downOnLetter, eventTimeMs, combineDelayMs, true);
         }
 
         void recordStroke(
@@ -1912,139 +1253,23 @@ public final class GboardMultiSwipeRuntime {
                 long eventTimeMs,
                 int combineDelayMs
         ) {
-            if (combineDelayMs <= 0 || sawNonLetter) {
-                clear();
-                return;
-            }
-            boolean hadExisting = !tokens.isEmpty();
-            if (!appendTokensWithinCap(completedTokens, tapBaselineAtDown, eventTimeMs)) {
-                return;
-            }
-            hasSwipeToken = hadExisting ? (hasSwipeToken | strokeHasSwipe) : strokeHasSwipe;
+            super.recordStroke(
+                    completedTokens,
+                    strokeHasSwipe,
+                    sawNonLetter,
+                    tapBaselineAtDown,
+                    eventTimeMs,
+                    combineDelayMs,
+                    true);
         }
     }
 
     static boolean isCombinePrefix(String prefix) {
-        if (prefix == null || prefix.length() > MAX_ROLLBACK_EXTRA_CHARS) return false;
-        if (!prefix.isEmpty() && prefix.charAt(prefix.length() - 1) == ' ') {
-            return false;
-        }
-        for (int i = 0; i < prefix.length(); i++) {
-            char c = prefix.charAt(i);
-            if (!Character.isLetter(c) && c != ' ') {
-                return false;
-            }
-        }
-        return true;
+        return MultiSwipeWordSession.isCombinePrefix(prefix);
     }
 
     static int computeExtraCharsAfterBaseline(String baselineBeforeText, String currentStr) {
-        if (baselineBeforeText == null || currentStr == null) return 0;
-        if (currentStr.equals(baselineBeforeText)) return 0;
-        int baseLen = baselineBeforeText.length();
-        int curLen = currentStr.length();
-        if (curLen > baseLen && currentStr.startsWith(baselineBeforeText)) {
-            int extra = curLen - baseLen;
-            return (extra > 0 && extra <= MAX_ROLLBACK_EXTRA_CHARS) ? extra : 0;
-        }
-        if (curLen == baseLen && baseLen >= 32) {
-            for (int extra = 1; extra <= MAX_ROLLBACK_EXTRA_CHARS && extra < baseLen; extra++) {
-                if (baselineBeforeText.regionMatches(extra, currentStr, 0, baseLen - extra)) {
-                    return extra;
-                }
-            }
-        }
-        return 0;
-    }
-
-    static String extractTypedPrefixSinceBaseline(String baselineBeforeText, String currentStr) {
-        if (baselineBeforeText == null || currentStr == null) return null;
-        if (currentStr.equals(baselineBeforeText)) return "";
-        int extra = computeExtraCharsAfterBaseline(baselineBeforeText, currentStr);
-        if (extra <= 0) return null;
-        return currentStr.substring(currentStr.length() - extra);
-    }
-
-    static boolean isPureLetterPrefix(String prefix, int tapTokenCount) {
-        if (prefix == null) return false;
-        if (prefix.length() > tapTokenCount + 2) return false;
-        for (int i = 0; i < prefix.length(); i++) {
-            if (!Character.isLetter(prefix.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    static List<MultiSwipeInputToken> collectPureTapTokens(List<MultiSwipeInputToken> tokens) {
-        if (tokens == null || tokens.isEmpty()) return null;
-        List<MultiSwipeInputToken> out = new ArrayList<>(tokens.size());
-        for (int i = 0; i < tokens.size(); i++) {
-            MultiSwipeInputToken t = tokens.get(i);
-            if (t == null || t.kind != MultiSwipeInputToken.Kind.TAP) {
-                return null;
-            }
-            out.add(t);
-        }
-        return out;
-    }
-
-    private static String extractPreviousWord(
-            String baselineBeforeText,
-            InputConnection ic,
-            String fallbackLastWord
-    ) {
-        String source = baselineBeforeText;
-        if (source == null && ic != null) {
-            try {
-                CharSequence before = ic.getTextBeforeCursor(48, 0);
-                if (before != null) {
-                    source = before.toString();
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-        if (source != null && !source.isEmpty()) {
-            String s = source.trim();
-            if (!s.isEmpty()) {
-                int lastSpace = s.lastIndexOf(' ');
-                String tail = (lastSpace >= 0) ? s.substring(lastSpace + 1) : s;
-                String cleaned = tail.replaceAll("[^\\p{L}]", "");
-                if (!cleaned.isEmpty()) {
-                    return cleaned;
-                }
-            }
-        }
-        return fallbackLastWord;
-    }
-
-    private static boolean shouldCapitalizeFirstLetter(String baselineBeforeText, InputConnection ic) {
-        String before = baselineBeforeText;
-        if (before == null && ic != null) {
-            try {
-                CharSequence seq = ic.getTextBeforeCursor(32, 0);
-                if (seq != null) {
-                    before = seq.toString();
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-        if (before == null) return false;
-        if (before.isEmpty()) return true;
-        for (int i = before.length() - 1; i >= 0; i--) {
-            char c = before.charAt(i);
-            if (c == '\n') return true;
-            if (Character.isWhitespace(c)) continue;
-            return c == '.' || c == '!' || c == '?';
-        }
-        return true;
-    }
-
-    private static String capitalizeFirstChar(String word) {
-        if (word == null || word.isEmpty()) return word;
-        char first = word.charAt(0);
-        if (Character.isUpperCase(first)) return word;
-        return Character.toUpperCase(first) + word.substring(1);
+        return MultiSwipeWordSession.computeExtraCharsAfterBaseline(baselineBeforeText, currentStr);
     }
 
     private static HandlerSession getOrCreateSession(Object handler) {

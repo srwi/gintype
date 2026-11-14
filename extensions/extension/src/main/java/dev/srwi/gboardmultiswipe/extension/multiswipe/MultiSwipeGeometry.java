@@ -47,6 +47,7 @@ public final class MultiSwipeGeometry {
 
     private final List<KeySpec> allKeys = new ArrayList<>(32);
     private final List<KeySpec> nonLetterKeys = new ArrayList<>(16);
+    private final List<KeySpec> extraLetterKeys = new ArrayList<>(8);
     private final KeySpec[] letterArray = new KeySpec[MultiSwipeAlphabet.ALPHABET_SIZE];
 
     public float keyWidthPx = 96f;
@@ -61,6 +62,7 @@ public final class MultiSwipeGeometry {
     public void setKeys(List<KeySpec> specs, float avgWidth, float avgHeight, boolean hasUmlauts) {
         allKeys.clear();
         nonLetterKeys.clear();
+        extraLetterKeys.clear();
         Arrays.fill(letterArray, null);
         this.hasDedicatedUmlauts = hasUmlauts;
 
@@ -80,6 +82,12 @@ public final class MultiSwipeGeometry {
                 if (letterArray[idx] == null) {
                     letterArray[idx] = spec;
                 }
+                float top = spec.centerY - spec.height * 0.5f;
+                float bot = spec.centerY + spec.height * 0.5f;
+                if (top < minY) minY = top;
+                if (bot > maxY) maxY = bot;
+            } else if (spec.character != '\0' && Character.isLetter(spec.character)) {
+                extraLetterKeys.add(spec);
                 float top = spec.centerY - spec.height * 0.5f;
                 float bot = spec.centerY + spec.height * 0.5f;
                 if (top < minY) minY = top;
@@ -281,6 +289,14 @@ public final class MultiSwipeGeometry {
                 best = k;
             }
         }
+        for (int i = 0; i < extraLetterKeys.size(); i++) {
+            KeySpec k = extraLetterKeys.get(i);
+            float d = k.distanceSqTo(px, py);
+            if (d < bestDist) {
+                bestDist = d;
+                best = k;
+            }
+        }
         return best;
     }
 
@@ -288,6 +304,11 @@ public final class MultiSwipeGeometry {
         for (int i = 0; i < letterArray.length; i++) {
             KeySpec k = letterArray[i];
             if (k != null && k.contains(px, py, 0f, 0f)) {
+                return true;
+            }
+        }
+        for (int i = 0; i < extraLetterKeys.size(); i++) {
+            if (extraLetterKeys.get(i).contains(px, py, 0f, 0f)) {
                 return true;
             }
         }
@@ -302,6 +323,36 @@ public final class MultiSwipeGeometry {
         KeySpec nearest = nearestLetterKey(px, py);
         if (nearest == null) return false;
         return nearest.contains(px, py, gapX, gapY);
+    }
+
+    /**
+     * Returns true when {@code (px, py)} hits a non-letter key identifiable as Space
+     * (explicit space char or wide bottom-row key with width >= 2.5x nominal key width).
+     */
+    public boolean isSpaceKeyAt(float px, float py) {
+        for (int i = 0; i < nonLetterKeys.size(); i++) {
+            KeySpec k = nonLetterKeys.get(i);
+            if ((k.character == ' ' || (k.character == '\0' && k.width >= keyWidthPx * 2.5f))
+                    && k.contains(px, py, 0f, 0f)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns true when {@code (px, py)} hits a non-letter key carrying a punctuation character.
+     */
+    public boolean isPunctuationAt(float px, float py) {
+        for (int i = 0; i < nonLetterKeys.size(); i++) {
+            KeySpec k = nonLetterKeys.get(i);
+            if (k.character != '\0' && k.character != ' '
+                    && !Character.isLetterOrDigit(k.character)
+                    && k.contains(px, py, 0f, 0f)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public KeySpec findKeyAt(float px, float py) {

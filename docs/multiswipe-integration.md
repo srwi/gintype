@@ -1,0 +1,276 @@
+# MultiSwipe Gboard Integration Specification
+
+This document is the **single source of truth** for how **MultiSwipe** integrates into Google Gboard (`com.google.android.inputmethod.latin`). It defines all normative behavioral rules, edge-case handling, and test coverage expectations for the Gboard integration layer.
+
+> **Scope Boundary (Integration vs. Upstream Kinetica):**
+> This specification covers **only the Gboard integration behavior** (touch routing, stock-Gboard preservation, motion-handler hooks, trail accenting, multi-stroke buffers, text/spacing/punctuation context, keyboard geometry boundaries, dictionary loading, Thicc Top Bar synchronization, settings, and telemetry).
+> Internal mathematical details of the upstream **Kinetica** decoding engine (`KineticaDtwDecoder`, `DtwMatcher`, `KineticaMatcher`, `ThumbBeam`, `MergeAlternatives`) are intentionally out of scope so upstream algorithm updates can be synced independently without rewriting this specification.
+
+---
+
+## 1. Change Control & Review Policy
+
+1. **Authoritative Behavior Contract:** The rules (`MS-01` through `MS-19`) in this document define the intended runtime behavior of the MultiSwipe integration. Code and tests must conform to this specification.
+2. **Explicit User Confirmation Required for Behavioral Changes:**
+   - Whenever a proposed code change (feature, bugfix, refactor, or default/threshold adjustment) would **alter, add, remove, or contradict** any rule defined in this document, **the user must explicitly confirm the specification change** before the behavioral change is accepted.
+   - Any agent or contributor proposing such a change must clearly identify which `MS-*` rule(s) are affected, describe the old vs. new behavior, and ask for explicit confirmation so previously defined behaviors are never broken accidentally.
+3. **Spec–Code–Test Synchronization:**
+   - Every approved change to an integration rule must update:
+     1. The corresponding `MS-*` rule(s) in this document,
+     2. The implementation, and
+     3. Automated test coverage in the traceability matrix below.
+4. **Upstream Kinetica Sync Invariant:**
+   - Re-syncing Kinetica decoder files from upstream must preserve all integration interfaces consumed by `GboardMultiSwipeRuntime`, `MultiSwipeWordSession`, `GboardMultiSwipeSettings`, `GboardMultiSwipeDictionaryManager`, and `MultiSwipeGeometry` (including runtime tuning constants via `KineticaConstants.applyRuntimeTuning`, `MAX_WORD_LEN`, `RESTING_FINGER_MIN_MS`, `PERSONAL_MERGE_MIN_COUNT`, and token/geometry inputs).
+
+---
+
+## 2. Integration Architecture Overview
+
+```mermaid
+flowchart TD
+    A["MotionEvent in AbstractGestureMotionEventHandler.g"] --> B{"MS-01: MultiSwipe enabled?"}
+    B -- No --> S["Stock Gboard Pipeline"]
+    B -- Yes --> C["Update geometry & schedule LM load (MS-15, MS-17)"]
+    C --> D{"Multi-touch / active takeover / continuing word?"}
+    D -- Yes --> E["Suppress rollover & BasicMotionEventHandler; keep trails & dispatcher ownership (MS-06, MS-07)"]
+    D -- No --> F["Allow stock Gboard to handle stroke while tracking tokens"]
+    E --> G["ACTION_UP: Classify tokens & evaluate MS-03 / MS-08 / MS-09"]
+    F --> G
+    G -- "Stay on stock Gboard (MS-02)" --> H["Record passive/combine buffers if eligible (MS-08, MS-09); log pass if enabled"]
+    G -- "Decode with MultiSwipe" --> I["Roll back stock prefix if promoted; apply spacing & casing rules (MS-11..MS-14)"]
+    I --> J["Set live composing preview, notify Thicc Top Bar (MS-18), start autospace timer if MS-12 enabled"]
+```
+
+### Key Integration Components
+
+| Responsibility | Primary Files |
+| :--- | :--- |
+| Bytecode hooks into Gboard touch pipeline | `patches/.../multiswipe/GboardMultiSwipeBytecodePatch.kt`, `patches/.../runtimeabi/RuntimeAbi.kt` |
+| Android touch routing, trail styling, reflection | `extensions/.../multiswipe/GboardMultiSwipeRuntime.java` |
+| Pure-JVM word session, buffers, spacing, Backspace compound state | `extensions/.../multiswipe/MultiSwipeWordSession.java` |
+| Key bounds, letter-area hit testing, midline | `extensions/.../multiswipe/MultiSwipeGeometry.java` |
+| Gboard `.lm` extraction, `UserDictionary`, session learning | `extensions/.../multiswipe/GboardMultiSwipeDictionaryManager.java`, `GboardLmReader.java` |
+| Settings defaults, clamping, UI visibility, decoder tuning sync | `extensions/.../multiswipe/GboardMultiSwipeSettings.java`, `GboardMultiSwipeSettingsFeature.java` |
+| JSONL trace logging & time-window export | `extensions/.../multiswipe/GboardMultiSwipeTraceLogger.java` |
+| Top bar candidate & sentence-history sync | `extensions/.../thicctopbar/GboardThiccTopBarRuntime.java`, `ThiccTopBarGboardReflector.java` |
+
+---
+
+## 3. Normative Integration Rules
+
+### A. Activation, Routing & Stock Gboard Coexistence
+
+#### `MS-01` — Feature Toggle & Safe Bypass
+- **Rule:** When MultiSwipe is disabled (`pref_multiswipe_enabled == false`), all Gboard touch and gesture events must pass through to stock Gboard without modification.
+- **Details:**
+  - `onGestureEventEntry` returns immediately.
+  - `shouldStartGesture` returns `stockShouldStart` and `resolveLetterStarted` returns `stockLetterStarted`.
+  - `shouldReceiveEventsDuringOtherOwner`, `shouldSuppressBasicMotionEventHandler`, and `shouldSuppressRolloverCommitOnPointerDown` all return `false`.
+- **Implementation:** `GboardMultiSwipeRuntime`, `MultiSwipeWordSession`, `GboardMultiSwipeSettings.readEnabled`.
+
+#### `MS-02` — Single-Finger Stock Gboard Preservation
+- **Rule:** Normal single-finger taps and single-finger swipes stay on stock Gboard's native pipeline (stock recognition, stock commit/spacing, stock gesture trail color), except when explicitly promoted or continued under `MS-03`, `MS-08`, `MS-09`, or `MS-10`.
+- **Details:**
+  - A standalone single-finger stroke does not activate `multiswipeTakeoverActive` and does not intercept `Lqit;->n(...)V` dispatch (`shouldInterceptGestureDispatch` returns `false`).
+  - Pressing Space (or Enter, punctuation, or navigating in the text field) clears open buffers so the next single-finger stroke again executes purely on stock Gboard (e.g., swipe `"ha"` → Space → swipe `"lo"` produces `"ha lo"` via stock Gboard).
+  - Pure multi-touch rollover taps that contain **no** swipe anywhere in the current stroke or active word (`hasSwipe == false`) also remain on stock Gboard (`reason = "rollover_no_swipe"`).
+- **Implementation:** `GboardMultiSwipeRuntime.onGestureEventEntry`, `MultiSwipeWordSession`, `shouldInterceptGestureDispatch`.
+
+#### `MS-03` — MultiSwipe Decode Trigger Conditions
+- **Rule:** MultiSwipe takes over on `ACTION_UP` and decodes via Kinetica if and only if at least one of the following holds:
+  1. The stroke involved multi-touch or active MultiSwipe takeover (`sawMultiTouch || multiswipeTakeoverActive`) **and** at least one `SWIPE` token is present in the stroke or active word buffer;
+  2. The stroke is continuing an active MultiSwipe word (`multiswipeWordActive && !wordTokens.isEmpty()`) **and** at least one `SWIPE` token is present;
+  3. `PassiveTapBuffer` holds a prior multi-touch tap prefix (`hadMultiTouch == true`) and the current stroke completes with a `SWIPE` (`promoteMultiTouchPassive && hasSwipe`);
+  4. `SingleTouchCombineBuffer` is active (`!autoSpaceEnabled || singleTouchCombineDelayMs > 0`) and promotes sequential single-touch strokes containing at least one `SWIPE` without non-letter touches (`promoteSingleTouchCombine`).
+- **Empty Candidate Fallback (`0` Candidates):**
+  - **First promotion of `SingleTouchCombineBuffer` when `autoSpaceEnabled == true`:** If Kinetica returns `0` candidates (`!wasMultiSwipeWordActive && !isMultiSwipeGesture`), MultiSwipe leaves the existing editor text untouched and does **not** block stock Gboard's dispatch so fast consecutive 1-finger stock words are never swallowed.
+  - **First promotion of `SingleTouchCombineBuffer` when `autoSpaceEnabled == false`:** MultiSwipe still takes over (`multiswipeTakeoverActive = true`, `multiswipeWordActive = true`), suppresses stock Gboard dispatch (preventing Gboard from inserting a second separated word without Space), keeps the existing best match/stock prefix intact in the editor, and retains all combined tokens in `wordTokens` so subsequent strokes can continue combining.
+  - **Continuation of an already active MultiSwipe word (`wasMultiSwipeWordActive == true`):** Regardless of `autoSpaceEnabled`, if Kinetica returns `0` candidates after adding another stroke, MultiSwipe keeps the previous best decoded match in the editor, blocks stock dispatch, and retains the newly added tokens in `wordTokens`.
+- **Implementation:** `GboardMultiSwipeRuntime.onGestureEventEntry`, `MultiSwipeWordSession.onActionUp`.
+
+#### `MS-04` — Pointer Token Classification (Swipe vs. Tap vs. Resting Finger)
+- **Rule:** Each pointer track is classified into a `SWIPE`, a `TAP`, a dropped resting finger, or ignored non-letter touch using net displacement rather than jitter arc length:
+  1. **Swipe:** Requires `>= 2` points and net displacement from start `>= max(22px, keyWidthPx * 0.24f)`.
+  2. **Resting Finger (Dropped):** If a pointer overlapped with another pointer (`overlapped == true`), did not exceed the swipe threshold, and remained down for `>= 400ms` (`KineticaConstants.RESTING_FINGER_MIN_MS`), it is dropped and emits **no** token.
+  3. **Tap:** Otherwise, if the pointer started on the letter area (`startedOnLetter && startKeyChar != '\0'`), it emits a `TAP` token at its nearest letter key.
+  4. **Non-Letter Touch:** Touching outside the letter area emits no token and marks `sawNonLetterThisSession = true`.
+- **Implementation:** `GboardMultiSwipeRuntime.PointerTrack` (`isSwipe`, `isRestingFinger`, `toToken`).
+
+#### `MS-05` — Dynamic Thumb Midline & Slot Assignment
+- **Rule:** Active pointers are assigned to thumb slot `0` (left) or `1` (right) based on `x < geometry.midlinePx()`, falling back to the free opposite slot if the preferred slot is already occupied by an active pointer.
+- **Details:** `midlinePx()` is calculated from the midpoint between `t` and `y`/`z` (using whichever is on the top row with `t`) and between `g` and `h`, so asymmetric right-hand columns (such as German `ü`/`ö`/`ä`) do not shift the midline.
+- **Implementation:** `GboardMultiSwipeRuntime.registerPointerDown`, `MultiSwipeGeometry.midlinePx`.
+
+---
+
+### B. Gboard Motion-Handler Hooks & Visual Trail
+
+#### `MS-06` — Multi-Touch Dispatcher & Rollover Protection
+- **Rule:** When multi-touch or an active MultiSwipe word is in progress, Gboard's internal single-touch assumptions must not cancel gesture tracking, commit premature rollover taps, or overwrite MultiSwipe output:
+  1. **Gesture Start (`shouldStartGesture`):** Forces native gesture start once multi-touch (or an active MultiSwipe word) has a swiping pointer (`startedOnLetter && isSwipe`), enables trail recording (`U.a = true`), and claims dispatcher ownership (`p.m()`).
+  2. **Letter Guard (`resolveLetterStarted`):** Forces `letterStarted` (`u`) to `true` during multi-touch, takeover, or when completed tokens exist so `g(MotionEvent)` does not early-return.
+  3. **Dispatcher Coexistence (`gu()` / `shouldReceiveEventsDuringOtherOwner`):** Returns `true` whenever pointers are active, multi-touch was seen, or takeover is active so ownership changes away from `BasicMotionEventHandler` do not starve the gesture handler.
+  4. **Reset Protection (`B()` / `shouldInterceptGestureReset`):** Aborts Gboard's gesture state reset while pointers remain down in an active MultiSwipe session so `softKeyMap`, `letterStarted`, and trails stay intact.
+  5. **Tap Handler Suppression (`shouldSuppressBasicMotionEventHandler`):** Suppresses `BasicMotionEventHandler.t(MotionEvent)` while `multiswipeTakeoverActive` is `true`, **except** for fresh `ACTION_DOWN` events (which must pass through so subsequent single-finger typing continues to work).
+  6. **Rollover Suppression (`shouldSuppressRolloverCommitOnPointerDown`):** Suppresses `Lqil`'s premature pointer-0 commit on `ACTION_POINTER_DOWN` when `multiswipeTakeoverActive` is `true`, OR when both pointers land on the letter area within `220ms` of `ACTION_DOWN`.
+  7. **Native Gesture Dispatch Suppression (`shouldInterceptGestureDispatch`):** Blocks `Lqit;->n(...)V` once `multiswipeTakeoverActive` is `true` so stock Gboard does not decode and overwrite the MultiSwipe result.
+- **Implementation:** `GboardMultiSwipeBytecodePatch.kt`, `GboardMultiSwipeRuntime`, `MultiSwipeWordSession`.
+
+#### `MS-07` — Trail Stability & Distinct MultiSwipe Trail Accent
+- **Rule:** MultiSwipe reuses Gboard's native trail renderer safely and visually distinguishes MultiSwipe gestures from stock single-finger swipes via a distinct trail color:
+  1. **Index Safety & Cleanup:** Trail start indices (`U.c` vs `U.b`) are sanitized on entry, during multi-touch `ACTION_MOVE`, and on pointer finish to prevent out-of-bounds crashes in Gboard's redraw runnable. Finished swipe trails with `>= 3` points are transferred to Gboard's fading list (`U.e`); shorter/tap trails are recycled without leaving stray dots.
+  2. **Distinct Accent Color:** When MultiSwipe takeover or word continuation is active, `GestureOverlayView`'s `Paint` `ColorMatrixColorFilter` is switched to:
+     - Android 12+ Material You `system_accent3` (tertiary) if color distance to stock primary RGB is `>= 56`,
+     - Otherwise `system_accent2` (secondary) if color distance is `>= 56`,
+     - Otherwise a `+120°` hue rotation of the stock accent (or fixed rose `0xEFB8C8` / `0x7D5260` if achromatic).
+  3. **Stock Restoration:** Returning to single-finger/idle state or `ACTION_CANCEL` restores the captured stock `ColorFilter`.
+  4. **Theme Capture:** Capturing the stock filter also reports the stock trail RGB to `ThiccTopBarGboardReflector.recordStockTrailAccent`.
+- **Implementation:** `GboardMultiSwipeRuntime` (`sanitizeTrailIndices`, `finishTrailForPointer`, `setMultiSwipeTrailAccentActive`, `chooseMultiSwipeTrailColor`).
+
+---
+
+### C. Multi-Stroke Buffers & Word Composition
+
+#### `MS-08` — Passive Pre-Swipe Tap Prefix Promotion & Baseline Rollback
+- **Rule:** Pure-letter tap prefixes (including multi-touch rollover taps) followed by a MultiSwipe swipe combine into a single MultiSwipe word, rolling back the prefix characters already inserted by stock Gboard.
+- **Timing & Capacity:**
+  - When `autoSpaceEnabled == true`: gap must be `<= 750ms` (`MAX_PASSIVE_TAP_GAP_MS`) and token count `<= 8` (`MAX_PASSIVE_TAP_TOKENS`).
+  - When `autoSpaceEnabled == false`: time gap is **unlimited** and capacity extends to `KineticaConstants.MAX_WORD_LEN` (`40`).
+- **Guards & Rollback:**
+  - Cleared immediately on any expired gap (when `autoSpaceEnabled == true`), non-letter `ACTION_DOWN` (Space, Enter, Backspace, punctuation), non-letter token (`sawNonLetterThisSession`), any non-MultiSwipe swipe, cursor navigation, or if the typed delta since `baselineText` exceeds `tokenCount + 2` or contains non-letter characters.
+  - Rollback supports both exact prefix extension (`currentStr.startsWith(baseline)`) and `>= 256`-character sliding-window `InputConnection` snapshots (up to `32` extra chars).
+  - *Example:* Tapping `f` then `n` (stock Gboard displays `"fn"`), then multi-touch swiping `"ktio"` + `"niert"` rolls back `"fn"` and decodes `"funktioniert"`.
+- **Implementation:** `MultiSwipeWordSession.PassiveTapBuffer`, `GboardMultiSwipeRuntime.PassiveTapBuffer`, `computeExtraCharsAfterBaseline`.
+
+#### `MS-09` — Sequential Single-Touch Combine Buffer
+- **Rule:** Sequential single-touch strokes combine into one MultiSwipe word if at least one stroke is a `SWIPE`, rolling back stock Gboard's intermediate text:
+  - **When `autoSpaceEnabled == true`:** Active only when `pref_multiswipe_single_touch_combine_delay_ms > 0` (default `150ms`, range `0..500ms`) and strokes are separated by `<= combineDelayMs`.
+  - **When `autoSpaceEnabled == false`:** Timeout settings have no effect (`combineDelayMs` is ignored even if `0`); consecutive single-touch letter strokes remain combinable across arbitrarily long pauses until an explicit word boundary (Space, Enter, Backspace, punctuation, or cursor navigation). Even if a promoted continuation yields `0` Kinetica candidates, stock Gboard dispatch is suppressed so no unintended second Gboard word appears (`MS-03`).
+- **Guards:**
+  - Never promotes pure tap-only sequences with zero swipes.
+  - Cleared immediately if the inter-stroke gap exceeds `combineDelayMs` (only when `autoSpaceEnabled == true`), `ACTION_DOWN` is outside the letter area, `sawNonLetterThisSession` is `true`, or the typed text since baseline ends with `' '` (e.g., stock Gboard committed `"Seiten "`), contains non-letter/non-space characters, or reflects cursor navigation (`isCombinePrefix` / `extractTypedPrefixSinceBaseline`).
+  - Allows internal spaces within the prefix (e.g., `" Mi r"`) so multi-stroke split candidates can still roll back cleanly.
+  - *Example (Auto-Space off):* Swipe `"ha"` → long pause → tap `'l'` → long pause → swipe `"lo"` → decodes `"hallo"`. Swipe `"ha"` → Space → swipe `"lo"` → Space clears buffer, producing `"ha lo"` via stock Gboard.
+- **Implementation:** `MultiSwipeWordSession.SingleTouchCombineBuffer`, `GboardMultiSwipeRuntime.SingleTouchCombineBuffer`, `isCombinePrefix`.
+
+#### `MS-10` — Multi-Stroke Word Continuation & Live Composing Preview
+- **Rule:** While a MultiSwipe word is active (`multiswipeWordActive`), touching down on the letter area continues the same word instead of starting a new one:
+  - **When `autoSpaceEnabled == true`:** Continues if the autospace timer is pending OR within `autoSpaceDelayMs + 80ms` of the previous lift.
+  - **When `autoSpaceEnabled == false`:** Continues across **any** pause duration as long as the cursor has not navigated away from the active composing word (`snapshotNow` still matches the expected preview snapshot).
+- **Details:**
+  - Cancels any pending autospace timer, preserves `wordTokens`, keeps the MultiSwipe trail accent active, appends the new stroke's tokens, and re-decodes the full `wordTokens` buffer (retaining all `wordTokens` and the previous displayed match if `0` candidates are returned).
+  - Displays the updated top candidate as live composing text (`ic.setComposingText(word, 1)`).
+  - Touching down outside the letter area (Space, Enter, Backspace, Shift, punctuation) or navigating in the text field immediately breaks continuation and clears the word buffer.
+- **Implementation:** `MultiSwipeWordSession.onActionDown`, `GboardMultiSwipeRuntime.onGestureEventEntry`, `previewWordToInputConnection`.
+
+---
+
+### D. Text Context, Spacing, Punctuation & Compound Attachment
+
+#### `MS-11` — Pre-Word Leading Space Insertion
+- **Rule:** When starting a new MultiSwipe word (`!leadingSpaceEvaluated`), if `autoSpaceEnabled == true` and the text immediately before the cursor at `ACTION_DOWN` ends with a letter or digit (`Character.isLetterOrDigit`), MultiSwipe commits a leading `" "` before the composing word unless suppressed by `MS-13`.
+- **Rationale:** Stock Gboard single-finger swipes and taps leave no trailing space after a word; without a leading space, `"es"` followed by MultiSwipe `"dir"` would become `"esdir"` instead of `"es dir"`.
+- **Details:** No leading space is inserted at the start of a field, after whitespace/newlines, after opening punctuation like `"("`, or when `autoSpaceEnabled == false`.
+- **Implementation:** `MultiSwipeWordSession.shouldPrependLeadingSpace`, `GboardMultiSwipeRuntime.shouldPrependLeadingSpace`.
+
+#### `MS-12` — Post-Word Autospace & Punctuation Retraction (`eatBefore`)
+- **Rule:** When `autoSpaceEnabled == true`, after all fingers lift from a MultiSwipe word, a timer runs for `pref_multiswipe_auto_space_delay_ms` (default `300ms`, range `0..2000ms`). On expiry (if no fingers are down):
+  1. `ic.finishComposingText()` commits the active word.
+  2. A trailing `" "` is committed and `autospaceInserted` is set to `true`.
+  3. **Punctuation `eatBefore`:** If the very next `ACTION_DOWN` lands on a hugging punctuation key (`.,!?;:)]}»…`, `MultiSwipeGeometry.NO_SPACE_BEFORE`) while `autospaceInserted == true` and the character before the cursor is `' '`, MultiSwipe immediately deletes that trailing space (`ic.deleteSurroundingText(1, 0)`) before the punctuation is handled. `autospaceInserted` is cleared on any subsequent `ACTION_DOWN`.
+- **When `autoSpaceEnabled == false`:** No autospace timer is started, no trailing space is appended, and `autospaceInserted` remains `false`.
+- **Implementation:** `MultiSwipeWordSession.finalizeAutospace`, `GboardMultiSwipeRuntime.finalizeComposingAndAutospace`, `MultiSwipeGeometry.NO_SPACE_BEFORE`.
+
+#### `MS-13` — Compound Word Attachment & Lowercasing Strictly After Backspace
+- **Rule:** If and only if the user deletes characters via **Backspace** back onto an existing letter/digit stem and immediately MultiSwipes a second word, MultiSwipe attaches directly to the remaining stem with **no** leading space and **lowercases** the attached word's initial letter.
+- **Concrete Example:**
+  1. User swipes `"Seiten"` → autospace commits `"Seiten "`.
+  2. User taps Backspace → `"Seiten"` (cursor text shrank relative to `"Seiten "` and ends in a letter/digit).
+  3. User MultiSwipes `"Leiste"` → leading space is suppressed and `"Leiste"` is lowercased to `"leiste"`, producing **`"Seitenleiste"`** instead of `"Seiten Leiste"` or `"SeitenLeiste"`.
+- **Strict Guards (No False Triggers):**
+  - Deletion is only armed when a non-Space, non-punctuation keyboard key press (`!downOnLetter && !isSpaceKey && !isPunctuationKey`, i.e. Backspace) preceded the text shrinkage (`didDeleteTrailingChars`).
+  - **Sliding Window (`>= 256` chars):** `didDeleteTrailingChars` detects both length reduction (`cur.length() < prev.length()`) and shifted 256-char sliding-window deletions (`cur.regionMatches(d, prev, 0, len - d)` for `1 <= d <= 32`).
+  - **Cursor Repositioning & Spacebar Swipe:** Moving the cursor in the text field (no Backspace key press) or swiping on the Spacebar (`isSpaceKey == true`) does **not** arm compound attachment — when `autoSpaceEnabled == true`, a normal leading space is inserted (e.g., `"Hallo schöne Welt"`), and when `autoSpaceEnabled == false`, initial casing is **not** forced lowercase.
+  - Pressing Space or punctuation clears any armed Backspace attachment immediately; if text advances past the post-Backspace baseline via unrelated stock typing without buffer promotion, armed attachment also resets.
+  - When armed (`attachingAfterBackspace`), MultiSwipe suppresses sentence-start capitalization (`capitalizeFirst = false`) and lowercases the first character (`lowercaseFirstChar`) of both `bestWord` and every entry in `alternativeWords`.
+- **Implementation:** `MultiSwipeWordSession` (`didDeleteTrailingChars`, `isAttachingAfterDeletion`, `lowercaseFirstChar`), `GboardMultiSwipeRuntime`, `MultiSwipeGeometry.isSpaceKeyAt`.
+
+#### `MS-14` — Sentence-Start & Post-Newline Capitalization
+- **Rule:** When not attaching directly after Backspace (`!attachingAfterBackspace`), MultiSwipe capitalizes the first character of `bestWord` and all `alternativeWords` if the text before the cursor is empty, contains only whitespace, ends with `'\n'`, or ends with `'.'`, `'!'`, or `'?'` (ignoring trailing whitespace).
+- **Implementation:** `MultiSwipeWordSession.shouldCapitalizeFirstLetter`, `capitalizeFirstChar`.
+
+---
+
+### E. Keyboard Geometry & Non-Letter Boundaries
+
+#### `MS-15` — Dynamic Keyboard Geometry Extraction
+- **Rule:** MultiSwipe derives per-key bounds and centers from the active Gboard layout rather than relying on a fixed grid:
+  1. **Primary:** Gboard's internal native layout object (`Ltjz` via reflection), which works on Canvas-rendered themes without `TextView` children (requires `>= 20` keys).
+  2. **Secondary:** `SoftKeyboardView` view-hierarchy traversal (`SoftKeyView` / `TextView` / `contentDescription`, requires `>= 20` keys).
+  3. **Fallback:** Synthetic standard QWERTZ (`de`) or QWERTY layout.
+- **Details:** Supported character labels are `a–z`, `ä`, `ö`, `ü`, and `NO_SPACE_BEFORE` punctuation; all other visible keys (`w > 10 && h > 10`, e.g., Shift, Backspace, Space, Enter) are stored with `character = '\0'` as explicit non-letter keys. Geometry refreshes automatically whenever keyboard dimensions or native layout instance change.
+- **Implementation:** `GboardMultiSwipeRuntime` (`ensureGeometryUpdated`, `extractKeysFromNativeLayout`, `collectLetterKeysFromViewHierarchy`).
+
+#### `MS-16` — Strict Letter-Area Hit Testing & Dedicated Umlaut Inclusion
+- **Rule:** A touch position `(px, py)` counts as being on the letter area (`isOnLetterArea`) if and only if:
+  1. It lies inside any `a–z` letter key's bounding box OR any dedicated letter key's bounding box (including **`ä`, `ö`, `ü`**), OR
+  2. It does **not** lie inside any explicit non-letter key's bounding box (e.g., Shift, Backspace, Space, Comma, Enter) **and** falls within a `0.12 * keyWidthPx` / `0.12 * keyHeightPx` inter-key gap margin around the letter rows (`minLetterY..maxLetterY`) and nearest letter key.
+- **Rationale:** Dedicated umlaut keys (`ä`, `ö`, `ü`) must behave as normal letters for word continuation (`MS-10`), buffer promotion (`MS-08`, `MS-09`), and tap/swipe start (`MS-04`, `MS-06`), while Shift, Backspace, Space, punctuation, and number/toolbar rows must never count as letter touches.
+- **Implementation:** `MultiSwipeGeometry` (`setKeys`, `isOnLetterArea`, `nearestLetterKey`, `isSpaceKeyAt`, `isPunctuationAt`).
+
+---
+
+### F. Dictionaries, Thicc Top Bar, Settings & Telemetry
+
+#### `MS-17` — Native Gboard Dictionary Extraction, Accent Folding & Session Learning
+- **Rule:** MultiSwipe reads Gboard's installed language model directly on-device and augments it with user vocabulary:
+  - **Language Detection:** Normalized base tag from `Delight5Facilitator` (fallback `Locale.getDefault()`, fallback `"de"`).
+  - **Source Resolution:** Primary via `Delight5Facilitator` main LM descriptors (type `1`); fallback via recursive disk scan of `superpacks`/`delight`/`delight5` excluding userhistory/contacts/shortcuts/blocklist. Refreshes when dedicated-umlaut layout state or underlying file timestamp/size changes.
+  - **Token Filtering & Folding:** Excludes internal tokens (`<epsilon>`, `<UNK>`, `_`-prefixed/suffixed, digits, control bytes) and folds accented characters transparently according to `hasDedicatedUmlauts`.
+  - **User & Session Augmentation:** Merges Android `UserDictionary.Words` entries and adds words committed via MultiSwipe after `2` commits (`KineticaConstants.PERSONAL_MERGE_MIN_COUNT`) alongside committed `(prevWord, committedWord)` bigrams.
+- **Implementation:** `GboardMultiSwipeDictionaryManager`, `GboardLmReader`.
+
+#### `MS-18` — Thicc Top Bar Synchronization
+- **Rule:** Whenever MultiSwipe decodes a live preview or finalizes a committed word, it sends `(word, alternativeWords)` to `GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(...)` so Thicc Top Bar's vertical alternative wheels and sentence branch history remain synchronized with MultiSwipe words.
+- **Implementation:** `GboardMultiSwipeRuntime`, `MultiSwipeWordSession`, `GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord`.
+
+#### `MS-19` — Settings Persistence, UI Visibility, Clamping & Trace Diagnostics
+- **Rule:** All MultiSwipe settings persist in Gboard shared preferences with strict range sanitization, defaults reset, conditional timeout UI visibility, and opt-in JSONL telemetry:
+  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineDelayMs=150` `[0..500]`, `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
+  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space delay` and `Single-finger combine timeout` rows are hidden from the MultiSwipe settings screen because timeouts do not apply when Auto-Space is off.
+  - **Trace Logging:** Disabled by default. When enabled, emits `geom` (once per unique geometry hash), `word`, `pass` (skipped stock gestures), and `commit` JSONL records to logcat (`GboardMultiSwipeTrace`) and rolling `multiswipe_trace.jsonl` files, exportable by trailing minute window (`1..1440`, or `0` for all) while retaining referenced `geom` headers.
+- **Implementation:** `GboardMultiSwipeSettings`, `GboardMultiSwipeSettingsFeature`, `GboardMultiSwipeTraceLogger`.
+
+---
+
+## 4. Rule-to-Test Traceability Matrix
+
+| Rule ID | Implementation | Automated Test Coverage | Status |
+| :--- | :--- | :--- | :--- |
+| `MS-01` | `GboardMultiSwipeRuntime`, `MultiSwipeWordSession`, `GboardMultiSwipeSettings` | `MultiSwipeIntegrationTest#disabledFeatureBypassesAllHooksAndWordSession`, `GboardMultiSwipeSettingsTest#defaultsTraceLoggingOffAndResetsAllSettingsToDefaults` | **Covered** |
+| `MS-02` | `MultiSwipeWordSession`, `GboardMultiSwipeRuntime` | `MultiSwipeIntegrationTest#singleFingerSwipeAndSpaceStayOnStockGboard`, `rolloverMultiTouchWithoutSwipeStaysOnStockGboard` | **Covered** |
+| `MS-03` | `MultiSwipeWordSession.onActionUp`, `GboardMultiSwipeRuntime` | `MultiSwipeIntegrationTest#singleTouchCombineLeavesStockTextIntactWhenZeroCandidates`, `autoSpaceOffRetainsBestMatchAndTokensWhenAdditionalSwipeYieldsZeroCandidates`, `pureTapsWithoutSwipeStayOnStockEvenWithAutoSpaceOff` | **Covered** |
+| `MS-04` | `GboardMultiSwipeRuntime.PointerTrack` | `MultiSwipeDecoderTest#runtimePointerTrackRejectsJitterAndDropsRestingFinger`, `pointerTrackExtractsStickyKeyContactsAndDwellRuns` | **Covered** |
+| `MS-05` | `GboardMultiSwipeRuntime.registerPointerDown`, `MultiSwipeGeometry.midlinePx` | `MultiSwipeDecoderTest#dynamicMidlineIgnoresAsymmetricUmlautColumn` | **Covered** |
+| `MS-06` | `GboardMultiSwipeBytecodePatch.kt`, `MultiSwipeWordSession` hook predicates | `GboardMultiSwipeSmaliCompilationTest` (all 7 Smali hook tests), `MultiSwipeIntegrationTest#motionHandlerHooksProtectMultiTouchAndKeepFreshActionDown` | **Covered** |
+| `MS-07` | `GboardMultiSwipeRuntime` (trail cleanup & accenting) | `GboardMultiSwipeSettingsTest#selectsDistinctMaterialDynamicAccentForMultiSwipeTrail` | **Partial** (accent color covered; Android `SparseArray`/`View` trail rendering runtime-only) |
+| `MS-08` | `MultiSwipeWordSession.PassiveTapBuffer`, `GboardMultiSwipeRuntime.PassiveTapBuffer` | `MultiSwipeDecoderTest#passiveTapBufferPromotesTapPrefixAcrossLiftsAndRollsBackSlidingWindow`, `MultiSwipeIntegrationTest#autoSpaceOffCombinesPassiveTapsAndSwipeAcrossLongPauses` | **Covered** |
+| `MS-09` | `MultiSwipeWordSession.SingleTouchCombineBuffer`, `GboardMultiSwipeRuntime.SingleTouchCombineBuffer` | `MultiSwipeDecoderTest#singleTouchCombineBufferPromotesSequentialSwipesAndSwipeTapWithinTimeout`, `MultiSwipeIntegrationTest#autoSpaceOffCombinesSequentialStrokesAcrossLongPausesUntilSpaceOrNavigation` | **Covered** |
+| `MS-10` | `MultiSwipeWordSession.onActionDown`, `decodeAndPreview` | `MultiSwipeIntegrationTest#wordContinuationRespectsDelayWhenAutoSpaceOnAndHasNoTimeoutWhenOff` | **Covered** |
+| `MS-11` | `MultiSwipeWordSession.shouldPrependLeadingSpace` | `GboardMultiSwipeSettingsTest#detectsWhenLeadingSpaceIsNeededBeforeMultiSwipeWord`, `MultiSwipeIntegrationTest#prependsLeadingSpaceAfterStockWordWhenAutoSpaceOn` | **Covered** |
+| `MS-12` | `MultiSwipeWordSession.finalizeAutospace`, `eatBefore` | `GboardMultiSwipeSettingsTest#sanitizesAndPersistsAutoSpaceAndDelayPreferences`, `MultiSwipeIntegrationTest#autospaceCommitsSpaceAndRetractsBeforeHuggingPunctuation` | **Covered** |
+| `MS-13` | `MultiSwipeWordSession` (`didDeleteTrailingChars`, `isAttachingAfterDeletion`) | `MultiSwipeDecoderTest#suppressesLeadingSpaceAndLowercasesWhenAttachingAfterBackspace`, `MultiSwipeIntegrationTest#backspaceCompoundAttachmentWorksInShortAndLongTextsAndIgnoresCursorMoves` | **Covered** |
+| `MS-14` | `MultiSwipeWordSession.shouldCapitalizeFirstLetter`, `capitalizeFirstChar` | `MultiSwipeIntegrationTest#capitalizesSentenceStartsAndNewlinesUnlessAttachingAfterBackspace` | **Covered** |
+| `MS-15` | `GboardMultiSwipeRuntime` (`extractKeysFromNativeLayoutArrays`, etc.) | `MultiSwipeDecoderTest#extractsNativeLayoutKeysWithoutTextViewsIncludingUmlauts` | **Covered** |
+| `MS-16` | `MultiSwipeGeometry` (`setKeys`, `isOnLetterArea`, `isSpaceKeyAt`) | `MultiSwipeDecoderTest#isOnLetterAreaRejectsNonLetterKeysAndAcceptsLetterKeysAndUmlauts` | **Covered** |
+| `MS-17` | `GboardMultiSwipeDictionaryManager`, `GboardLmReader` | `GboardLmReaderTest#parsesUnigramsBigramsAndFiltersInternalTokens`, `capsBigramsByStrengthAndSupportsNestedMarisaTailTrie`, `normalizesLanguageTagsConsistently`, `filtersInternalVocabularyTokensAsExpected` | **Partial** (LM parsing/filtering covered; Android `UserDictionary` ContentResolver query runtime-only) |
+| `MS-18` | `MultiSwipeWordSession` -> `LifecycleCallbacks.onWordDecoded` / `onWordCommitted` | `MultiSwipeIntegrationTest#notifiesThiccTopBarListenerOnPreviewAndCommit` | **Covered** |
+| `MS-19` | `GboardMultiSwipeSettings`, `GboardMultiSwipeSettingsFeature`, `GboardMultiSwipeTraceLogger` | `GboardMultiSwipeSettingsTest` (all tests, incl. hiding timeout rows when Auto-Space is off), `MultiSwipeDecoderTest#traceLoggerEmitsGeometryOnceAndSerializesRawTouchPointsAndCandidates` | **Covered** |
+
+---
+
+## 5. Notes & Residual Runtime-Only Boundaries
+
+All pure-JVM integration rules (`MS-01`–`MS-19`) are aligned and covered by automated tests. Only two Android-framework interactions remain runtime-verified on device rather than pure JVM:
+- Android `GestureOverlayView` / `TrailManager` (`SparseArray`) visual drawing (`MS-07` index sanitization).
+- Android `UserDictionary.Words` `ContentResolver` IPC query (`MS-17`).

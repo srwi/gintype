@@ -278,6 +278,27 @@ public class GboardMultiSwipeSettingsTest {
         assertEquals(0xEFB8C8, GboardMultiSwipeRuntime.chooseMultiSwipeTrailColor(0xEEEEEE, -1, -1, true));
     }
 
+    @Test
+    public void hidesTimeoutSettingRowsWhenAutoSpaceIsDisabled() {
+        List<dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row> withAutoSpace =
+                GboardMultiSwipeSettingsFeature.buildBehaviorRows(
+                        "Enable MultiSwipe", "", true, v -> {},
+                        "Auto-Space", "", true, v -> {},
+                        "Auto-space delay", "", "300 ms", () -> {},
+                        "Single-finger combine timeout", "", "150 ms", () -> {});
+        assertEquals(4, withAutoSpace.size());
+
+        List<dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row> withoutAutoSpace =
+                GboardMultiSwipeSettingsFeature.buildBehaviorRows(
+                        "Enable MultiSwipe", "", true, v -> {},
+                        "Auto-Space", "", false, v -> {},
+                        "Auto-space delay", "", "300 ms", () -> {},
+                        "Single-finger combine timeout", "", "150 ms", () -> {});
+        assertEquals(2, withoutAutoSpace.size());
+        assertEquals("Enable MultiSwipe", withoutAutoSpace.get(0).getTitle());
+        assertEquals("Auto-Space", withoutAutoSpace.get(1).getTitle());
+    }
+
     private static final class InMemorySharedPreferences implements SharedPreferences {
         private final Map<String, Object> data = new HashMap<>();
 

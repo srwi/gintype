@@ -859,26 +859,38 @@ public class MultiSwipeDecoderTest {
     }
 
     @Test
-    public void isOnLetterAreaRejectsNonLetterKeysAndAcceptsLetterKeys() {
+    public void isOnLetterAreaRejectsNonLetterKeysAndAcceptsLetterKeysAndUmlauts() {
         MultiSwipeGeometry geo = new MultiSwipeGeometry();
         List<KeySpec> specs = new ArrayList<>();
-        // Bottom letter row: y=500, x=200..800, each 96x140
+        // Bottom letter row + dedicated umlaut keys: y=500, x=200..800, each 96x140
         specs.add(new KeySpec('z', 200f, 500f, 96f, 140f));
         specs.add(new KeySpec('m', 700f, 500f, 96f, 140f));
+        specs.add(new KeySpec('ü', 910f, 220f, 96f, 140f));
+        specs.add(new KeySpec('ö', 910f, 360f, 96f, 140f));
+        specs.add(new KeySpec('ä', 815f, 360f, 96f, 140f));
         // Non-letter keys: Shift left of 'z', Backspace right of 'm', Comma & Space below
         specs.add(new KeySpec('\0', 90f, 500f, 120f, 140f));   // Shift
         specs.add(new KeySpec('\0', 815f, 500f, 120f, 140f));  // Backspace
         specs.add(new KeySpec(',', 250f, 650f, 96f, 140f));    // Comma
         specs.add(new KeySpec('\0', 500f, 650f, 400f, 140f));  // Space
-        geo.setKeys(specs, 96f, 140f, false);
+        geo.setKeys(specs, 96f, 140f, true);
 
         assertTrue(geo.isOnLetterArea(200f, 500f));
         assertTrue(geo.isOnLetterArea(700f, 500f));
+        assertTrue(geo.isOnLetterArea(910f, 220f)); // 'ü'
+        assertTrue(geo.isOnLetterArea(910f, 360f)); // 'ö'
+        assertTrue(geo.isOnLetterArea(815f, 360f)); // 'ä'
+        assertEquals('ü', geo.nearestLetterKey(910f, 220f).character);
+        assertEquals('ö', geo.nearestLetterKey(910f, 360f).character);
+        assertEquals('ä', geo.nearestLetterKey(815f, 360f).character);
         assertFalse(geo.isOnLetterArea(90f, 500f));   // Shift
         assertFalse(geo.isOnLetterArea(815f, 500f));  // Backspace
         assertFalse(geo.isOnLetterArea(250f, 650f));  // Comma
         assertFalse(geo.isOnLetterArea(500f, 650f));  // Space
-        assertFalse(geo.isOnLetterArea(500f, 300f));  // Above letter rows (e.g. number row)
+        assertFalse(geo.isOnLetterArea(500f, 100f));  // Above letter rows (e.g. number row)
+        assertTrue(geo.isSpaceKeyAt(500f, 650f));
+        assertFalse(geo.isSpaceKeyAt(815f, 500f));
+        assertTrue(geo.isPunctuationAt(250f, 650f));
     }
 
     @Test

@@ -209,30 +209,24 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             float beamFreqWeight = GboardMultiSwipeSettings.readBeamFreqWeight(preferences);
             boolean traceLoggingEnabled = GboardMultiSwipeSettings.readTraceLoggingEnabled(preferences);
 
-            List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(4);
-            behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
+            List<GboardPatchesSettingsContract.Row> behaviorRows = buildBehaviorRows(
                     enabledTitle,
                     enabledSummary,
-                    true,
                     enabled,
                     value -> {
                         GboardMultiSwipeSettings.writeEnabled(preferences, value);
                         GboardPatchesSettingsContract.refresh(host);
-                    }));
-            behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
+                    },
                     autoSpaceTitle,
                     autoSpaceSummary,
-                    enabled,
                     autoSpaceEnabled,
                     value -> {
                         GboardMultiSwipeSettings.writeAutoSpaceEnabled(preferences, value);
                         GboardPatchesSettingsContract.refresh(host);
-                    }));
-            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    },
                     delayTitle,
                     delaySummary,
                     formatDelayLabel(autoSpaceDelayMs),
-                    enabled,
                     () -> showIntSliderDialog(
                             host, delayTitle, delaySummary,
                             GboardMultiSwipeSettings.MIN_AUTO_SPACE_DELAY_MS,
@@ -240,12 +234,10 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                             AUTO_SPACE_DELAY_STEP_MS,
                             GboardMultiSwipeSettings.DEFAULT_AUTO_SPACE_DELAY_MS,
                             autoSpaceDelayMs, this::formatDelayLabel,
-                            v -> GboardMultiSwipeSettings.writeAutoSpaceDelayMs(preferences, v))));
-            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                            v -> GboardMultiSwipeSettings.writeAutoSpaceDelayMs(preferences, v)),
                     combineDelayTitle,
                     combineDelaySummary,
                     formatCombineDelayLabel(combineDelayMs),
-                    enabled,
                     () -> showIntSliderDialog(
                             host, combineDelayTitle, combineDelaySummary,
                             GboardMultiSwipeSettings.MIN_SINGLE_TOUCH_COMBINE_DELAY_MS,
@@ -253,7 +245,7 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                             COMBINE_DELAY_STEP_MS,
                             GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
                             combineDelayMs, this::formatCombineDelayLabel,
-                            v -> GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(preferences, v))));
+                            v -> GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(preferences, v)));
 
             List<GboardPatchesSettingsContract.Row> tuningRows = new ArrayList<>(4);
             tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -753,6 +745,54 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                         errorSummary,
                         GboardPatchesSettingsContract.StatusTone.WARNING)),
                 Collections.emptyList());
+    }
+
+    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
+            String enabledTitle,
+            String enabledSummary,
+            boolean enabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
+            String autoSpaceTitle,
+            String autoSpaceSummary,
+            boolean autoSpaceEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
+            String delayTitle,
+            String delaySummary,
+            String delayValueLabel,
+            Runnable onSelectDelay,
+            String combineDelayTitle,
+            String combineDelaySummary,
+            String combineValueLabel,
+            Runnable onSelectCombineDelay
+    ) {
+        List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(4);
+        behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
+                enabledTitle,
+                enabledSummary,
+                true,
+                enabled,
+                onToggleEnabled));
+        behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
+                autoSpaceTitle,
+                autoSpaceSummary,
+                enabled,
+                autoSpaceEnabled,
+                onToggleAutoSpace));
+        if (autoSpaceEnabled) {
+            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    delayTitle,
+                    delaySummary,
+                    delayValueLabel,
+                    enabled,
+                    onSelectDelay));
+            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    combineDelayTitle,
+                    combineDelaySummary,
+                    combineValueLabel,
+                    enabled,
+                    onSelectCombineDelay));
+        }
+        return behaviorRows;
     }
 
     private static String text(Context context, int id) {
