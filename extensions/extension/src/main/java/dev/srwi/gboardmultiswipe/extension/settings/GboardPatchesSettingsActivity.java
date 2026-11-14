@@ -255,7 +255,7 @@ public final class GboardPatchesSettingsActivity extends Activity
 
     @Override
     protected void attachBaseContext(Context newBase) {
-        super.attachBaseContext(GboardSettingsLocaleManager.wrapContext(newBase));
+        super.attachBaseContext(newBase);
     }
 
     @Override
@@ -4060,16 +4060,6 @@ public final class GboardPatchesSettingsActivity extends Activity
             }
             featureRows.add(navigationRow);
         }
-        List<GboardPatchesSettingsContract.Row> preferenceRows =
-                new ArrayList<GboardPatchesSettingsContract.Row>();
-        preferenceRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                GboardSettingsText.get(context, R.string.gboard_patches_language_title),
-                GboardSettingsText.get(context, R.string.gboard_patches_language_summary),
-                currentLanguageLabel(context),
-                true,
-                () -> showLanguageDialog(host))
-                .setDecoration(new GboardPatchesSettingsContract.RowDecoration()
-                        .leadingIcon(GboardPatchesIcons.TRANSLATE, "slate")));
         List<GboardPatchesSettingsContract.Row> aboutRows =
                 new ArrayList<GboardPatchesSettingsContract.Row>();
         aboutRows.add(new GboardPatchesSettingsContract.CommandRow(
@@ -4101,53 +4091,8 @@ public final class GboardPatchesSettingsActivity extends Activity
                                 featureRows),
                         new GboardPatchesSettingsContract.Section(
                                 GboardSettingsText.get(context,
-                                        R.string.gboard_patches_section_preferences),
-                                preferenceRows),
-                        new GboardPatchesSettingsContract.Section(
-                                GboardSettingsText.get(context,
                                         R.string.gboard_patches_section_about),
                                 aboutRows)));
-    }
-
-    private static void showLanguageDialog(GboardPatchesSettingsContract.FeatureHost host) {
-        if (host == null) {
-            return;
-        }
-        Context context = host.getContext();
-        GboardPatchesSettingsContract.showChoiceDialog(host,
-                GboardSettingsText.get(context, R.string.gboard_patches_language_title),
-                new String[] {
-                        GboardSettingsText.get(context,
-                                R.string.gboard_patches_language_system_label),
-                        GboardSettingsText.get(context,
-                                R.string.gboard_patches_language_english_label)
-                },
-                new String[] {
-                        GboardSettingsLocaleManager.LANGUAGE_SYSTEM,
-                        GboardSettingsLocaleManager.LANGUAGE_ENGLISH
-                },
-                context == null
-                        ? GboardSettingsLocaleManager.LANGUAGE_SYSTEM
-                        : GboardSettingsLocaleManager.readLanguagePreference(
-                                GboardPatchesSettings.preferences(context)),
-                "",
-                () -> {
-                },
-                value -> {
-                    if (context == null) {
-                        return;
-                    }
-                    GboardSettingsLocaleManager.writeLanguagePreference(context, value);
-                    if (context instanceof Activity activity) {
-                        activity.recreate();
-                    } else {
-                        GboardPatchesSettingsContract.refresh(host);
-                    }
-                });
-    }
-
-    private static String currentLanguageLabel(Context context) {
-        return GboardSettingsText.get(context, R.string.gboard_patches_language_english_label);
     }
 
     private GboardPatchesSettingsContract.Screen buildFeatureErrorScreen(

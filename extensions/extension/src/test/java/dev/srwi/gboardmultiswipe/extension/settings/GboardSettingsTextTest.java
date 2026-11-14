@@ -24,10 +24,6 @@ public final class GboardSettingsTextTest {
     @Test
     public void runtimeTextFollowsPatchLanguagePreference() {
         Context context = RuntimeEnvironment.getApplication();
-        GboardPatchesSettings.preferences(context).edit()
-                .putString(GboardPatchesSettings.PREF_KEY_SETTINGS_UI_LANGUAGE,
-                        GboardSettingsLocaleManager.LANGUAGE_ENGLISH)
-                .commit();
 
         Assert.assertEquals("Nintype Multi-Touch", GboardSettingsText.get(context,
                 R.string.gboard_patches_nintype_title));
@@ -47,11 +43,11 @@ public final class GboardSettingsTextTest {
     @Test
     public void localeNormalizationAndFormattingStayBehindTheSeam() {
         Assert.assertEquals(
-                "System default (English)",
+                "English: Swipe",
                 GboardSettingsText.resolveStableTextForTesting(
-                        R.string.gboard_patches_language_system_value,
+                        R.string.gboard_patches_search_english_match,
                         "en",
-                        "English"));
+                        "Swipe"));
     }
 
     @Test

@@ -9,10 +9,6 @@ import java.util.function.Function;
 
 public final class GboardPatchesSettings {
     public static final String PREF_FILE = "gboard_patches_settings";
-    public static final String PREF_KEY_SETTINGS_UI_LANGUAGE =
-            "pref_settings_ui_language";
-    public static final String DEFAULT_SETTINGS_UI_LANGUAGE =
-            GboardSettingsLocaleManager.LANGUAGE_SYSTEM;
 
     private GboardPatchesSettings() {
     }
@@ -72,15 +68,6 @@ public final class GboardPatchesSettings {
     }
 
     public static void ensureDefaults(SharedPreferences preferences) {
-        if (preferences == null) {
-            return;
-        }
-        if (!preferences.contains(PREF_KEY_SETTINGS_UI_LANGUAGE)) {
-            preferences.edit()
-                    .putString(
-                            PREF_KEY_SETTINGS_UI_LANGUAGE,
-                            DEFAULT_SETTINGS_UI_LANGUAGE)
-                    .apply();
-        }
+        // Defaults for individual features are managed by their respective feature classes.
     }
 }

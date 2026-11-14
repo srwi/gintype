@@ -47,7 +47,6 @@ public final class GboardUnsupportedDeveloperDialogResourceBoundaryTest {
         ActivityController<GboardPatchesSettingsActivity> controller = Robolectric.buildActivity(
                 GboardPatchesSettingsActivity.class).setup();
         GboardPatchesSettingsActivity activity = controller.get();
-        GboardPatchesSettings.preferences(activity).edit().putString("pref_settings_ui_language", "en").commit();
         Resources original = activity.getResources();
         TargetTableResources target = new TargetTableResources(original, unavailableOrReusedIds, missing);
         ReflectionHelpers.setField(activity, "mResources", target);
