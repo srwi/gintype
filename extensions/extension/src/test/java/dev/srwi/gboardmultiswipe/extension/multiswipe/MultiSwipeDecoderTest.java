@@ -843,5 +843,54 @@ public class MultiSwipeDecoderTest {
         // 4) Disabled combine timeout (0ms) ignores single-touch swipes
         buf.recordStroke(Collections.singletonList(swipeHal), true, false, "Sage ", 260L, 0);
         assertTrue(buf.tokens.isEmpty());
+
+        // 5) Trailing space after a committed word (e.g. "Seiten ") or non-letter tap clears buffer
+        assertTrue(GboardMultiSwipeRuntime.isCombinePrefix(" Mi"));
+        assertTrue(GboardMultiSwipeRuntime.isCombinePrefix(" Mi r"));
+        assertFalse(GboardMultiSwipeRuntime.isCombinePrefix("Seiten "));
+
+        buf.recordStroke(Collections.singletonList(swipeHal), true, false, "", 260L, 150);
+        buf.validateOnActionDown("Seiten ", true, 300L, 150);
+        assertTrue(buf.tokens.isEmpty());
+
+        buf.recordStroke(Collections.singletonList(swipeHal), true, false, "", 260L, 150);
+        buf.validateOnActionDown("Seiten", false, 300L, 150); // e.g. Backspace tap
+        assertTrue(buf.tokens.isEmpty());
+    }
+
+    @Test
+    public void isOnLetterAreaRejectsNonLetterKeysAndAcceptsLetterKeys() {
+        MultiSwipeGeometry geo = new MultiSwipeGeometry();
+        List<KeySpec> specs = new ArrayList<>();
+        // Bottom letter row: y=500, x=200..800, each 96x140
+        specs.add(new KeySpec('z', 200f, 500f, 96f, 140f));
+        specs.add(new KeySpec('m', 700f, 500f, 96f, 140f));
+        // Non-letter keys: Shift left of 'z', Backspace right of 'm', Comma & Space below
+        specs.add(new KeySpec('\0', 90f, 500f, 120f, 140f));   // Shift
+        specs.add(new KeySpec('\0', 815f, 500f, 120f, 140f));  // Backspace
+        specs.add(new KeySpec(',', 250f, 650f, 96f, 140f));    // Comma
+        specs.add(new KeySpec('\0', 500f, 650f, 400f, 140f));  // Space
+        geo.setKeys(specs, 96f, 140f, false);
+
+        assertTrue(geo.isOnLetterArea(200f, 500f));
+        assertTrue(geo.isOnLetterArea(700f, 500f));
+        assertFalse(geo.isOnLetterArea(90f, 500f));   // Shift
+        assertFalse(geo.isOnLetterArea(815f, 500f));  // Backspace
+        assertFalse(geo.isOnLetterArea(250f, 650f));  // Comma
+        assertFalse(geo.isOnLetterArea(500f, 650f));  // Space
+        assertFalse(geo.isOnLetterArea(500f, 300f));  // Above letter rows (e.g. number row)
+    }
+
+    @Test
+    public void suppressesLeadingSpaceAndLowercasesWhenAttachingAfterBackspace() {
+        assertTrue(GboardMultiSwipeRuntime.shouldSuppressLeadingSpaceAfterDeletion("Seiten ", "Seiten"));
+        assertTrue(GboardMultiSwipeRuntime.shouldSuppressLeadingSpaceAfterDeletion("Seiten", "Seite"));
+        assertFalse(GboardMultiSwipeRuntime.shouldSuppressLeadingSpaceAfterDeletion("Seiten", "Seiten "));
+        assertFalse(GboardMultiSwipeRuntime.shouldSuppressLeadingSpaceAfterDeletion(null, "Seiten"));
+
+        assertTrue(GboardMultiSwipeRuntime.isAttachingDirectlyToWord("Seiten", false));
+        assertFalse(GboardMultiSwipeRuntime.isAttachingDirectlyToWord("Seiten", true));
+        assertFalse(GboardMultiSwipeRuntime.isAttachingDirectlyToWord("Seiten ", false));
+        assertEquals("leiste", GboardMultiSwipeRuntime.lowercaseFirstChar("Leiste"));
     }
 }

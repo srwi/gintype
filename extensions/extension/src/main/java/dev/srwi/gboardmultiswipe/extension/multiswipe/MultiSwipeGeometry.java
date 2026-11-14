@@ -30,6 +30,13 @@ public final class MultiSwipeGeometry {
             float dy = py - centerY;
             return dx * dx + dy * dy;
         }
+
+        public boolean contains(float px, float py, float marginX, float marginY) {
+            float hW = width * 0.5f + marginX;
+            float hH = height * 0.5f + marginY;
+            return px >= centerX - hW && px <= centerX + hW
+                    && py >= centerY - hH && py <= centerY + hH;
+        }
     }
 
     public static final String NO_SPACE_BEFORE = ".,!?;:)]}\u00bb\u2026";
@@ -39,6 +46,7 @@ public final class MultiSwipeGeometry {
     }
 
     private final List<KeySpec> allKeys = new ArrayList<>(32);
+    private final List<KeySpec> nonLetterKeys = new ArrayList<>(16);
     private final KeySpec[] letterArray = new KeySpec[MultiSwipeAlphabet.ALPHABET_SIZE];
 
     public float keyWidthPx = 96f;
@@ -52,6 +60,7 @@ public final class MultiSwipeGeometry {
 
     public void setKeys(List<KeySpec> specs, float avgWidth, float avgHeight, boolean hasUmlauts) {
         allKeys.clear();
+        nonLetterKeys.clear();
         Arrays.fill(letterArray, null);
         this.hasDedicatedUmlauts = hasUmlauts;
 
@@ -63,16 +72,20 @@ public final class MultiSwipeGeometry {
 
         for (int i = 0; i < specs.size(); i++) {
             KeySpec spec = specs.get(i);
-            allKeys.add(spec);
+            if (spec.character != '\0') {
+                allKeys.add(spec);
+            }
             int idx = MultiSwipeAlphabet.charIndex(spec.character);
             if (idx >= 0) {
                 if (letterArray[idx] == null) {
                     letterArray[idx] = spec;
                 }
-                float top = spec.centerY - spec.height * 0.65f;
-                float bot = spec.centerY + spec.height * 0.65f;
+                float top = spec.centerY - spec.height * 0.5f;
+                float bot = spec.centerY + spec.height * 0.5f;
                 if (top < minY) minY = top;
                 if (bot > maxY) maxY = bot;
+            } else {
+                nonLetterKeys.add(spec);
             }
         }
 
@@ -272,12 +285,23 @@ public final class MultiSwipeGeometry {
     }
 
     public boolean isOnLetterArea(float px, float py) {
-        if (py < minLetterY || py > maxLetterY) return false;
+        for (int i = 0; i < letterArray.length; i++) {
+            KeySpec k = letterArray[i];
+            if (k != null && k.contains(px, py, 0f, 0f)) {
+                return true;
+            }
+        }
+        for (int i = 0; i < nonLetterKeys.size(); i++) {
+            if (nonLetterKeys.get(i).contains(px, py, 0f, 0f)) {
+                return false;
+            }
+        }
+        float gapX = keyWidthPx * 0.12f;
+        float gapY = keyHeightPx * 0.12f;
+        if (py < minLetterY - gapY || py > maxLetterY + gapY) return false;
         KeySpec nearest = nearestLetterKey(px, py);
         if (nearest == null) return false;
-        float distSq = nearest.distanceSqTo(px, py);
-        float maxRadius = Math.max(keyWidthPx, keyHeightPx) * 1.45f;
-        return distSq <= maxRadius * maxRadius;
+        return nearest.contains(px, py, gapX, gapY);
     }
 
     public KeySpec findKeyAt(float px, float py) {

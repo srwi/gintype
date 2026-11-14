@@ -273,6 +273,8 @@ public final class GboardMultiSwipeRuntime {
         boolean sawNonLetterThisSession = false;
         String textSnapshotAtActionDown = null;
         boolean leadingSpaceEvaluated = false;
+        boolean suppressNextLeadingSpace = false;
+        String lastObservedTextBeforeCursor = null;
         String lastCommittedWord = null;
         long lastTouchUpTimeMs = 0L;
         int restingDroppedThisSession = 0;
@@ -512,6 +514,14 @@ public final class GboardMultiSwipeRuntime {
                     if (!isWordContinuing) {
                         session.clearWordBuffer();
                         String snapshotNow = readTextBeforeCursorSnapshot(handler, context);
+                        if (shouldSuppressLeadingSpaceAfterDeletion(
+                                session.lastObservedTextBeforeCursor, snapshotNow)) {
+                            session.suppressNextLeadingSpace = true;
+                        } else if (snapshotNow != null && !snapshotNow.isEmpty()
+                                && !Character.isLetterOrDigit(snapshotNow.charAt(snapshotNow.length() - 1))) {
+                            session.suppressNextLeadingSpace = false;
+                        }
+                        session.lastObservedTextBeforeCursor = snapshotNow;
                         session.textSnapshotAtActionDown = snapshotNow;
                         session.passiveTapBuffer.validateOnActionDown(snapshotNow, downOnLetter, eventTime);
                         int combineDelayMs = GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(context);
@@ -1523,16 +1533,28 @@ public final class GboardMultiSwipeRuntime {
                 return;
             }
 
+            boolean autoSpaceEnabled = GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
+            boolean prependLeadingSpace = !session.leadingSpaceEvaluated
+                    && !session.suppressNextLeadingSpace
+                    && shouldPrependLeadingSpace(session.textSnapshotAtActionDown, autoSpaceEnabled);
+            boolean attachingToWord = isAttachingDirectlyToWord(
+                    session.textSnapshotAtActionDown, prependLeadingSpace);
+
             String bestWord = candidates.get(0).word;
-            boolean capitalizeFirst = shouldCapitalizeFirstLetter(session.textSnapshotAtActionDown, ic);
-            if (capitalizeFirst && bestWord.length() > 0) {
+            boolean capitalizeFirst = !attachingToWord
+                    && shouldCapitalizeFirstLetter(session.textSnapshotAtActionDown, ic);
+            if (attachingToWord && bestWord.length() > 0) {
+                bestWord = lowercaseFirstChar(bestWord);
+            } else if (capitalizeFirst && bestWord.length() > 0) {
                 bestWord = capitalizeFirstChar(bestWord);
             }
 
             List<String> alternativeWords = new ArrayList<>(candidates.size());
             for (int i = 0; i < candidates.size(); i++) {
                 String w = candidates.get(i).word;
-                if (capitalizeFirst && w.length() > 0) {
+                if (attachingToWord && w.length() > 0) {
+                    w = lowercaseFirstChar(w);
+                } else if (capitalizeFirst && w.length() > 0) {
                     w = capitalizeFirstChar(w);
                 }
                 if (!alternativeWords.contains(w)) {
@@ -1543,10 +1565,6 @@ public final class GboardMultiSwipeRuntime {
             session.currentComposingWord = bestWord;
             session.currentAlternativeWords = alternativeWords;
 
-            boolean autoSpaceEnabled = GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
-            boolean prependLeadingSpace = !session.leadingSpaceEvaluated
-                    && shouldPrependLeadingSpace(session.textSnapshotAtActionDown, autoSpaceEnabled);
-
             int rollbackDeleted = 0;
             if (ic != null) {
                 rollbackDeleted = previewWordToInputConnection(
@@ -1555,6 +1573,7 @@ public final class GboardMultiSwipeRuntime {
                     session.textSnapshotAtActionDown = session.textSnapshotAtActionDown + " ";
                 }
                 session.leadingSpaceEvaluated = true;
+                session.suppressNextLeadingSpace = false;
             }
 
             GboardMultiSwipeTraceLogger.logWordDecode(
@@ -1586,6 +1605,32 @@ public final class GboardMultiSwipeRuntime {
         }
         char last = baselineBeforeText.charAt(baselineBeforeText.length() - 1);
         return Character.isLetterOrDigit(last);
+    }
+
+    static boolean shouldSuppressLeadingSpaceAfterDeletion(
+            String previousSnapshot,
+            String currentSnapshot
+    ) {
+        if (previousSnapshot == null || currentSnapshot == null) {
+            return false;
+        }
+        return currentSnapshot.length() < previousSnapshot.length()
+                && !currentSnapshot.isEmpty()
+                && Character.isLetterOrDigit(currentSnapshot.charAt(currentSnapshot.length() - 1));
+    }
+
+    static boolean isAttachingDirectlyToWord(String baselineBeforeText, boolean prependLeadingSpace) {
+        if (prependLeadingSpace || baselineBeforeText == null || baselineBeforeText.isEmpty()) {
+            return false;
+        }
+        return Character.isLetterOrDigit(baselineBeforeText.charAt(baselineBeforeText.length() - 1));
+    }
+
+    static String lowercaseFirstChar(String word) {
+        if (word == null || word.isEmpty()) {
+            return word;
+        }
+        return Character.toLowerCase(word.charAt(0)) + word.substring(1);
     }
 
     private static int previewWordToInputConnection(
@@ -1881,6 +1926,9 @@ public final class GboardMultiSwipeRuntime {
 
     static boolean isCombinePrefix(String prefix) {
         if (prefix == null || prefix.length() > MAX_ROLLBACK_EXTRA_CHARS) return false;
+        if (!prefix.isEmpty() && prefix.charAt(prefix.length() - 1) == ' ') {
+            return false;
+        }
         for (int i = 0; i < prefix.length(); i++) {
             char c = prefix.charAt(i);
             if (!Character.isLetter(c) && c != ' ') {
@@ -2162,11 +2210,18 @@ public final class GboardMultiSwipeRuntime {
     ) {
         float sumW = 0f;
         float sumH = 0f;
+        int letterCount = 0;
         for (int i = 0; i < keys.size(); i++) {
-            sumW += keys.get(i).width;
-            sumH += keys.get(i).height;
+            KeySpec k = keys.get(i);
+            if (MultiSwipeAlphabet.charIndex(k.character) >= 0) {
+                sumW += k.width;
+                sumH += k.height;
+                letterCount++;
+            }
         }
-        session.geometry.setKeys(keys, sumW / keys.size(), sumH / keys.size(), hasUmlauts);
+        float avgW = letterCount > 0 ? sumW / letterCount : 96f;
+        float avgH = letterCount > 0 ? sumH / letterCount : 140f;
+        session.geometry.setKeys(keys, avgW, avgH, hasUmlauts);
         session.geometryReady = true;
         session.geometryFromNativeLayout = fromNativeLayout;
     }
@@ -2247,7 +2302,10 @@ public final class GboardMultiSwipeRuntime {
             if (w <= 10f || h <= 10f) continue;
 
             char ch = extractSupportedCharFromSoftKey(keyObj);
-            if (ch == '\0') continue;
+            if (ch == '\0') {
+                out.add(new KeySpec('\0', cxArr[i], cyArr[i], w, h));
+                continue;
+            }
             if (ch == 'ä' || ch == 'ö' || ch == 'ü') {
                 if (hasUmlautOut != null && hasUmlautOut.length > 0) {
                     hasUmlautOut[0] = true;
