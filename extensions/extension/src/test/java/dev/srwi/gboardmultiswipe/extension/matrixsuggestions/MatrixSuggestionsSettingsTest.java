@@ -124,6 +124,40 @@ public final class MatrixSuggestionsSettingsTest {
                 0.0001f);
     }
 
+    @Test
+    public void invertSwipeDefaultsAndPersistence() {
+        TestSharedPreferences prefs = new TestSharedPreferences();
+        Assert.assertFalse(GboardMatrixSuggestionsSettings.readInvertSwipe(prefs));
+
+        GboardMatrixSuggestionsSettings.ensureDefaults(prefs);
+        Assert.assertFalse(GboardMatrixSuggestionsSettings.readInvertSwipe(prefs));
+
+        Assert.assertTrue(GboardMatrixSuggestionsSettings.writeInvertSwipe(prefs, true));
+        Assert.assertTrue(GboardMatrixSuggestionsSettings.readInvertSwipe(prefs));
+
+        // Re-running ensureDefaults must preserve explicit user choice.
+        GboardMatrixSuggestionsSettings.ensureDefaults(prefs);
+        Assert.assertTrue(GboardMatrixSuggestionsSettings.readInvertSwipe(prefs));
+
+        prefs.values.put(GboardMatrixSuggestionsSettings.PREF_KEY_INVERT_SWIPE, "invalid");
+        Assert.assertFalse(GboardMatrixSuggestionsSettings.readInvertSwipe(prefs));
+    }
+
+    @Test
+    public void computeSwappedIndexRespectsInvertDirection() {
+        // Normal: flick up selects previous (-1), flick down selects next (+1).
+        Assert.assertEquals(2, VerticalWordWheelView.computeSwappedIndex(0, 3, true, false));
+        Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 3, false, false));
+
+        // Inverted: flick up moves bottom word into center (+1), flick down moves top into center (-1).
+        Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 3, true, true));
+        Assert.assertEquals(2, VerticalWordWheelView.computeSwappedIndex(0, 3, false, true));
+
+        // Wrap-around on 2-item list swaps cleanly in either mode.
+        Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 2, true, false));
+        Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 2, true, true));
+    }
+
     private static final class TestSharedPreferences implements SharedPreferences {
         final Map<String, Object> values = new HashMap<>();
 

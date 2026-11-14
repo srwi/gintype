@@ -176,6 +176,7 @@ public final class GboardMatrixSuggestionsRuntime {
             return;
         }
         float activeScale = readActiveTopbarScale(context);
+        boolean invertSwipe = GboardMatrixSuggestionsSettings.readInvertSwipe(context);
         List<View> trackedHeaders;
         synchronized (BASE_HEADER_HEIGHTS) {
             trackedHeaders = new ArrayList<>(BASE_HEADER_HEIGHTS.keySet());
@@ -187,7 +188,10 @@ public final class GboardMatrixSuggestionsRuntime {
         }
         for (MatrixSuggestionBarView bar : ACTIVE_BARS.values()) {
             if (bar != null) {
-                bar.post(() -> bar.setScaleFactor(activeScale));
+                bar.post(() -> {
+                    bar.setScaleFactor(activeScale);
+                    bar.setInvertVerticalSwipe(invertSwipe);
+                });
             }
         }
     }
@@ -493,10 +497,12 @@ public final class GboardMatrixSuggestionsRuntime {
 
     private static MatrixSuggestionBarView getOrCreateBarView(ViewGroup holderView) {
         float activeScale = readActiveTopbarScale(holderView.getContext());
+        boolean invertSwipe = GboardMatrixSuggestionsSettings.readInvertSwipe(holderView.getContext());
         syncHeaderHeight(holderView, activeScale);
         MatrixSuggestionBarView bar = resolveOrCreateBarView(holderView);
         if (bar != null) {
             bar.setScaleFactor(activeScale);
+            bar.setInvertVerticalSwipe(invertSwipe);
         }
         return bar;
     }

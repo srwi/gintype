@@ -55,6 +55,20 @@ public class VerticalWordWheelView extends LinearLayout {
     private int selectedIndex = 0;
     private boolean isActiveWord = false;
     private float scaleFactor = GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE;
+    private boolean invertVerticalSwipe = GboardMatrixSuggestionsSettings.DEFAULT_INVERT_SWIPE;
+
+    /** Set whether vertical flick gestures rotate the wheel in the inverted direction. */
+    public void setInvertVerticalSwipe(boolean invert) {
+        this.invertVerticalSwipe = invert;
+    }
+
+    static int computeSwappedIndex(int currentIndex, int size, boolean flickUp, boolean invert) {
+        if (size <= 0) {
+            return 0;
+        }
+        int delta = (flickUp ^ invert) ? -1 : 1;
+        return (currentIndex + delta + size) % size;
+    }
 
     /** Update the top bar scale factor and refresh fonts and spacing if changed. */
     public void setScaleFactor(float scale) {
@@ -349,11 +363,9 @@ public class VerticalWordWheelView extends LinearLayout {
                     isFlickGesture = true;
 
                     if (dY < -touchSlop) {
-                        // Flick UP -> select top/previous item
-                        selectedIndex = (selectedIndex - 1 + size) % size;
+                        selectedIndex = computeSwappedIndex(selectedIndex, size, true, invertVerticalSwipe);
                     } else if (dY > touchSlop) {
-                        // Flick DOWN -> select bottom/next item
-                        selectedIndex = (selectedIndex + 1) % size;
+                        selectedIndex = computeSwappedIndex(selectedIndex, size, false, invertVerticalSwipe);
                     }
 
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);

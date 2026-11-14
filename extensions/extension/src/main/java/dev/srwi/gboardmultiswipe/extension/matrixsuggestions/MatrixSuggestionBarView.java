@@ -64,6 +64,19 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
     private final List<String> displayedColumnWords = new ArrayList<>();
     private int selectedHistoryIndex = -1;
     private float scaleFactor = GboardMatrixSuggestionsSettings.DEFAULT_TOPBAR_SCALE;
+    private boolean invertVerticalSwipe = GboardMatrixSuggestionsSettings.DEFAULT_INVERT_SWIPE;
+
+    /** Update whether vertical flick gestures rotate word wheels in the inverted direction. */
+    public void setInvertVerticalSwipe(boolean invert) {
+        if (this.invertVerticalSwipe == invert) {
+            return;
+        }
+        this.invertVerticalSwipe = invert;
+        currentWheelView.setInvertVerticalSwipe(invert);
+        for (VerticalWordWheelView wheel : historyWheels) {
+            wheel.setInvertVerticalSwipe(invert);
+        }
+    }
 
     /** Update the scale factor for all word wheels and column dividers. */
     public void setScaleFactor(float scale) {
@@ -252,6 +265,7 @@ public class MatrixSuggestionBarView extends HorizontalScrollView {
 
             VerticalWordWheelView historyWheel = new VerticalWordWheelView(getContext());
             historyWheel.setScaleFactor(scaleFactor);
+            historyWheel.setInvertVerticalSwipe(invertVerticalSwipe);
             historyWheel.setAlternatives(entry.alternatives, entry.selectedIndex);
             historyWheel.setIsActiveWord(false);
             historyWheel.setAlpha(1.0f);

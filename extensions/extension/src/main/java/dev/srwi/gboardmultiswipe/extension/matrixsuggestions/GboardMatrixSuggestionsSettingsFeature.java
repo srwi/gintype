@@ -39,6 +39,8 @@ public final class GboardMatrixSuggestionsSettingsFeature
     private final String topbarScaleValueTemplate;
     private final String topbarScaleDefaultTemplate;
     private final String sliderDefaultLabel;
+    private final String invertSwipeTitle;
+    private final String invertSwipeSummary;
     private final String errorTitle;
     private final String errorSummary;
 
@@ -60,6 +62,10 @@ public final class GboardMatrixSuggestionsSettingsFeature
                 context, R.string.gboard_patches_matrix_suggestions_topbar_scale_value_default);
         sliderDefaultLabel = GboardSettingsText.get(
                 context, R.string.gboard_patches_matrix_suggestions_slider_default);
+        invertSwipeTitle = GboardSettingsText.get(
+                context, R.string.gboard_patches_matrix_suggestions_invert_swipe_title);
+        invertSwipeSummary = GboardSettingsText.get(
+                context, R.string.gboard_patches_matrix_suggestions_invert_swipe_summary);
         errorTitle = GboardSettingsText.get(
                 context, R.string.gboard_patches_error_header_title);
         errorSummary = GboardSettingsText.get(
@@ -101,6 +107,7 @@ public final class GboardMatrixSuggestionsSettingsFeature
             GboardMatrixSuggestionsSettings.ensureDefaults(preferences);
             boolean enabled = GboardMatrixSuggestionsSettings.readEnabled(preferences);
             float topbarScale = GboardMatrixSuggestionsSettings.readTopbarScale(preferences);
+            boolean invertSwipe = GboardMatrixSuggestionsSettings.readInvertSwipe(preferences);
 
             List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>();
             rows.add(new GboardPatchesSettingsContract.ToggleRow(
@@ -119,6 +126,16 @@ public final class GboardMatrixSuggestionsSettingsFeature
                     formatTopbarScale(topbarScale),
                     enabled,
                     () -> showTopbarScaleDialog(host, topbarScale)));
+            rows.add(new GboardPatchesSettingsContract.ToggleRow(
+                    invertSwipeTitle,
+                    invertSwipeSummary,
+                    enabled,
+                    invertSwipe,
+                    newValue -> {
+                        GboardMatrixSuggestionsSettings.writeInvertSwipe(context, newValue);
+                        GboardMatrixSuggestionsRuntime.syncAllHeaderHeights(context);
+                        GboardPatchesSettingsContract.refresh(host);
+                    }));
 
             return new GboardPatchesSettingsContract.Screen(
                     title,

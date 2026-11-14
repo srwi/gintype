@@ -15,6 +15,9 @@ public final class GboardMatrixSuggestionsSettings {
     public static final float MAX_TOPBAR_SCALE = 2.0f;
     public static final float DEFAULT_TOPBAR_SCALE = 1.0f;
 
+    public static final String PREF_KEY_INVERT_SWIPE = "pref_matrix_invert_vertical_swipe";
+    public static final boolean DEFAULT_INVERT_SWIPE = false;
+
     private GboardMatrixSuggestionsSettings() {
     }
 
@@ -43,8 +46,41 @@ public final class GboardMatrixSuggestionsSettings {
     public static void ensureDefaults(SharedPreferences preferences) {
         GboardBooleanFlagSettings.ensureDefault(
                 preferences, PREF_KEY_ENABLED, DEFAULT_ENABLED);
+        GboardBooleanFlagSettings.ensureDefault(
+                preferences, PREF_KEY_INVERT_SWIPE, DEFAULT_INVERT_SWIPE);
         if (preferences != null && !preferences.contains(PREF_KEY_TOPBAR_SCALE)) {
             writeTopbarScale(preferences, DEFAULT_TOPBAR_SCALE);
+        }
+    }
+
+    public static boolean readInvertSwipe(Context context) {
+        if (context == null) return DEFAULT_INVERT_SWIPE;
+        try {
+            SharedPreferences preferences = GboardPatchesSettings.preferencesOrNull(context);
+            if (preferences == null) {
+                preferences = context.getSharedPreferences(context.getPackageName() + "_preferences", Context.MODE_PRIVATE);
+            }
+            return readInvertSwipe(preferences);
+        } catch (Throwable ignored) {
+            return DEFAULT_INVERT_SWIPE;
+        }
+    }
+
+    public static boolean readInvertSwipe(SharedPreferences preferences) {
+        return GboardBooleanFlagSettings.readEnabled(
+                preferences, PREF_KEY_INVERT_SWIPE, DEFAULT_INVERT_SWIPE);
+    }
+
+    public static boolean writeInvertSwipe(SharedPreferences preferences, boolean invert) {
+        return GboardBooleanFlagSettings.writeEnabled(preferences, PREF_KEY_INVERT_SWIPE, invert);
+    }
+
+    public static boolean writeInvertSwipe(Context context, boolean invert) {
+        if (context == null) return false;
+        try {
+            return writeInvertSwipe(GboardPatchesSettings.preferences(context), invert);
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
