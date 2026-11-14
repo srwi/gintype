@@ -31,10 +31,10 @@ public final class GboardSettingsSearchMatcherTest {
 
     @Test
     public void exactPrefixAndSubstringRankInOrder() {
-        int exact = title("Nintype", "Nintype");
-        int prefix = title("Nin", "Nintype");
+        int exact = title("MultiSwipe", "MultiSwipe");
+        int prefix = title("Nin", "MultiSwipe");
         int wordStart = title("touch", "Multi Touch");
-        int substring = title("type", "Nintype");
+        int substring = title("type", "MultiSwipe");
         assertEquals(GboardSettingsSearchMatcher.EXACT, exact);
         assertEquals(GboardSettingsSearchMatcher.PREFIX, prefix);
         assertEquals(GboardSettingsSearchMatcher.SUBSTRING
@@ -44,8 +44,8 @@ public final class GboardSettingsSearchMatcherTest {
 
     @Test
     public void lettersInOrderMatchAcrossWords() {
-        assertTrue(title("ntyp", "Nintype") > GboardSettingsSearchMatcher.TYPO);
-        assertTrue(title("mtx", "Matrix Suggestions") > GboardSettingsSearchMatcher.TYPO);
+        assertTrue(title("ntyp", "MultiSwipe") > GboardSettingsSearchMatcher.TYPO);
+        assertTrue(title("mtx", "Thicc Top Bar") > GboardSettingsSearchMatcher.TYPO);
     }
 
     @Test

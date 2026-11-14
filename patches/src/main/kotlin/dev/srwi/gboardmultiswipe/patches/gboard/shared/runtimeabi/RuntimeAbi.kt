@@ -1,18 +1,18 @@
 package dev.srwi.gboardmultiswipe.patches.gboard.shared.runtimeabi
 
 internal enum class RuntimeCallId(internal val encodedAbi: String) {
-    MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_UPDATED("Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onCandidatesUpdated(Ljava/lang/Object;Ljava/lang/Object;)V"),
-    MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED("Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onCandidatesCleared(Ljava/lang/Object;)V"),
-    MATRIX_SUGGESTIONS_RUNTIME_ON_SOFT_KEYBOARD_VIEW_INFLATED("Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->onSoftKeyboardViewInflated(Ljava/lang/Object;)V"),
-    MATRIX_SUGGESTIONS_RUNTIME_SCALE_HEADER_TARGET_HEIGHT("Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;->scaleHeaderTargetHeight(Ljava/lang/Object;I)I"),
-    NINTYPE_RUNTIME_ON_GESTURE_EVENT_ENTRY("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
-    NINTYPE_RUNTIME_SHOULD_START_GESTURE("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->shouldStartGesture(Ljava/lang/Object;Z)Z"),
-    NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_DISPATCH("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->shouldInterceptGestureDispatch(Ljava/lang/Object;)Z"),
-    NINTYPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->shouldInterceptGestureReset(Ljava/lang/Object;)Z"),
-    NINTYPE_RUNTIME_RESOLVE_LETTER_STARTED("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->resolveLetterStarted(Ljava/lang/Object;Z)Z"),
-    NINTYPE_RUNTIME_SHOULD_RECEIVE_EVENTS_DURING_OTHER_OWNER("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->shouldReceiveEventsDuringOtherOwner(Ljava/lang/Object;)Z"),
-    NINTYPE_RUNTIME_SHOULD_SUPPRESS_BASIC_HANDLER("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->shouldSuppressBasicMotionEventHandler(Ljava/lang/Object;Landroid/view/MotionEvent;)Z"),
-    NINTYPE_RUNTIME_SHOULD_SUPPRESS_ROLLOVER_COMMIT("Ldev/srwi/gboardmultiswipe/extension/nintype/GboardNintypeRuntime;->shouldSuppressRolloverCommitOnPointerDown(Landroid/view/MotionEvent;)Z"),
+    THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_UPDATED("Ldev/srwi/gboardmultiswipe/extension/thicctopbar/GboardThiccTopBarRuntime;->onCandidatesUpdated(Ljava/lang/Object;Ljava/lang/Object;)V"),
+    THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED("Ldev/srwi/gboardmultiswipe/extension/thicctopbar/GboardThiccTopBarRuntime;->onCandidatesCleared(Ljava/lang/Object;)V"),
+    THICC_TOP_BAR_RUNTIME_ON_SOFT_KEYBOARD_VIEW_INFLATED("Ldev/srwi/gboardmultiswipe/extension/thicctopbar/GboardThiccTopBarRuntime;->onSoftKeyboardViewInflated(Ljava/lang/Object;)V"),
+    THICC_TOP_BAR_RUNTIME_SCALE_HEADER_TARGET_HEIGHT("Ldev/srwi/gboardmultiswipe/extension/thicctopbar/GboardThiccTopBarRuntime;->scaleHeaderTargetHeight(Ljava/lang/Object;I)I"),
+    MULTISWIPE_RUNTIME_ON_GESTURE_EVENT_ENTRY("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
+    MULTISWIPE_RUNTIME_SHOULD_START_GESTURE("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldStartGesture(Ljava/lang/Object;Z)Z"),
+    MULTISWIPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_DISPATCH("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldInterceptGestureDispatch(Ljava/lang/Object;)Z"),
+    MULTISWIPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldInterceptGestureReset(Ljava/lang/Object;)Z"),
+    MULTISWIPE_RUNTIME_RESOLVE_LETTER_STARTED("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->resolveLetterStarted(Ljava/lang/Object;Z)Z"),
+    MULTISWIPE_RUNTIME_SHOULD_RECEIVE_EVENTS_DURING_OTHER_OWNER("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldReceiveEventsDuringOtherOwner(Ljava/lang/Object;)Z"),
+    MULTISWIPE_RUNTIME_SHOULD_SUPPRESS_BASIC_HANDLER("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldSuppressBasicMotionEventHandler(Ljava/lang/Object;Landroid/view/MotionEvent;)Z"),
+    MULTISWIPE_RUNTIME_SHOULD_SUPPRESS_ROLLOVER_COMMIT("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldSuppressRolloverCommitOnPointerDown(Landroid/view/MotionEvent;)Z"),
 }
 
 internal data class RuntimeAbi(

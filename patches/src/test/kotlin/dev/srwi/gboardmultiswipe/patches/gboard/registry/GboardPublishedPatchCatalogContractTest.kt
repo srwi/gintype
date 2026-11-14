@@ -15,12 +15,12 @@ class GboardPublishedPatchCatalogContractTest {
         assertTrue(registrations.isNotEmpty())
         assertEquals(registrations.size, registrations.map { patch -> patch.name }.distinct().size)
         assertSame(
-            gboardMatrixSuggestionsPatch,
-            registrations.single { patch -> patch.name == "Matrix Word Suggestions" },
+            gboardThiccTopBarPatch,
+            registrations.single { patch -> patch.name == "Thicc Top Bar" },
         )
         assertSame(
-            gboardNintypePatch,
-            registrations.single { patch -> patch.name == "Nintype Multi-Touch Swipe" },
+            gboardMultiSwipePatch,
+            registrations.single { patch -> patch.name == "MultiSwipe" },
         )
     }
 
@@ -38,7 +38,7 @@ class GboardPublishedPatchCatalogContractTest {
         )
 
         val matrixSuggestions = patches.single { patch ->
-            patch.get("name").asString == "Matrix Word Suggestions"
+            patch.get("name").asString == "Thicc Top Bar"
         }
         assertTrue(matrixSuggestions.get("use").asBoolean)
         assertEquals(

@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an idea for Gboard Multiswipe
+description: Suggest an idea for Gboard MultiSwipe
 title: "[Feature] "
 labels: [enhancement]
 body:
@@ -24,7 +24,7 @@ body:
     id: proposed-solution
     attributes:
       label: Proposed solution
-      description: What would you like Gboard Multiswipe to do?
+      description: What would you like Gboard MultiSwipe to do?
       placeholder: I would like ... so that ...
     validations:
       required: true

@@ -7,18 +7,18 @@ import android.os.Bundle;
 import android.util.Log;
 
 public final class GboardPatchesFeatureAvailability {
-    public static final String FEATURE_MATRIX_SUGGESTIONS =
-            "dev.srwi.gboardmultiswipe.feature.matrix_suggestions";
-    public static final String FEATURE_NINTYPE =
-            "dev.srwi.gboardmultiswipe.feature.nintype";
+    public static final String FEATURE_THICC_TOP_BAR =
+            "dev.srwi.gboardmultiswipe.feature.thicc_top_bar";
+    public static final String FEATURE_MULTISWIPE =
+            "dev.srwi.gboardmultiswipe.feature.multiswipe";
 
     private static final String TAG = "GboardPatches";
 
     private GboardPatchesFeatureAvailability() {
     }
 
-    public static boolean isNintypePatchPresent(Context context) {
-        return hasFeature(context, FEATURE_NINTYPE);
+    public static boolean isMultiSwipePatchPresent(Context context) {
+        return hasFeature(context, FEATURE_MULTISWIPE);
     }
 
     public static boolean hasFeature(Context context, String featureKey) {

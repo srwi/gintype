@@ -154,8 +154,8 @@ val generateGboardVersionBindings = tasks.register<GenerateTargetBindingsTask>(
 
 patches {
     about {
-        name = "Gboard Multiswipe Patches"
-        description = "Morphe patches for Nintype multi-touch swiping and 2D matrix top-bar suggestions in Gboard."
+        name = "Gboard MultiSwipe Patches"
+        description = "Morphe patches for MultiSwipe multi-touch swiping and 2D matrix top-bar suggestions in Gboard."
         source = "https://github.com/srwi/gboard-multiswipe"
         author = "srwi"
         contact = "https://github.com/srwi/gboard-multiswipe/issues"

@@ -10,10 +10,10 @@ import dev.srwi.gboardmultiswipe.patches.gboard.features.packagerename.gboardPac
 import dev.srwi.gboardmultiswipe.patches.gboard.features.packagerename.isValidGboardAppDisplayName
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
-import dev.srwi.gboardmultiswipe.patches.gboard.features.matrixsuggestions.gboardMatrixSuggestionsBytecodePatch
-import dev.srwi.gboardmultiswipe.patches.gboard.features.matrixsuggestions.gboardMatrixSuggestionsFeatureMarkerPatch
-import dev.srwi.gboardmultiswipe.patches.gboard.features.nintype.gboardNintypeBytecodePatch
-import dev.srwi.gboardmultiswipe.patches.gboard.features.nintype.gboardNintypeFeatureMarkerPatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarBytecodePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarFeatureMarkerPatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeBytecodePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeFeatureMarkerPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.gboardPatchesSettingsPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.generated.GboardTargetAdmission
 import dev.srwi.gboardmultiswipe.patches.shared.Constants.COMPATIBILITY_GBOARD
@@ -38,9 +38,9 @@ private fun gboardPublicResourcePatch(
 }
 
 @Suppress("unused")
-val gboardMatrixSuggestionsPatch = gboardPublicResourcePatch(
-    featureId = "matrix_word_suggestions",
-    name = "Matrix Word Suggestions",
+val gboardThiccTopBarPatch = gboardPublicResourcePatch(
+    featureId = "thicc_top_bar",
+    name = "Thicc Top Bar",
     description = "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
     default = true,
 ) {
@@ -48,24 +48,24 @@ val gboardMatrixSuggestionsPatch = gboardPublicResourcePatch(
 
     dependsOn(
         gboardPatchesSettingsPatch,
-        gboardMatrixSuggestionsFeatureMarkerPatch,
-        gboardMatrixSuggestionsBytecodePatch,
+        gboardThiccTopBarFeatureMarkerPatch,
+        gboardThiccTopBarBytecodePatch,
     )
 }
 
 @Suppress("unused")
-val gboardNintypePatch = gboardPublicResourcePatch(
-    featureId = "nintype_multi_touch",
-    name = "Nintype Multi-Touch Swipe",
-    description = "Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.",
+val gboardMultiSwipePatch = gboardPublicResourcePatch(
+    featureId = "multiswipe",
+    name = "MultiSwipe",
+    description = "Two-finger swipe and tap+swipe chorded gesture typing powered by the Kinetica algorithm and Gboard dictionary.",
     default = true,
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
     dependsOn(
         gboardPatchesSettingsPatch,
-        gboardNintypeFeatureMarkerPatch,
-        gboardNintypeBytecodePatch,
+        gboardMultiSwipeFeatureMarkerPatch,
+        gboardMultiSwipeBytecodePatch,
     )
 }
 
@@ -81,12 +81,12 @@ val gboardPackageRenamePatch = gboardPublicResourcePatch(
 
     val appDisplayName = stringOption(
         key = "app_display_name",
-        default = "Gboard Multiswipe",
+        default = "Gboard MultiSwipe",
         values = linkedMapOf(
             "Gboard" to "Gboard",
             "Gboard Dev" to "Gboard Dev",
             "Gboard Mod" to "Gboard Mod",
-            "Gboard Multiswipe" to "Gboard Multiswipe",
+            "Gboard MultiSwipe" to "Gboard MultiSwipe",
         ),
         title = "App Name",
         description = "",
@@ -106,8 +106,8 @@ val gboardPackageRenamePatch = gboardPublicResourcePatch(
 
 object GboardPublishedPatchCatalog {
     val morpheRegistrations: Set<Patch<*>> = linkedSetOf(
-        gboardMatrixSuggestionsPatch,
-        gboardNintypePatch,
+        gboardThiccTopBarPatch,
+        gboardMultiSwipePatch,
         gboardPackageRenamePatch,
     )
 

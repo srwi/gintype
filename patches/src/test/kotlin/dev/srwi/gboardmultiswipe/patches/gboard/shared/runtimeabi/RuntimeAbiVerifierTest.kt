@@ -9,7 +9,7 @@ class RuntimeAbiVerifierTest {
         val inventory = RuntimeArtifactInventory { _, _ -> emptyList() }
 
         val mismatches = RuntimeAbiVerifier.verify(
-            calls = listOf(RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED),
+            calls = listOf(RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED),
             inventory = inventory,
         )
 
@@ -17,7 +17,7 @@ class RuntimeAbiVerifierTest {
             listOf(
                 RuntimeAbiMismatch.MissingMethod(
                     RuntimeAbi(
-                        owner = "Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/GboardMatrixSuggestionsRuntime;",
+                        owner = "Ldev/srwi/gboardmultiswipe/extension/thicctopbar/GboardThiccTopBarRuntime;",
                         name = "onCandidatesCleared",
                         parameters = listOf("Ljava/lang/Object;"),
                         returnType = "V",
@@ -43,7 +43,7 @@ class RuntimeAbiVerifierTest {
         }
 
         val mismatches = RuntimeAbiVerifier.verify(
-            calls = listOf(RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED),
+            calls = listOf(RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED),
             inventory = inventory,
         )
 
@@ -51,7 +51,7 @@ class RuntimeAbiVerifierTest {
             listOf(
                 RuntimeAbiMismatch.WrongDescriptor(
                     expected = RuntimeAbiCatalog.abi(
-                        RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED
+                        RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED
                     ),
                     actualDescriptors = listOf("()Z"),
                 )
@@ -63,7 +63,7 @@ class RuntimeAbiVerifierTest {
     @Test
     fun `reports a runtime method with the wrong static access`() {
         val expected = RuntimeAbiCatalog.abi(
-            RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED
+            RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED
         )
         val inventory = RuntimeArtifactInventory { owner, name ->
             listOf(
@@ -77,7 +77,7 @@ class RuntimeAbiVerifierTest {
         }
 
         val mismatches = RuntimeAbiVerifier.verify(
-            calls = listOf(RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED),
+            calls = listOf(RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED),
             inventory = inventory,
         )
 

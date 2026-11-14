@@ -1,9 +1,9 @@
 package dev.srwi.gboardmultiswipe.patches.gboard.registry
 
-import dev.srwi.gboardmultiswipe.patches.gboard.features.matrixsuggestions.gboardMatrixSuggestionsBytecodePatch
-import dev.srwi.gboardmultiswipe.patches.gboard.features.matrixsuggestions.gboardMatrixSuggestionsFeatureMarkerPatch
-import dev.srwi.gboardmultiswipe.patches.gboard.features.nintype.gboardNintypeBytecodePatch
-import dev.srwi.gboardmultiswipe.patches.gboard.features.nintype.gboardNintypeFeatureMarkerPatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarBytecodePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarFeatureMarkerPatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeBytecodePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeFeatureMarkerPatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -14,34 +14,34 @@ class GboardRuntimePatchesContractTest {
     fun `remaining features are independently published and enabled by default`() {
         val registrations = GboardPublishedPatchCatalog.morpheRegistrations
         val matrix = registrations.single { patch ->
-            patch.name == "Matrix Word Suggestions"
+            patch.name == "Thicc Top Bar"
         }
-        val nintype = registrations.single { patch -> patch.name == "Nintype Multi-Touch Swipe" }
+        val multiswipe = registrations.single { patch -> patch.name == "MultiSwipe" }
 
-        assertSame(gboardMatrixSuggestionsPatch, matrix)
-        assertSame(gboardNintypePatch, nintype)
+        assertSame(gboardThiccTopBarPatch, matrix)
+        assertSame(gboardMultiSwipePatch, multiswipe)
 
         val generated = generatedPublishedPatches().associateBy { patch ->
             patch["name"].asString
         }
         assertTrue(generated.getValue(matrix.name!!)["use"].asBoolean)
-        assertTrue(generated.getValue(nintype.name!!)["use"].asBoolean)
+        assertTrue(generated.getValue(multiswipe.name!!)["use"].asBoolean)
     }
 
     @Test
     fun `each public patch owns only its feature marker and runtime contributions`() {
-        assertTrue(gboardMatrixSuggestionsPatch.dependencies.any { dependency ->
-            dependency === gboardMatrixSuggestionsFeatureMarkerPatch
+        assertTrue(gboardThiccTopBarPatch.dependencies.any { dependency ->
+            dependency === gboardThiccTopBarFeatureMarkerPatch
         })
-        assertTrue(gboardMatrixSuggestionsPatch.dependencies.any { dependency ->
-            dependency === gboardMatrixSuggestionsBytecodePatch
+        assertTrue(gboardThiccTopBarPatch.dependencies.any { dependency ->
+            dependency === gboardThiccTopBarBytecodePatch
         })
 
-        assertTrue(gboardNintypePatch.dependencies.any { dependency ->
-            dependency === gboardNintypeFeatureMarkerPatch
+        assertTrue(gboardMultiSwipePatch.dependencies.any { dependency ->
+            dependency === gboardMultiSwipeFeatureMarkerPatch
         })
-        assertTrue(gboardNintypePatch.dependencies.any { dependency ->
-            dependency === gboardNintypeBytecodePatch
+        assertTrue(gboardMultiSwipePatch.dependencies.any { dependency ->
+            dependency === gboardMultiSwipeBytecodePatch
         })
     }
 
@@ -49,11 +49,11 @@ class GboardRuntimePatchesContractTest {
     fun `public descriptions match the requested bilingual product copy`() {
         assertEquals(
             "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
-            gboardMatrixSuggestionsPatch.description,
+            gboardThiccTopBarPatch.description,
         )
         assertEquals(
-            "Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.",
-            gboardNintypePatch.description,
+            "Two-finger swipe and tap+swipe chorded gesture typing powered by the Kinetica algorithm and Gboard dictionary.",
+            gboardMultiSwipePatch.description,
         )
     }
 }

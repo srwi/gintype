@@ -12,8 +12,8 @@ patches/
 │   ├── shared/Constants.kt                          # Package IDs, COMPATIBILITY_GBOARD
 │   └── gboard/
 │       ├── features/
-│       │   ├── matrixsuggestions/                   # 2D Matrix hook & feature marker
-│       │   ├── nintype/                             # Nintype gesture hooks & feature marker
+│       │   ├── thicctopbar/                   # 2D Matrix hook & feature marker
+│       │   ├── multiswipe/                             # MultiSwipe gesture hooks & feature marker
 │       │   └── packagerename/                       # Side-by-side manifest/label rename
 │       ├── registry/
 │       │   ├── GboardPatchRegistry.kt               # Public patch definitions & catalog
@@ -52,7 +52,7 @@ patches/
   - Activity: `dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsActivity`
   - Provider: `dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsProvider`
   - Provider authority suffix: `.gboard_multiswipe`
-  - Gboard settings preference key: `gboard_multiswipe_entry` (`"Multiswipe & Matrix"`)
+  - Gboard settings preference key: `gboard_multiswipe_entry` (`"MultiSwipe & Thicc Top Bar"`)
 - `GboardPackageRenameResourcePatch.kt`:
   - Rewrites `package` + 15 permission/provider/meta-data/deep-link attributes from `com.google.android.inputmethod.latin` to `dev.srwi.com.google.android.inputmethod.latin`.
   - Strips `android:requiredSplitTypes`, `android:splitTypes`, and `com.android.vending.splits.required` for standalone APK installs.

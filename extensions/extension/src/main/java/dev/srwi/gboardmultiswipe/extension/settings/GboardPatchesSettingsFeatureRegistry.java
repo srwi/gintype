@@ -8,8 +8,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import dev.srwi.gboardmultiswipe.extension.matrixsuggestions.GboardMatrixSuggestionsSettingsFeature;
-import dev.srwi.gboardmultiswipe.extension.nintype.GboardNintypeSettingsFeature;
+import dev.srwi.gboardmultiswipe.extension.thicctopbar.GboardThiccTopBarSettingsFeature;
+import dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeSettingsFeature;
 
 public final class GboardPatchesSettingsFeatureRegistry {
     private static final String TAG = "GboardPatches";
@@ -29,8 +29,8 @@ public final class GboardPatchesSettingsFeatureRegistry {
     /** Every home-page feature in display order, before availability filtering. */
     public static List<GboardPatchesSettingsContract.Feature> allFeatures(Context context) {
         return Collections.unmodifiableList(Arrays.asList(
-                new GboardNintypeSettingsFeature(context),
-                new GboardMatrixSuggestionsSettingsFeature(context)));
+                new GboardMultiSwipeSettingsFeature(context),
+                new GboardThiccTopBarSettingsFeature(context)));
     }
 
     private static void addIfAvailable(Context context,

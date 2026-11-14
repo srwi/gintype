@@ -17,7 +17,7 @@ import dev.srwi.gboardmultiswipe.extension.R;
 public final class GboardSettingsTextTest {
     @Test
     public void nullContextRemainsSafeForStaticFeatureInitialization() {
-        Assert.assertEquals("Multiswipe settings", GboardSettingsText.get(
+        Assert.assertEquals("MultiSwipe settings", GboardSettingsText.get(
                 null, R.string.gboard_patches_header_title));
     }
 
@@ -25,16 +25,16 @@ public final class GboardSettingsTextTest {
     public void runtimeTextFollowsPatchLanguagePreference() {
         Context context = RuntimeEnvironment.getApplication();
 
-        Assert.assertEquals("Nintype Multi-Touch", GboardSettingsText.get(context,
-                R.string.gboard_patches_nintype_title));
-        Assert.assertEquals("Matrix Word Suggestions", GboardSettingsText.get(context,
-                R.string.gboard_patches_matrix_suggestions_title));
+        Assert.assertEquals("MultiSwipe Multi-Touch", GboardSettingsText.get(context,
+                R.string.gboard_patches_multiswipe_title));
+        Assert.assertEquals("Thicc Top Bar", GboardSettingsText.get(context,
+                R.string.gboard_patches_thicc_top_bar_title));
     }
 
     @Test
     public void authoritativeCopyResolvesEnglishWithoutCallerFallback() {
         Assert.assertEquals(
-                "Multiswipe settings",
+                "MultiSwipe settings",
                 GboardSettingsText.resolveStableTextForTesting(
                         R.string.gboard_patches_header_title,
                         "en"));

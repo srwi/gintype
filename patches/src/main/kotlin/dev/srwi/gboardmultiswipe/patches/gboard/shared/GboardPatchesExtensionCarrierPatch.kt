@@ -9,7 +9,7 @@ private const val PATCH_CLASSES_GETTER = "getPatchClasses\$morphe_patcher"
 private const val OPCODES_GETTER = "getOpcodes\$morphe_patcher"
 
 internal val gboardPatchesExtensionCarrierPatch = bytecodePatch(
-    description = "Merge Gboard Multiswipe runtime extension into target APK."
+    description = "Merge Gboard MultiSwipe runtime extension into target APK."
 ) {
     execute {
         mergeBundledExtension(this, "extensions/gboard-multiswipe.rve")

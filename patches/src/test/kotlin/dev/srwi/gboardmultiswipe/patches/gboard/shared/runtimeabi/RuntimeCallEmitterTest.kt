@@ -9,10 +9,10 @@ class RuntimeCallEmitterTest {
     fun `emits an exact static invocation from a semantic call id`() {
         assertEquals(
             "invoke-static {v0}, " +
-                "Ldev/srwi/gboardmultiswipe/extension/matrixsuggestions/" +
-                "GboardMatrixSuggestionsRuntime;->onCandidatesCleared(Ljava/lang/Object;)V",
+                "Ldev/srwi/gboardmultiswipe/extension/thicctopbar/" +
+                "GboardThiccTopBarRuntime;->onCandidatesCleared(Ljava/lang/Object;)V",
             RuntimeCallEmitter.invoke(
-                RuntimeCallId.MATRIX_SUGGESTIONS_RUNTIME_ON_CANDIDATES_CLEARED,
+                RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED,
                 registers = "v0",
             ),
         )
@@ -22,10 +22,10 @@ class RuntimeCallEmitterTest {
     fun `emits a static range invocation without exposing an opcode string`() {
         assertEquals(
             "invoke-static/range {v4 .. v5}, " +
-                "Ldev/srwi/gboardmultiswipe/extension/nintype/" +
-                "GboardNintypeRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V",
+                "Ldev/srwi/gboardmultiswipe/extension/multiswipe/" +
+                "GboardMultiSwipeRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V",
             RuntimeCallEmitter.invoke(
-                RuntimeCallId.NINTYPE_RUNTIME_ON_GESTURE_EVENT_ENTRY,
+                RuntimeCallId.MULTISWIPE_RUNTIME_ON_GESTURE_EVENT_ENTRY,
                 registers = "v4 .. v5",
             ),
         )

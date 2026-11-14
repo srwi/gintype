@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==============================================================================
-# Gboard Multiswipe Patcher
+# Gboard MultiSwipe Patcher
 # Streamlined script to build patches and patch a target Gboard APK/XAPK.
 # ==============================================================================
 
@@ -131,7 +131,7 @@ MPP_FILE="${PATCHES_ARG:-}"
 if [[ -z "$MPP_FILE" ]]; then
   EXISTING_MPP="$(find_mpp)"
   if [[ "$FORCE_BUILD" == true || -z "$EXISTING_MPP" || "$SKIP_BUILD" == false ]]; then
-    echo "=== Building Gboard Multiswipe patches bundle ==="
+    echo "=== Building Gboard MultiSwipe patches bundle ==="
     ./gradlew :extensions:extension:compileReleaseJavaWithJavac :patches:buildAndroid
     EXISTING_MPP="$(find_mpp)"
   fi
@@ -228,8 +228,8 @@ fi
 PATCH_ARGS=(
   --patches="$MPP_FILE"
   --exclusive
-  -e "Matrix Word Suggestions"
-  -e "Nintype Multi-Touch Swipe"
+  -e "Thicc Top Bar"
+  -e "MultiSwipe"
 )
 if [[ "$RENAME_PACKAGE" == true ]]; then
   PATCH_ARGS+=(-e "Package Rename")

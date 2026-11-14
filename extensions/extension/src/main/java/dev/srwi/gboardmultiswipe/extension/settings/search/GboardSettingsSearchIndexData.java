@@ -7,12 +7,12 @@ final class GboardSettingsSearchIndexData {
     }
 
     static final String[][] PATHS = {
-            {"dev.srwi.gboardmultiswipe.extension.nintype.GboardNintypeSettingsFeature"},
-            {"dev.srwi.gboardmultiswipe.extension.matrixsuggestions.GboardMatrixSuggestionsSettingsFeature"}
+            {"dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeSettingsFeature"},
+            {"dev.srwi.gboardmultiswipe.extension.thicctopbar.GboardThiccTopBarSettingsFeature"}
     };
 
     static final int[][] ENTRIES = {
-            {0, R.string.gboard_patches_nintype_title, R.string.gboard_patches_nintype_summary, 1},
-            {1, R.string.gboard_patches_matrix_suggestions_title, R.string.gboard_patches_matrix_suggestions_summary, 1}
+            {0, R.string.gboard_patches_multiswipe_title, R.string.gboard_patches_multiswipe_summary, 1},
+            {1, R.string.gboard_patches_thicc_top_bar_title, R.string.gboard_patches_thicc_top_bar_summary, 1}
     };
 }

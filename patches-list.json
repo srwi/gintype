@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "patches": [
     {
-      "name": "Matrix Word Suggestions",
+      "name": "Thicc Top Bar",
       "description": "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
       "use": true,
       "dependencies": [],
@@ -14,8 +14,8 @@
       "options": []
     },
     {
-      "name": "Nintype Multi-Touch Swipe",
-      "description": "Two-finger swipe and tap+swipe chorded gesture typing powered by the Nintype algorithm and Gboard dictionary.",
+      "name": "MultiSwipe",
+      "description": "Two-finger swipe and tap+swipe chorded gesture typing powered by the Kinetica algorithm and Gboard dictionary.",
       "use": true,
       "dependencies": [],
       "compatiblePackages": {
@@ -42,12 +42,12 @@
           "description": "",
           "required": true,
           "type": "kotlin.String",
-          "default": "Gboard Multiswipe",
+          "default": "Gboard MultiSwipe",
           "values": {
             "Gboard": "Gboard",
             "Gboard Dev": "Gboard Dev",
             "Gboard Mod": "Gboard Mod",
-            "Gboard Multiswipe": "Gboard Multiswipe"
+            "Gboard MultiSwipe": "Gboard MultiSwipe"
           }
         }
       ]

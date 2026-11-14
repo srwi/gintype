@@ -114,12 +114,12 @@ class GboardPackageRenamePatchContractTest {
         const val APP_DISPLAY_NAME_OPTION_KEY = "app_display_name"
         const val APP_DISPLAY_NAME_OPTION_TITLE = "App Name"
         const val APP_DISPLAY_NAME_OPTION_DESCRIPTION = ""
-        const val APP_DISPLAY_NAME_DEFAULT = "Gboard Multiswipe"
+        const val APP_DISPLAY_NAME_DEFAULT = "Gboard MultiSwipe"
         val APP_DISPLAY_NAME_PRESETS = linkedMapOf(
             "Gboard" to "Gboard",
             "Gboard Dev" to "Gboard Dev",
             "Gboard Mod" to "Gboard Mod",
-            "Gboard Multiswipe" to "Gboard Multiswipe",
+            "Gboard MultiSwipe" to "Gboard MultiSwipe",
         )
         const val BINDINGS_PROFILE_PATH =
             "patches/src/main/resources/gboard/gboard-version-bindings.json"

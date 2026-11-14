@@ -7,7 +7,7 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 
 internal val gboardPatchesSettingsPatch = resourcePatch(
-    description = "Adds the Multiswipe & Matrix settings entry to Gboard settings."
+    description = "Adds the MultiSwipe & Thicc Top Bar settings entry to Gboard settings."
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
@@ -158,7 +158,7 @@ internal const val GBOARD_PATCHES_SETTINGS_PROVIDER_CLASS =
     "dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsProvider"
 internal const val GBOARD_PATCHES_SETTINGS_PROVIDER_AUTHORITY_SUFFIX = ".gboard_multiswipe"
 private const val PATCHES_SETTINGS_ENTRY_KEY = "gboard_multiswipe_entry"
-private const val PATCHES_SETTINGS_ENTRY_TITLE = "Multiswipe & Matrix"
+private const val PATCHES_SETTINGS_ENTRY_TITLE = "MultiSwipe & Thicc Top Bar"
 private const val HEADER_PREFERENCE_TAG =
     "com.google.android.libraries.inputmethod.settings.widget.HeaderPreference"
 private const val RATE_US_PREFERENCE_TAG =

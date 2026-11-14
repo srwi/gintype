@@ -72,7 +72,7 @@ class GboardPackageRenameTransformTest {
     fun `application display name accepts safe unicode and rejects unsafe values`() {
         listOf(
             "Gboard Dev",
-            "Multiswipe 鍵盤",
+            "MultiSwipe 鍵盤",
             "Keyboard 🚀",
             "x".repeat(MAX_GBOARD_APP_DISPLAY_NAME_CODE_POINTS),
         ).forEach { value ->
@@ -119,12 +119,12 @@ class GboardPackageRenameTransformTest {
         )
         val beforeLocales = locales.map(::serialize)
 
-        applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources, locales)
+        applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources, locales)
 
         val entry = elements(resources, "string").single {
             it.getAttribute("name") == "gboard_multiswipe_app_display_name"
         }
-        assertEquals("\"Gboard Multiswipe\"", entry.textContent)
+        assertEquals("\"Gboard MultiSwipe\"", entry.textContent)
         assertEquals("false", entry.getAttribute("translatable"))
         assertEquals("false", entry.getAttribute("formatted"))
         assertEquals("Original name", elements(resources, "string").single {
@@ -141,10 +141,10 @@ class GboardPackageRenameTransformTest {
     fun `display name resource is idempotent and can update its owned value`() {
         val manifest = loadManifest()
         val resources = displayNameResources()
-        applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources)
+        applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources)
         val once = listOf(serialize(manifest), serialize(resources))
 
-        applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources)
+        applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources)
         assertEquals(once, listOf(serialize(manifest), serialize(resources)))
         applyGboardApplicationDisplayName(manifest, "Keyboard 🚀", resources)
 
@@ -188,7 +188,7 @@ class GboardPackageRenameTransformTest {
     fun `duplicate display-name definitions are rejected before either DOM changes`() {
         val manifest = loadManifest()
         val resources = displayNameResources()
-        applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources)
+        applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources)
         val entry = elements(resources, "string").single {
             it.getAttribute("name") == "gboard_multiswipe_app_display_name"
         }
@@ -219,7 +219,7 @@ class GboardPackageRenameTransformTest {
         listOf("formatted", "translatable").forEach { attribute ->
             val manifest = loadManifest()
             val resources = displayNameResources()
-            applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources)
+            applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources)
             elements(resources, "string").single {
                 it.getAttribute("name") == "gboard_multiswipe_app_display_name"
             }.setAttribute(attribute, "true")
@@ -244,7 +244,7 @@ class GboardPackageRenameTransformTest {
         )
         val beforePublic = serialize(publicIds)
 
-        applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources, listOf(publicIds))
+        applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources, listOf(publicIds))
 
         assertEquals(beforePublic, serialize(publicIds))
         assertEquals(
@@ -268,7 +268,7 @@ class GboardPackageRenameTransformTest {
         val documents = listOf(manifest, resources) + others
         val before = documents.map(::serialize)
         assertFails<IllegalStateException> {
-            applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources, others)
+            applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources, others)
         }
         assertEquals(before, documents.map(::serialize))
     }
@@ -290,8 +290,8 @@ class GboardPackageRenameTransformTest {
         var originalIds = emptyMap<Pair<String, String>, Int>()
         PublicXmlManager(publicFile).use { publicIds ->
             originalIds = publicIds.getDefinedIds().toMap()
-            applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources, emptyList(), publicIds)
-            applyGboardApplicationDisplayName(manifest, "Gboard Multiswipe", resources, emptyList(), publicIds)
+            applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources, emptyList(), publicIds)
+            applyGboardApplicationDisplayName(manifest, "Gboard MultiSwipe", resources, emptyList(), publicIds)
         }
 
         PublicXmlManager(publicFile).use { persisted ->

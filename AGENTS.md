@@ -8,19 +8,19 @@ This document provides portable instructions for developers, CI pipelines, and A
 
 `gboard-multiswipe` is a standalone Morphe/ReVanced patch repository providing Gboard patches:
 
-1. **Matrix Word Suggestions** (`matrix_word_suggestions`): 2D top-bar suggestions matrix with vertical wheel scrolling and sentence history.
-2. **Nintype Multi-Touch Swipe** (`nintype_multi_touch`): Two-finger chorded swipe and tap+swipe gesture typing powered by the Nintype algorithm and Gboard dictionary.
-3. **Package Rename** (`package_rename`): Renames the patched package to `dev.srwi.com.google.android.inputmethod.latin` with a customizable launcher/IME display name (`Gboard Multiswipe` by default) so non-rooted devices can install it side-by-side alongside official Play Store or system-signed Gboard.
+1. **Thicc Top Bar** (`thicc_top_bar`): 2D top-bar suggestions matrix with vertical wheel scrolling and sentence history.
+2. **MultiSwipe** (`multiswipe`): Two-finger chorded swipe and tap+swipe gesture typing powered by the Kinetica algorithm and Gboard dictionary.
+3. **Package Rename** (`package_rename`): Renames the patched package to `dev.srwi.com.google.android.inputmethod.latin` with a customizable launcher/IME display name (`Gboard MultiSwipe` by default) so non-rooted devices can install it side-by-side alongside official Play Store or system-signed Gboard.
 
 ### Target & Non-Interference Guarantee
 - **Target Application Package**: `com.google.android.inputmethod.latin` (pinned target: `18.5.4.993608717-release-arm64-v8a`)
 - **Renamed Side-by-Side Package**: `dev.srwi.com.google.android.inputmethod.latin`
 - **Isolated Extension Namespace**: `dev.srwi.gboardmultiswipe`
-- **Independent Settings Entry Key**: `gboard_multiswipe_entry` ("Multiswipe & Matrix")
+- **Independent Settings Entry Key**: `gboard_multiswipe_entry` ("MultiSwipe & Thicc Top Bar")
 - **Independent ContentProvider Authority**: `${applicationId}.gboard_multiswipe`
 - **Coexistence**: Can be applied alone or combined with other Morphe/ReVanced patch bundles without settings collisions or provider crashes (enable `Package Rename` in at most one bundle).
 - **Language**: English only (all code, resource strings, tests, commit messages, and documentation).
-- **Module Guides**: See [`patches/AGENTS.md`](patches/AGENTS.md) for patch registry, target bindings compiler, and Runtime ABI contracts, and [`extensions/AGENTS.md`](extensions/AGENTS.md) for Nintype/Kinetica runtime hooks, Matrix reflection, and settings codegen.
+- **Module Guides**: See [`patches/AGENTS.md`](patches/AGENTS.md) for patch registry, target bindings compiler, and Runtime ABI contracts, and [`extensions/AGENTS.md`](extensions/AGENTS.md) for MultiSwipe/Kinetica runtime hooks, Matrix reflection, and settings codegen.
 
 ---
 
@@ -52,12 +52,12 @@ Output artifact: `patches/build/libs/patches-1.0.0.mpp`
 # Patches contract, manifest/settings/package-rename transform, and wiring tests
 ./gradlew :patches:test
 
-# Extension core logic unit tests (Matrix helpers and Nintype decoder/geometry/accent folding)
+# Extension core logic unit tests (Matrix helpers and MultiSwipe gesture decoder/geometry/accent folding)
 ./gradlew :extensions:extension:testDebugUnitTest \
-  --tests "dev.srwi.gboardmultiswipe.extension.matrixsuggestions.*" \
-  --tests "dev.srwi.gboardmultiswipe.extension.nintype.*"
+  --tests "dev.srwi.gboardmultiswipe.extension.thicctopbar.*" \
+  --tests "dev.srwi.gboardmultiswipe.extension.multiswipe.*"
 ```
-> Note: Other Robolectric-based Android tests in `:extensions:extension` require Robolectric Android runtime JARs (not available offline or on ARM64 Termux hosts). The filtered Matrix + Nintype unit suites above run cleanly in all environments.
+> Note: Other Robolectric-based Android tests in `:extensions:extension` require Robolectric Android runtime JARs (not available offline or on ARM64 Termux hosts). The filtered Matrix + MultiSwipe unit suites above run cleanly in all environments.
 
 ### Refresh `patches-list.json`
 Run whenever patch names, descriptions, defaults, or options change:
@@ -76,7 +76,7 @@ Use `--rename` (`-r`) so the patched APK installs alongside stock Gboard with no
 ```bash
 ./patch-gboard.sh \
   --rename \
-  --app-name "Gboard Multiswipe" \
+  --app-name "Gboard MultiSwipe" \
   -i /path/to/gboard-18.5.4.xapk \
   -o ./gboard-multiswipe-patched.apk \
   -m /path/to/morphe-cli.jar
@@ -102,10 +102,10 @@ Note that in Morphe CLI, `-O<key>=<value>` applies to the preceding `-e "<Patch 
 java -jar morphe-cli.jar patch \
   --patches=patches/build/libs/patches-1.0.0.mpp \
   --exclusive \
-  -e "Matrix Word Suggestions" \
-  -e "Nintype Multi-Touch Swipe" \
+  -e "Thicc Top Bar" \
+  -e "MultiSwipe" \
   -e "Package Rename" \
-  -Oapp_display_name="Gboard Multiswipe" \
+  -Oapp_display_name="Gboard MultiSwipe" \
   -o ./gboard-multiswipe-patched.apk \
   /path/to/gboard-18.5.4.xapk
 ```
@@ -115,8 +115,8 @@ java -jar morphe-cli.jar patch \
 java -jar morphe-cli.jar patch \
   --patches=patches/build/libs/patches-1.0.0.mpp \
   --patches=/path/to/other-gboard-patches.mpp \
-  -e "Matrix Word Suggestions" \
-  -e "Nintype Multi-Touch Swipe" \
+  -e "Thicc Top Bar" \
+  -e "MultiSwipe" \
   -e "Package Rename" \
   -e "<Other Patch Name>" \
   -o ./gboard-all-patches.apk \
@@ -189,13 +189,13 @@ adb shell pidof "$TARGET_PKG"
 
 adb logcat -d -s \
   GboardPatches \
-  GboardMatrixSuggestions \
-  GboardNintype \
-  GboardNintypeDict \
-  GboardNintypeTrace \
-  MatrixGboardReflector | tail -n 50
+  GboardThiccTopBar \
+  GboardMultiSwipe \
+  GboardMultiSwipeDict \
+  GboardMultiSwipeTrace \
+  ThiccTopBarGboardReflector | tail -n 50
 ```
-Open Gboard Settings -> **Multiswipe & Matrix** to configure Nintype swipe timing, autospace, 2D Matrix Suggestions, and log export.
+Open Gboard Settings -> **MultiSwipe & Thicc Top Bar** to configure MultiSwipe swipe timing, autospace, 2D Thicc Top Bar, and log export.
 
 ---
 
@@ -203,5 +203,5 @@ Open Gboard Settings -> **Multiswipe & Matrix** to configure Nintype swipe timin
 
 - **Language**: English exclusively across commit messages, code, comments, resource strings, tests, and documentation.
 - **Commit Cadence**: Commit after each logical, verified step using conventional commits (`feat`, `refactor`, `fix`, `docs`).
-- **Scope**: Maintain only `Matrix Word Suggestions`, `Nintype Multi-Touch Swipe`, and `Package Rename` unless explicitly asked otherwise.
+- **Scope**: Maintain only `Thicc Top Bar`, `MultiSwipe`, and `Package Rename` unless explicitly asked otherwise.
 - **Namespace Integrity**: Always use `dev.srwi.gboardmultiswipe` for extension/patch code and `dev.srwi.com.google.android.inputmethod.latin` for renamed Gboard manifests.
