@@ -7,7 +7,7 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 
 internal val gboardPatchesSettingsPatch = resourcePatch(
-    description = "Adds the MultiSwipe & Thicc Top Bar settings entry to Gboard settings."
+    description = "Adds the Gboard MultiSwipe settings entry to Gboard settings."
 ) {
     compatibleWith(COMPATIBILITY_GBOARD)
 
@@ -76,16 +76,22 @@ internal fun applyGboardPatchesSettings(
     settingsDocuments.forEach { document ->
         val root = document.documentElement
         val candidateEntries = root.childElements().flatMap { parent ->
-            if (parent.tagName == "androidx.preference.PreferenceCategory") {
+            if (parent.tagName == PREFERENCE_CATEGORY_TAG) {
                 parent.childElements()
             } else {
                 sequenceOf(parent)
             }
         }.toList()
-        val footerPreference = root.childElements().firstOrNull {
-            it.tagName == "com.android.settingslib.widget.FooterPreference"
+        val targetCategory = root.childElements(PREFERENCE_CATEGORY_TAG).firstOrNull {
+            it.androidAttribute("key") == PATCHES_SETTINGS_CATEGORY_KEY
+        } ?: document.createElement(PREFERENCE_CATEGORY_TAG).also { createdCategory ->
+            createdCategory.setAndroidAttribute("key", PATCHES_SETTINGS_CATEGORY_KEY)
+            root.insertBefore(createdCategory, root.firstChild)
         }
-        val targetCategory = root.childElements("androidx.preference.PreferenceCategory").lastOrNull()
+        if (root.childElements().firstOrNull() != targetCategory) {
+            root.removeChild(targetCategory)
+            root.insertBefore(targetCategory, root.firstChild)
+        }
         val rateUsPreference = candidateEntries.firstOrNull {
             it.tagName == RATE_US_PREFERENCE_TAG
         }
@@ -97,12 +103,8 @@ internal fun applyGboardPatchesSettings(
             ?: document.createElement(HEADER_PREFERENCE_TAG).also { createdPreference ->
                 if (existingEntry != null) {
                     existingEntry.parentNode.replaceChild(createdPreference, existingEntry)
-                } else if (targetCategory != null) {
-                    targetCategory.appendChild(createdPreference)
-                } else if (footerPreference != null) {
-                    root.insertBefore(createdPreference, footerPreference)
                 } else {
-                    root.appendChild(createdPreference)
+                    targetCategory.appendChild(createdPreference)
                 }
             }
 
@@ -123,14 +125,9 @@ internal fun applyGboardPatchesSettings(
         intent.setAndroidAttribute("targetPackage", packageName)
         intent.setAndroidAttribute("targetClass", GBOARD_PATCHES_SETTINGS_ACTIVITY_CLASS)
 
-        if (targetCategory != null && patchesEntry.parentNode != targetCategory) {
+        if (patchesEntry.parentNode != targetCategory) {
             patchesEntry.parentNode?.removeChild(patchesEntry)
             targetCategory.appendChild(patchesEntry)
-        } else if (targetCategory == null && footerPreference != null &&
-            patchesEntry.parentNode != root
-        ) {
-            patchesEntry.parentNode?.removeChild(patchesEntry)
-            root.insertBefore(patchesEntry, footerPreference)
         }
     }
 }
@@ -157,8 +154,10 @@ internal const val GBOARD_PATCHES_SETTINGS_ACTIVITY_CLASS =
 internal const val GBOARD_PATCHES_SETTINGS_PROVIDER_CLASS =
     "dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsProvider"
 internal const val GBOARD_PATCHES_SETTINGS_PROVIDER_AUTHORITY_SUFFIX = ".gboard_multiswipe"
+private const val PATCHES_SETTINGS_CATEGORY_KEY = "gboard_multiswipe_category"
 private const val PATCHES_SETTINGS_ENTRY_KEY = "gboard_multiswipe_entry"
-private const val PATCHES_SETTINGS_ENTRY_TITLE = "MultiSwipe & Thicc Top Bar"
+private const val PATCHES_SETTINGS_ENTRY_TITLE = "Gboard MultiSwipe"
+private const val PREFERENCE_CATEGORY_TAG = "androidx.preference.PreferenceCategory"
 private const val HEADER_PREFERENCE_TAG =
     "com.google.android.libraries.inputmethod.settings.widget.HeaderPreference"
 private const val RATE_US_PREFERENCE_TAG =

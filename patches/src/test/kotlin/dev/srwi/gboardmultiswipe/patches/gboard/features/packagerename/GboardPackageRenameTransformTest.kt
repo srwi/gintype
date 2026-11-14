@@ -689,6 +689,33 @@ class GboardPackageRenameTransformTest {
     }
 
     @Test
+    fun `settings entry is placed in its own top category with Gboard MultiSwipe title`() {
+        val manifest = loadManifest()
+        val settings = loadSettingsDocuments()
+
+        applyGboardPatchesSettings(manifest, settings)
+
+        settings.forEach { document ->
+            val rootChildren = document.documentElement.childNodes.let { nodes ->
+                (0 until nodes.length)
+                    .mapNotNull { nodes.item(it) as? org.w3c.dom.Element }
+            }
+            val firstCategory = rootChildren.first()
+            assertEquals("androidx.preference.PreferenceCategory", firstCategory.tagName)
+            assertEquals("gboard_multiswipe_category", androidAttribute(firstCategory, "key"))
+
+            val categoryChildren = firstCategory.childNodes.let { nodes ->
+                (0 until nodes.length)
+                    .mapNotNull { nodes.item(it) as? org.w3c.dom.Element }
+            }
+            assertEquals(1, categoryChildren.size)
+            val entry = categoryChildren.single()
+            assertEquals("gboard_multiswipe_entry", androidAttribute(entry, "key"))
+            assertEquals("Gboard MultiSwipe", androidAttribute(entry, "title"))
+        }
+    }
+
+    @Test
     fun `package rename never rewrites extension component class names`() {
         val manifest = loadManifest()
         val application = elements(manifest, "application").single()
