@@ -15,7 +15,9 @@ import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class MatrixTextHelperTest {
 
@@ -868,6 +870,81 @@ public final class MatrixTextHelperTest {
         // Truly empty input
         TestInputConnection icEmpty = new TestInputConnection("", 0, 0);
         Assert.assertTrue(MatrixTextHelper.isInputEmpty(icEmpty));
+    }
+
+    @Test
+    public void hasTextAfterCursorOnSameLine_and_isSentenceEnded() {
+        // Cursor at start of non-empty line after newline: not sentence-ended because line has text after cursor
+        TestInputConnection icAfterNewline = new TestInputConnection("Satz eins.\nHallo Welt", 11, 11);
+        Assert.assertTrue(MatrixTextHelper.hasTextAfterCursorOnSameLine(icAfterNewline));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded(icAfterNewline));
+
+        // Cursor after newline with nothing (or only spaces) after on same line: sentence ended
+        TestInputConnection icEmptyNewline = new TestInputConnection("Satz eins.\n   ", 11, 11);
+        Assert.assertFalse(MatrixTextHelper.hasTextAfterCursorOnSameLine(icEmptyNewline));
+        Assert.assertTrue(MatrixTextHelper.isSentenceEnded(icEmptyNewline));
+
+        // Cursor after period before newline: newline is after cursor, not before -> not sentence ended
+        TestInputConnection icPeriodBeforeNewline = new TestInputConnection("Satz eins.\nHallo", 10, 10);
+        Assert.assertFalse(MatrixTextHelper.hasTextAfterCursorOnSameLine(icPeriodBeforeNewline));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded(icPeriodBeforeNewline));
+
+        // Cursor with only trailing spaces on same line: treated as no word text after on same line
+        TestInputConnection icTrailingSpaces = new TestInputConnection("Hallo   ", 5, 5);
+        Assert.assertFalse(MatrixTextHelper.hasTextAfterCursorOnSameLine(icTrailingSpaces));
+        Assert.assertFalse(MatrixTextHelper.isSentenceEnded(icTrailingSpaces));
+
+        // Empty input
+        TestInputConnection icEmpty = new TestInputConnection("", 0, 0);
+        Assert.assertFalse(MatrixTextHelper.hasTextAfterCursorOnSameLine(icEmpty));
+    }
+
+    @Test
+    public void syncSentenceBufferFromText_preservesFullParagraphWhenCursorMovedLeft() {
+        Map<String, List<String>> cache = new HashMap<>();
+        cache.put("hallo", Arrays.asList("Hallo", "Halle", "Halt"));
+        cache.put("welt", Arrays.asList("Welt", "Wert", "Weit"));
+        cache.put("heute", Arrays.asList("heute", "heut", "leute"));
+
+        // Spacebar moved cursor between "Hallo " and "Welt heute"
+        MatrixSentenceBuffer bufMiddle = new MatrixSentenceBuffer();
+        TestInputConnection icMiddle = new TestInputConnection("Hallo Welt heute", 6, 6);
+        MatrixTextHelper.syncSentenceBufferFromText(icMiddle, null, bufMiddle, cache);
+        Assert.assertEquals(3, bufMiddle.getEntries().size());
+        Assert.assertEquals("Hallo", bufMiddle.getEntries().get(0).committedWord);
+        Assert.assertEquals("Welt", bufMiddle.getEntries().get(1).committedWord);
+        Assert.assertEquals("heute", bufMiddle.getEntries().get(2).committedWord);
+        Assert.assertEquals(Arrays.asList("heute", "heut", "leute"), bufMiddle.getEntries().get(2).alternatives);
+
+        // Spacebar moved cursor all the way to index 0 ("|Hallo Welt heute")
+        MatrixSentenceBuffer bufStart = new MatrixSentenceBuffer();
+        TestInputConnection icStart = new TestInputConnection("Hallo Welt heute", 0, 0);
+        MatrixTextHelper.syncSentenceBufferFromText(icStart, null, bufStart, cache);
+        Assert.assertEquals(3, bufStart.getEntries().size());
+        Assert.assertEquals("heute", bufStart.getEntries().get(2).committedWord);
+
+        // Spacebar moved cursor into the middle of a word ("Hal|lo Welt heute") -> runtime passes currentWord = null
+        MatrixSentenceBuffer bufInsideWord = new MatrixSentenceBuffer();
+        TestInputConnection icInsideWord = new TestInputConnection("Hallo Welt heute", 3, 3);
+        MatrixTextHelper.syncSentenceBufferFromText(icInsideWord, null, bufInsideWord, cache);
+        Assert.assertEquals(3, bufInsideWord.getEntries().size());
+        Assert.assertEquals("Hallo", bufInsideWord.getEntries().get(0).committedWord);
+        Assert.assertEquals("heute", bufInsideWord.getEntries().get(2).committedWord);
+
+        // Active word being typed mid-line ("Hallo neue| Welt heute"): history holds preceding word ("Hallo")
+        MatrixSentenceBuffer bufActiveMidLine = new MatrixSentenceBuffer();
+        TestInputConnection icActiveMidLine = new TestInputConnection("Hallo neue Welt heute", 10, 10);
+        MatrixTextHelper.syncSentenceBufferFromText(icActiveMidLine, "neue", bufActiveMidLine, cache);
+        Assert.assertEquals(1, bufActiveMidLine.getEntries().size());
+        Assert.assertEquals("Hallo", bufActiveMidLine.getEntries().get(0).committedWord);
+
+        // Cursor after newline at start of second paragraph ("Alter Satz.\n|Hallo Welt heute")
+        MatrixSentenceBuffer bufSecondPara = new MatrixSentenceBuffer();
+        TestInputConnection icSecondPara = new TestInputConnection("Alter Satz.\nHallo Welt heute", 12, 12);
+        MatrixTextHelper.syncSentenceBufferFromText(icSecondPara, null, bufSecondPara, cache);
+        Assert.assertEquals(3, bufSecondPara.getEntries().size());
+        Assert.assertEquals("Hallo", bufSecondPara.getEntries().get(0).committedWord);
+        Assert.assertEquals("heute", bufSecondPara.getEntries().get(2).committedWord);
     }
 
     private static MatrixSentenceBuffer createSentenceBuffer(String... words) {

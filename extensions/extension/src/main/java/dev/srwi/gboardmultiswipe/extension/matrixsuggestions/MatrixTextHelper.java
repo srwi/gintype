@@ -248,8 +248,34 @@ public final class MatrixTextHelper {
         try {
             CharSequence sel = ic.getSelectedText(0);
             if (sel != null && sel.length() > 0) return false;
+            if (hasTextAfterCursorOnSameLine(ic)) return false;
             CharSequence cs = ic.getTextBeforeCursor(20, 0);
             return isSentenceEnded(cs);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static boolean hasTextAfterCursorOnSameLine(View view) {
+        InputConnection ic = getInputConnection(view);
+        return hasTextAfterCursorOnSameLine(ic);
+    }
+
+    public static boolean hasTextAfterCursorOnSameLine(InputConnection ic) {
+        if (ic == null) return false;
+        try {
+            CharSequence csAfter = ic.getTextAfterCursor(200, 0);
+            if (csAfter == null || csAfter.length() == 0) return false;
+            for (int i = 0; i < csAfter.length(); i++) {
+                char c = csAfter.charAt(i);
+                if (c == '\n' || c == '\r') {
+                    return false;
+                }
+                if (!Character.isWhitespace(c)) {
+                    return true;
+                }
+            }
+            return false;
         } catch (Throwable ignored) {
             return false;
         }
@@ -365,32 +391,74 @@ public final class MatrixTextHelper {
             MatrixSentenceBuffer buffer,
             Map<String, List<String>> alternativesCache
     ) {
+        InputConnection ic = getInputConnection(view);
+        syncSentenceBufferFromText(ic, currentWord, buffer, alternativesCache);
+    }
+
+    public static void syncSentenceBufferFromText(
+            InputConnection ic,
+            String currentWord,
+            MatrixSentenceBuffer buffer,
+            Map<String, List<String>> alternativesCache
+    ) {
+        if (ic == null || buffer == null) return;
         try {
-            InputConnection ic = getInputConnection(view);
-            if (ic == null) return;
+            CharSequence csBefore = ic.getTextBeforeCursor(1000, 0);
+            CharSequence csSel = ic.getSelectedText(0);
+            CharSequence csAfter = ic.getTextAfterCursor(1000, 0);
 
-            CharSequence cs = ic.getTextBeforeCursor(1000, 0);
-            if (cs == null || cs.length() == 0) {
-                buffer.clear();
-                return;
-            }
+            String before = csBefore != null ? csBefore.toString() : "";
+            String sel = csSel != null ? csSel.toString() : "";
+            String after = csAfter != null ? csAfter.toString() : "";
 
-            String text = cs.toString();
-            int sentStart = 0;
-            for (int i = text.length() - 1; i >= 0; i--) {
-                char c = text.charAt(i);
-                if (c == '\n' || c == '\r') {
-                    sentStart = i + 1;
-                    break;
+            boolean hasActiveWord = (currentWord != null && !currentWord.isEmpty());
+            boolean hasAfterOnSameLine = hasTextAfterCursorOnSameLine(ic);
+
+            String targetText;
+            if (hasActiveWord && hasAfterOnSameLine) {
+                // Active word being composed in the middle of a line:
+                // keep only preceding words in history so currentWord stays anchored at the right.
+                int sentStart = 0;
+                for (int i = before.length() - 1; i >= 0; i--) {
+                    char c = before.charAt(i);
+                    if (c == '\n' || c == '\r') {
+                        sentStart = i + 1;
+                        break;
+                    }
                 }
+                targetText = before.substring(sentStart).trim();
+            } else {
+                String fullText = before + sel + after;
+                if (fullText.isEmpty()) {
+                    buffer.clear();
+                    return;
+                }
+                int cursorOffset = before.length();
+                int sentStart = 0;
+                for (int i = cursorOffset - 1; i >= 0; i--) {
+                    char c = fullText.charAt(i);
+                    if (c == '\n' || c == '\r') {
+                        sentStart = i + 1;
+                        break;
+                    }
+                }
+                int sentEnd = fullText.length();
+                for (int i = cursorOffset; i < fullText.length(); i++) {
+                    char c = fullText.charAt(i);
+                    if (c == '\n' || c == '\r') {
+                        sentEnd = i;
+                        break;
+                    }
+                }
+                targetText = fullText.substring(sentStart, sentEnd).trim();
             }
-            String currentSentence = text.substring(sentStart).trim();
-            if (currentSentence.isEmpty()) {
+
+            if (targetText.isEmpty()) {
                 buffer.clear();
                 return;
             }
 
-            List<TokenParts> allTokens = tokenizeSentence(currentSentence);
+            List<TokenParts> allTokens = tokenizeSentence(targetText);
             List<TokenParts> validTokens = new ArrayList<>();
 
             for (TokenParts parts : allTokens) {
@@ -410,10 +478,7 @@ public final class MatrixTextHelper {
                 return;
             }
 
-            int historyWordCount = validTokens.size() - 1;
-            if (currentWord == null || currentWord.isEmpty()) {
-                historyWordCount = validTokens.size();
-            }
+            int historyWordCount = hasActiveWord ? validTokens.size() - 1 : validTokens.size();
 
             buffer.clear();
             for (int i = 0; i < historyWordCount; i++) {

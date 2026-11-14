@@ -61,7 +61,7 @@ public final class GboardMatrixSuggestionsRuntime {
     private static final Map<String, List<String>> WORD_ALTERNATIVES_CACHE = new LinkedHashMap<String, List<String>>() {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, List<String>> eldest) {
-            return size() > 50;
+            return size() > 600;
         }
     };
 
@@ -88,6 +88,32 @@ public final class GboardMatrixSuggestionsRuntime {
     public static void onCandidatesUpdated(Object holderViewObj, Object candidateListObj) {
         if (!(holderViewObj instanceof ViewGroup holderView)) {
             return;
+        }
+
+        // Cache non-prediction alternatives synchronously before fast space/punctuation commits clear them
+        if (candidateListObj != null) {
+            try {
+                List<CandidateItem> preItems = MatrixGboardReflector.extractCandidatesFromIterable(candidateListObj);
+                if (preItems.size() >= 2
+                        && !MatrixTextHelper.allPredictions(preItems)
+                        && !MatrixGboardReflector.hasUndoCandidate(preItems)) {
+                    List<String> preWords = new ArrayList<>(3);
+                    String primary = null;
+                    int limit = Math.min(3, preItems.size());
+                    for (int i = 0; i < limit; i++) {
+                        CandidateItem ci = preItems.get(i);
+                        preWords.add(ci.text);
+                        if (primary == null && (ci.isRaw || ci.isAutoCorrect)) {
+                            primary = ci.text;
+                        }
+                    }
+                    if (primary == null && !preWords.isEmpty()) {
+                        primary = preWords.get(0);
+                    }
+                    cacheAlternativeGroup(preWords, primary);
+                }
+            } catch (Throwable ignored) {
+            }
         }
 
         // Run after LatinFixedCountCandidatesHolderView populates slot views
@@ -146,6 +172,16 @@ public final class GboardMatrixSuggestionsRuntime {
                 // Case 1: No active word being typed/swiped (cursor after manual space, punctuation, or empty)
                 if (currentWord == null || currentWord.isEmpty()) {
                     activeOriginalSuggestions = null;
+                    if (items.size() >= 2
+                            && !MatrixTextHelper.allPredictions(items)
+                            && !MatrixGboardReflector.hasUndoCandidate(items)) {
+                        List<String> extraAlts = new ArrayList<>(3);
+                        int limit = Math.min(3, items.size());
+                        for (int i = 0; i < limit; i++) {
+                            extraAlts.add(items.get(i).text);
+                        }
+                        cacheAlternativeGroup(extraAlts, extraAlts.get(0));
+                    }
                     if (MatrixTextHelper.isSentenceEnded(holderView) || MatrixTextHelper.isInputEmpty(holderView)) {
                         SENTENCE_BUFFER.clear();
                         hideJumpToEndArrow();
@@ -211,11 +247,12 @@ public final class GboardMatrixSuggestionsRuntime {
                 }
 
                 // Preserve original 3 suggestions during flick navigation so user can flick back and forth!
-                boolean isFromSelfReplace = (lastSelfReplacedWord != null && lastSelfReplacedWord.equalsIgnoreCase(currentWord))
-                        || (SystemClock.uptimeMillis() - lastSelfReplaceTimestamp < 800);
+                boolean isFromSelfReplace = lastSelfReplacedWord != null
+                        && lastSelfReplacedWord.equalsIgnoreCase(currentWord)
+                        && (SystemClock.uptimeMillis() - lastSelfReplaceTimestamp < 1500);
 
                 if (activeOriginalSuggestions != null && activeOriginalSuggestions.size() >= 2
-                        && (isFromSelfReplace || activeOriginalSuggestions.contains(currentWord))) {
+                        && isFromSelfReplace) {
                     words = new ArrayList<>(activeOriginalSuggestions);
                     int idx = -1;
                     for (int i = 0; i < words.size(); i++) {
@@ -245,7 +282,7 @@ public final class GboardMatrixSuggestionsRuntime {
                         words.set(centerIndex, currentWord);
                     }
                     activeOriginalSuggestions = new ArrayList<>(words);
-                    cacheAlternativeGroup(words);
+                    cacheAlternativeGroup(words, currentWord);
                 }
 
                 // Update sentence buffer with completed words strictly before current active word
@@ -275,7 +312,7 @@ public final class GboardMatrixSuggestionsRuntime {
                             lastSelfReplaceTimestamp = SystemClock.uptimeMillis();
                             lastSelfReplacedWord = newWord;
                             MatrixTextHelper.replaceActiveWordInTextField(holderView, newWord);
-                            cacheAlternativeGroup(currentWordsList);
+                            cacheAlternativeGroup(currentWordsList, newWord);
                         },
                         // onHistoryReplace: Flick or tap on a history column swaps that past word in sentence
                         (histColIdx, oldWord, newWord) -> {
@@ -361,7 +398,10 @@ public final class GboardMatrixSuggestionsRuntime {
                 }
 
                 // If an active word is present (allowTrailingSpace = false: if candidates are cleared after space, no active word!)
-                String activeWord = MatrixTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
+                // Also skip active-word mode when text follows on the same line (e.g., cursor moved left via spacebar).
+                String activeWord = MatrixTextHelper.hasTextAfterCursorOnSameLine(holderView)
+                        ? null
+                        : MatrixTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
                 if (activeWord != null && !activeWord.isEmpty()) {
                     List<String> words = Collections.singletonList(activeWord);
                     MatrixTextHelper.syncSentenceBufferFromText(holderView, activeWord, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
@@ -632,8 +672,26 @@ public final class GboardMatrixSuggestionsRuntime {
                     barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
                 });
             } else {
+                lastWordNavTimestamp = 0;
                 barView.clearHistorySelection();
                 hideJumpToEndArrow();
+                MatrixTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+                if (!SENTENCE_BUFFER.isEmpty()) {
+                    barView.updateHistoryOnly(
+                            SENTENCE_BUFFER.getEntries(),
+                            (histColIdx, oldWord, newWord) -> {
+                                lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
+                                MatrixTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
+                            },
+                            createHistoryWordClickCallback(holderView, barView)
+                    );
+                    ViewGroup parent = (ViewGroup) holderView.getParent();
+                    ViewGroup attachTarget = parent != null ? parent : holderView;
+                    barView.setVisibility(View.VISIBLE);
+                    MatrixGboardReflector.applyKeyboardBackground(barView, holderView);
+                    MatrixGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
+                    barView.bringToFront();
+                }
                 barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
             }
         });
@@ -641,7 +699,7 @@ public final class GboardMatrixSuggestionsRuntime {
 
     private static boolean isHistorySelectionSessionActive(ViewGroup holderView, MatrixSuggestionBarView barView) {
         if ((SystemClock.uptimeMillis() - lastWordNavTimestamp) < 600) {
-            return true;
+            return !MatrixTextHelper.isCursorAtEnd(holderView) || MatrixTextHelper.hasSelection(holderView);
         }
         if (barView == null || barView.getSelectedHistoryIndex() < 0) {
             return false;
@@ -703,12 +761,28 @@ public final class GboardMatrixSuggestionsRuntime {
         }
     }
 
-    private static void cacheAlternativeGroup(List<String> words) {
+    static void cacheAlternativeGroup(List<String> words) {
+        String primary = (words != null && !words.isEmpty()) ? words.get(0) : null;
+        cacheAlternativeGroup(words, primary);
+    }
+
+    static void cacheAlternativeGroup(List<String> words, String primaryWord) {
         if (words == null || words.isEmpty()) return;
         List<String> copy = new ArrayList<>(words);
+        String primaryKey = (primaryWord != null && !primaryWord.isEmpty()) ? primaryWord.toLowerCase() : null;
+        if (primaryKey != null) {
+            List<String> existing = WORD_ALTERNATIVES_CACHE.get(primaryKey);
+            if (copy.size() >= 2 || existing == null || existing.isEmpty()) {
+                WORD_ALTERNATIVES_CACHE.put(primaryKey, copy);
+            }
+        }
         for (String w : words) {
-            if (w != null && !w.isEmpty()) {
-                WORD_ALTERNATIVES_CACHE.put(w.toLowerCase(), copy);
+            if (w == null || w.isEmpty()) continue;
+            String key = w.toLowerCase();
+            if (key.equals(primaryKey)) continue;
+            List<String> existing = WORD_ALTERNATIVES_CACHE.get(key);
+            if (existing == null || (existing.size() < 2 && copy.size() >= 2)) {
+                WORD_ALTERNATIVES_CACHE.put(key, copy);
             }
         }
     }
