@@ -12,6 +12,8 @@ public final class GboardMultiSwipeSettings {
 
     public static final String PREF_KEY_ENABLED = "pref_multiswipe_enabled";
     public static final String PREF_KEY_AUTO_SPACE = "pref_multiswipe_auto_space_enabled";
+    public static final String PREF_KEY_AUTO_SPACE_BEFORE_WORD =
+            "pref_multiswipe_auto_space_before_word";
     public static final String PREF_KEY_AUTO_SPACE_DELAY_MS = "pref_multiswipe_auto_space_delay_ms";
     public static final String PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS =
             "pref_multiswipe_single_touch_combine_delay_ms";
@@ -24,6 +26,7 @@ public final class GboardMultiSwipeSettings {
     public static final String PREF_KEY_TRACE_LOGGING = "pref_multiswipe_trace_logging_enabled";
     public static final boolean DEFAULT_ENABLED = true;
     public static final boolean DEFAULT_AUTO_SPACE = true;
+    public static final boolean DEFAULT_AUTO_SPACE_BEFORE_WORD = true;
     public static final int MIN_AUTO_SPACE_DELAY_MS = 0;
     public static final int MAX_AUTO_SPACE_DELAY_MS = 2000;
     public static final int DEFAULT_AUTO_SPACE_DELAY_MS = 300;
@@ -86,6 +89,10 @@ public final class GboardMultiSwipeSettings {
             editor = preferences.edit();
             editor.putBoolean(PREF_KEY_AUTO_SPACE, DEFAULT_AUTO_SPACE);
         }
+        if (!preferences.contains(PREF_KEY_AUTO_SPACE_BEFORE_WORD)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putBoolean(PREF_KEY_AUTO_SPACE_BEFORE_WORD, DEFAULT_AUTO_SPACE_BEFORE_WORD);
+        }
         if (!preferences.contains(PREF_KEY_AUTO_SPACE_DELAY_MS)) {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_AUTO_SPACE_DELAY_MS, DEFAULT_AUTO_SPACE_DELAY_MS);
@@ -129,6 +136,7 @@ public final class GboardMultiSwipeSettings {
             boolean saved = preferences.edit()
                     .putBoolean(PREF_KEY_ENABLED, DEFAULT_ENABLED)
                     .putBoolean(PREF_KEY_AUTO_SPACE, DEFAULT_AUTO_SPACE)
+                    .putBoolean(PREF_KEY_AUTO_SPACE_BEFORE_WORD, DEFAULT_AUTO_SPACE_BEFORE_WORD)
                     .putInt(PREF_KEY_AUTO_SPACE_DELAY_MS, DEFAULT_AUTO_SPACE_DELAY_MS)
                     .putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS)
                     .putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR)
@@ -345,6 +353,22 @@ public final class GboardMultiSwipeSettings {
         } catch (Throwable ignored) {
             return DEFAULT_SPACEBAR_TIMER_INDICATOR;
         }
+    }
+
+    public static boolean isAutoSpaceBeforeWord(Context context) {
+        try {
+            return readAutoSpaceBeforeWord(resolvePreferences(context));
+        } catch (Throwable ignored) {
+            return DEFAULT_AUTO_SPACE_BEFORE_WORD;
+        }
+    }
+
+    public static boolean readAutoSpaceBeforeWord(SharedPreferences preferences) {
+        return readBoolean(preferences, PREF_KEY_AUTO_SPACE_BEFORE_WORD, DEFAULT_AUTO_SPACE_BEFORE_WORD);
+    }
+
+    public static boolean writeAutoSpaceBeforeWord(SharedPreferences preferences, boolean beforeWord) {
+        return writeBoolean(preferences, PREF_KEY_AUTO_SPACE_BEFORE_WORD, beforeWord);
     }
 
     public static boolean readSpacebarTimerIndicatorEnabled(SharedPreferences preferences) {

@@ -233,6 +233,12 @@
     <string name="gboard_patches_multiswipe_auto_space_summary">
         <translation locale="en">Automatically insert spaces between words decoded by MultiSwipe two-finger gestures.</translation>
         </string>
+    <string name="gboard_patches_multiswipe_auto_space_before_word_title">
+        <translation locale="en">Auto-space before next word (Gboard style)</translation>
+        </string>
+    <string name="gboard_patches_multiswipe_auto_space_before_word_summary">
+        <translation locale="en">Insert the space before the next word like stock Gboard instead of appending a space after each word.</translation>
+        </string>
     <string name="gboard_patches_multiswipe_auto_space_delay_title">
         <translation locale="en">Auto-space delay</translation>
         </string>

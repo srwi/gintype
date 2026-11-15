@@ -307,6 +307,30 @@ public class GboardMultiSwipeSettingsTest {
         assertEquals(2, withoutAutoSpace.size());
         assertEquals("Enable MultiSwipe", withoutAutoSpace.get(0).getTitle());
         assertEquals("Auto-Space", withoutAutoSpace.get(1).getTitle());
+
+        List<dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row> withBeforeWord =
+                GboardMultiSwipeSettingsFeature.buildBehaviorRows(
+                        "Enable MultiSwipe", "", true, v -> {},
+                        "Auto-Space", "", true, v -> {},
+                        "Auto-space delay", "", "300 ms", () -> {},
+                        "Single-finger combine timeout", "", "150 ms", () -> {},
+                        "Spacebar timer indicator", "", false, v -> {},
+                        "Auto-space before next word (Gboard style)", "", true, v -> {});
+        assertEquals(6, withBeforeWord.size());
+        assertEquals("Auto-space before next word (Gboard style)", withBeforeWord.get(2).getTitle());
+    }
+
+    @Test
+    public void sanitizesAndResetsAutoSpaceBeforeWordPreference() {
+        InMemorySharedPreferences prefs = new InMemorySharedPreferences();
+        GboardMultiSwipeSettings.ensureDefaults(prefs);
+        assertTrue(GboardMultiSwipeSettings.readAutoSpaceBeforeWord(prefs));
+
+        assertTrue(GboardMultiSwipeSettings.writeAutoSpaceBeforeWord(prefs, false));
+        assertFalse(GboardMultiSwipeSettings.readAutoSpaceBeforeWord(prefs));
+
+        assertTrue(GboardMultiSwipeSettings.resetToDefaults(prefs));
+        assertTrue(GboardMultiSwipeSettings.readAutoSpaceBeforeWord(prefs));
     }
 
     private static final class InMemorySharedPreferences implements SharedPreferences {

@@ -33,6 +33,7 @@ final class MultiSwipeWordSession {
         final int autoSpaceDelayMs;
         final int singleTouchCombineDelayMs;
         final boolean doubleSpacePeriodEnabled;
+        final boolean autoSpaceBeforeWord;
 
         SettingsSnapshot(
                 boolean enabled,
@@ -40,7 +41,7 @@ final class MultiSwipeWordSession {
                 int autoSpaceDelayMs,
                 int singleTouchCombineDelayMs
         ) {
-            this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs, true);
+            this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs, true, false);
         }
 
         SettingsSnapshot(
@@ -50,11 +51,24 @@ final class MultiSwipeWordSession {
                 int singleTouchCombineDelayMs,
                 boolean doubleSpacePeriodEnabled
         ) {
+            this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
+                    doubleSpacePeriodEnabled, false);
+        }
+
+        SettingsSnapshot(
+                boolean enabled,
+                boolean autoSpaceEnabled,
+                int autoSpaceDelayMs,
+                int singleTouchCombineDelayMs,
+                boolean doubleSpacePeriodEnabled,
+                boolean autoSpaceBeforeWord
+        ) {
             this.enabled = enabled;
             this.autoSpaceEnabled = autoSpaceEnabled;
             this.autoSpaceDelayMs = autoSpaceDelayMs;
             this.singleTouchCombineDelayMs = singleTouchCombineDelayMs;
             this.doubleSpacePeriodEnabled = doubleSpacePeriodEnabled;
+            this.autoSpaceBeforeWord = autoSpaceBeforeWord;
         }
     }
 
@@ -556,6 +570,7 @@ final class MultiSwipeWordSession {
     String autospaceSnapshot = null;
     boolean autospaceTimerPending = false;
     long autospaceFirstSpaceTapDownTimeMs = 0L;
+    boolean pendingLeadingSpaceBeforeNextWord = false;
 
     void resetGestureState() {
         activePointers.clear();
@@ -750,6 +765,25 @@ final class MultiSwipeWordSession {
         String endedComposingWord = currentComposingWord;
         List<String> endedAlternatives = currentAlternativeWords;
         String endedBaseline = textSnapshotAtActionDown;
+
+        boolean armedLeadingSpace = pendingLeadingSpaceBeforeNextWord;
+        pendingLeadingSpaceBeforeNextWord = false;
+        if (armedLeadingSpace
+                && downOnLetter
+                && !isWordContinuing
+                && settings.autoSpaceEnabled
+                && settings.autoSpaceBeforeWord
+                && !suppressNextLeadingSpace
+                && editor != null
+                && snapshotNow != null
+                && !snapshotNow.isEmpty()
+                && Character.isLetterOrDigit(snapshotNow.charAt(snapshotNow.length() - 1))) {
+            editor.commitText(" ");
+            snapshotNow = editor.readTextBeforeCursorSnapshot();
+            if (snapshotNow != null) {
+                lastObservedTextBeforeCursor = snapshotNow;
+            }
+        }
 
         resetGestureState();
 
@@ -1069,7 +1103,13 @@ final class MultiSwipeWordSession {
                 && !sawNonLetter
                 && !strokeHadMultiTouch
                 && (hasSwipe || (!singleTouchCombineBuffer.tokens.isEmpty() && singleTouchCombineBuffer.hasSwipeToken));
-        if (scheduleStockSwipeAutospace && callbacks != null) {
+        if (scheduleStockSwipeAutospace && settings.autoSpaceBeforeWord
+                && (settings.singleTouchCombineDelayMs <= 0 || singleTouchCombineBuffer.tokens.isEmpty())) {
+            pendingLeadingSpaceBeforeNextWord = true;
+            if (callbacks != null) {
+                callbacks.onBufferTimerUpdated(0L);
+            }
+        } else if (scheduleStockSwipeAutospace && callbacks != null) {
             long stockDelayMs = (settings.singleTouchCombineDelayMs > 0 && !singleTouchCombineBuffer.tokens.isEmpty())
                     ? settings.singleTouchCombineDelayMs
                     : settings.autoSpaceDelayMs;
@@ -1227,10 +1267,20 @@ final class MultiSwipeWordSession {
         pendingBackspaceCheck = false;
         suppressNextLeadingSpace = false;
         suppressLeadingSpaceBaseline = null;
+        pendingLeadingSpaceBeforeNextWord = false;
     }
 
     void finalizeAutospace(
             boolean autoSpaceEnabled,
+            EditorAdapter editor,
+            LifecycleCallbacks callbacks
+    ) {
+        finalizeAutospace(autoSpaceEnabled, false, editor, callbacks);
+    }
+
+    void finalizeAutospace(
+            boolean autoSpaceEnabled,
+            boolean autoSpaceBeforeWord,
             EditorAdapter editor,
             LifecycleCallbacks callbacks
     ) {
@@ -1242,8 +1292,10 @@ final class MultiSwipeWordSession {
         List<String> alternatives = currentAlternativeWords;
 
         if (editor != null && committedWord != null && !committedWord.isEmpty()) {
-            editor.commitFinishedWord(committedWord, autoSpaceEnabled);
-            autospaceInserted = autoSpaceEnabled;
+            boolean appendSpace = autoSpaceEnabled && !autoSpaceBeforeWord;
+            editor.commitFinishedWord(committedWord, appendSpace);
+            autospaceInserted = appendSpace;
+            pendingLeadingSpaceBeforeNextWord = autoSpaceEnabled && autoSpaceBeforeWord;
 
             String afterSnapshot = editor.readTextBeforeCursorSnapshot();
             autospaceSnapshot = autoSpaceEnabled ? afterSnapshot : null;
@@ -1271,6 +1323,14 @@ final class MultiSwipeWordSession {
             boolean autoSpaceEnabled,
             EditorAdapter editor
     ) {
+        finalizeStockSwipeAutospace(autoSpaceEnabled, false, editor);
+    }
+
+    void finalizeStockSwipeAutospace(
+            boolean autoSpaceEnabled,
+            boolean autoSpaceBeforeWord,
+            EditorAdapter editor
+    ) {
         if (!stockSwipeAutospacePending) return;
         stockSwipeAutospacePending = false;
         if (!autoSpaceEnabled || !activePointers.isEmpty() || editor == null) return;
@@ -1279,6 +1339,11 @@ final class MultiSwipeWordSession {
         if (before == null || before.isEmpty()) return;
         char last = before.charAt(before.length() - 1);
         if (!Character.isLetterOrDigit(last)) return;
+
+        if (autoSpaceBeforeWord) {
+            pendingLeadingSpaceBeforeNextWord = true;
+            return;
+        }
 
         editor.commitFinishedWord(null, true);
         autospaceInserted = true;

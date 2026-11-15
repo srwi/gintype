@@ -1020,8 +1020,11 @@ public final class GboardMultiSwipeRuntime {
                 ? GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(context)
                 : GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS;
         boolean doubleSpacePeriodEnabled = readDoubleSpacePeriodEnabled(context);
+        boolean autoSpaceBeforeWord = (context != null)
+                && GboardMultiSwipeSettings.isAutoSpaceBeforeWord(context);
         return new MultiSwipeWordSession.SettingsSnapshot(
-                enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs, doubleSpacePeriodEnabled);
+                enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs,
+                doubleSpacePeriodEnabled, autoSpaceBeforeWord);
     }
 
     private static boolean readDoubleSpacePeriodEnabled(Context context) {
@@ -1189,7 +1192,9 @@ public final class GboardMultiSwipeRuntime {
                 session.autospaceRunnable = () -> {
                     boolean autoSpaceEnabled = (context == null)
                             || GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
-                    session.core.finalizeAutospace(autoSpaceEnabled, editor, self);
+                    boolean autoSpaceBeforeWord = (context != null)
+                            && GboardMultiSwipeSettings.isAutoSpaceBeforeWord(context);
+                    session.core.finalizeAutospace(autoSpaceEnabled, autoSpaceBeforeWord, editor, self);
                 };
                 session.mainHandler.postDelayed(session.autospaceRunnable, delayMs);
                 if (shouldShowSpacebarIndicator(context)) {
@@ -1216,7 +1221,9 @@ public final class GboardMultiSwipeRuntime {
                 session.stockSwipeAutospaceRunnable = () -> {
                     boolean autoSpaceEnabled = (context == null)
                             || GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
-                    session.core.finalizeStockSwipeAutospace(autoSpaceEnabled, editor);
+                    boolean autoSpaceBeforeWord = (context != null)
+                            && GboardMultiSwipeSettings.isAutoSpaceBeforeWord(context);
+                    session.core.finalizeStockSwipeAutospace(autoSpaceEnabled, autoSpaceBeforeWord, editor);
                 };
                 session.mainHandler.postDelayed(session.stockSwipeAutospaceRunnable, delayMs);
             }

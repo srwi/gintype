@@ -738,6 +738,52 @@ public class MultiSwipeIntegrationTest {
         assertFalse(session.autospaceInserted);
     }
 
+    @Test
+    public void autoSpaceBeforeWordUsesGboardStyleWithoutTrailingSpaces() {
+        SettingsSnapshot gboardStyle = new SettingsSnapshot(true, true, 300, 150, true, true);
+        DecodePort halloDecoder = (tokens, prev) -> Collections.singletonList(cand("Hallo", -1f));
+        DecodePort weltDecoder = (tokens, prev) -> Collections.singletonList(cand("Welt", -1f));
+        DecodePort emptyDecoder = (tokens, prev) -> Collections.emptyList();
+
+        // 1. Single-finger stock swipe does NOT append trailing space, arms leading space after timer
+        session.onActionDown(0, letterAX, letterAY, 1000L, gboardStyle, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1030L, session.geometry);
+        editor.stockType("Es");
+        session.onPointerUp(0, letterSX, letterSY, 1050L, true, callbacks);
+        session.onActionUp(1050L, gboardStyle, editor, emptyDecoder, callbacks);
+        session.finalizeStockSwipeAutospace(true, true, editor);
+        assertEquals("Es", editor.text());
+
+        // 2. Tapping "so" after the swiped word prepends leading space before 's', NOT before 'o'
+        session.onActionDown(0, letterSX, letterSY, 1400L, gboardStyle, editor, callbacks);
+        session.onActionCancel(callbacks);
+        editor.stockType("s");
+        session.onActionDown(0, letterAX, letterAY, 1460L, gboardStyle, editor, callbacks);
+        session.onActionCancel(callbacks);
+        editor.stockType("o");
+        assertEquals("Es so", editor.text());
+
+        // 3. MultiSwipe word prepends leading space (MS-11) and commits WITHOUT trailing space
+        performTwoFingerSwipe(2000L, gboardStyle, halloDecoder);
+        assertEquals("Es so Hallo", editor.text());
+        session.finalizeAutospace(true, true, editor, callbacks);
+        assertEquals("Es so Hallo", editor.text());
+        assertFalse(session.autospaceInserted);
+        assertFalse(callbacks.lastCommitAutoSpace);
+
+        // 4. Tapping next word after MultiSwipe word also gets leading space
+        session.onActionDown(0, letterSX, letterSY, 2600L, gboardStyle, editor, callbacks);
+        session.onActionCancel(callbacks);
+        editor.stockType("so");
+        assertEquals("Es so Hallo so", editor.text());
+
+        // 5. Subsequent MultiSwipe word still prepends leading space (MS-11)
+        performTwoFingerSwipe(3200L, gboardStyle, weltDecoder);
+        session.finalizeAutospace(true, true, editor, callbacks);
+        assertEquals("Es so Hallo so Welt", editor.text());
+        assertFalse(session.autospaceInserted);
+    }
+
     private static WordCandidate cand(String word, float score) {
         return new WordCandidate(word, score, 0f, 0f, 0f);
     }

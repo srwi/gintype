@@ -73,6 +73,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     private final String spacebarTimerIndicatorSummary;
     private final String defaultValueTemplate;
     private final String beamWidthTitle;
+    private final String autoSpaceBeforeWordTitle;
+    private final String autoSpaceBeforeWordSummary;
     private final String beamWidthSummary;
     private final String freqWeightFloorTitle;
     private final String freqWeightFloorSummary;
@@ -118,6 +120,10 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
         enabledSummary = text(context, R.string.gboard_patches_multiswipe_enabled_summary);
         autoSpaceTitle = text(context, R.string.gboard_patches_multiswipe_auto_space_title);
         autoSpaceSummary = text(context, R.string.gboard_patches_multiswipe_auto_space_summary);
+        autoSpaceBeforeWordTitle = text(
+                context, R.string.gboard_patches_multiswipe_auto_space_before_word_title);
+        autoSpaceBeforeWordSummary = text(
+                context, R.string.gboard_patches_multiswipe_auto_space_before_word_summary);
         delayTitle = text(context, R.string.gboard_patches_multiswipe_auto_space_delay_title);
         delaySummary = text(context, R.string.gboard_patches_multiswipe_auto_space_delay_summary);
         delayValueTemplate = text(context, R.string.gboard_patches_multiswipe_auto_space_delay_value);
@@ -207,6 +213,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
 
             boolean enabled = GboardMultiSwipeSettings.readEnabled(preferences);
             boolean autoSpaceEnabled = GboardMultiSwipeSettings.readAutoSpaceEnabled(preferences);
+            boolean autoSpaceBeforeWord =
+                    GboardMultiSwipeSettings.readAutoSpaceBeforeWord(preferences);
             int autoSpaceDelayMs = GboardMultiSwipeSettings.readAutoSpaceDelayMs(preferences);
             int combineDelayMs = GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(preferences);
             boolean spacebarTimerIndicatorEnabled =
@@ -257,7 +265,11 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                     spacebarTimerIndicatorTitle,
                     spacebarTimerIndicatorSummary,
                     spacebarTimerIndicatorEnabled,
-                    value -> GboardMultiSwipeSettings.writeSpacebarTimerIndicatorEnabled(preferences, value));
+                    value -> GboardMultiSwipeSettings.writeSpacebarTimerIndicatorEnabled(preferences, value),
+                    autoSpaceBeforeWordTitle,
+                    autoSpaceBeforeWordSummary,
+                    autoSpaceBeforeWord,
+                    value -> GboardMultiSwipeSettings.writeAutoSpaceBeforeWord(preferences, value));
 
             List<GboardPatchesSettingsContract.Row> tuningRows = new ArrayList<>(4);
             tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -807,7 +819,42 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             boolean spacebarTimerEnabled,
             GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer
     ) {
-        List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(5);
+        return buildBehaviorRows(
+                enabledTitle, enabledSummary, enabled, onToggleEnabled,
+                autoSpaceTitle, autoSpaceSummary, autoSpaceEnabled, onToggleAutoSpace,
+                delayTitle, delaySummary, delayValueLabel, onSelectDelay,
+                combineDelayTitle, combineDelaySummary, combineValueLabel, onSelectCombineDelay,
+                spacebarTimerTitle, spacebarTimerSummary, spacebarTimerEnabled, onToggleSpacebarTimer,
+                null, null, false, null);
+    }
+
+    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
+            String enabledTitle,
+            String enabledSummary,
+            boolean enabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
+            String autoSpaceTitle,
+            String autoSpaceSummary,
+            boolean autoSpaceEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
+            String delayTitle,
+            String delaySummary,
+            String delayValueLabel,
+            Runnable onSelectDelay,
+            String combineDelayTitle,
+            String combineDelaySummary,
+            String combineValueLabel,
+            Runnable onSelectCombineDelay,
+            String spacebarTimerTitle,
+            String spacebarTimerSummary,
+            boolean spacebarTimerEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer,
+            String autoSpaceBeforeWordTitle,
+            String autoSpaceBeforeWordSummary,
+            boolean autoSpaceBeforeWord,
+            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpaceBeforeWord
+    ) {
+        List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(6);
         behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
                 enabledTitle,
                 enabledSummary,
@@ -821,6 +868,14 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                 autoSpaceEnabled,
                 onToggleAutoSpace));
         if (autoSpaceEnabled) {
+            if (autoSpaceBeforeWordTitle != null) {
+                behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
+                        autoSpaceBeforeWordTitle,
+                        autoSpaceBeforeWordSummary,
+                        enabled,
+                        autoSpaceBeforeWord,
+                        onToggleAutoSpaceBeforeWord));
+            }
             behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     delayTitle,
                     delaySummary,
