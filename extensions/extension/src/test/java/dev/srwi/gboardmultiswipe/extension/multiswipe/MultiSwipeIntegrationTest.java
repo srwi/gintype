@@ -682,6 +682,62 @@ public class MultiSwipeIntegrationTest {
         assertEquals("Hallo", editor.text());
     }
 
+    @Test
+    public void colonAfterLayoutSwitchRetractsAutospace() {
+        SettingsSnapshot onSettings = new SettingsSnapshot(true, true, 300, 150);
+        DecodePort decoder = (tokens, prev) -> Collections.emptyList();
+
+        // Swipe "Hallo" -> autospace appends " "
+        session.onActionDown(0, letterAX, letterAY, 1000L, onSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1030L, session.geometry);
+        editor.stockType("Hallo");
+        session.onPointerUp(0, letterSX, letterSY, 1050L, true, callbacks);
+        session.onActionUp(1050L, onSettings, editor, decoder, callbacks);
+        session.finalizeStockSwipeAutospace(true, editor);
+        assertEquals("Hallo ", editor.text());
+        assertTrue(session.autospaceInserted);
+
+        // Tap layout-switch / modifier key (?123 at bottom-left, x=100, y=700) without changing editor text
+        List<KeySpec> withSymbolsKey = new ArrayList<>(session.geometry.allKeysSnapshot());
+        withSymbolsKey.add(new KeySpec('\0', 100f, 700f, 160f, 200f));
+        session.geometry.setKeys(withSymbolsKey, session.geometry.keyWidthPx, session.geometry.keyHeightPx, false);
+        session.onActionDown(0, 100f, 700f, 1200L, onSettings, editor, callbacks);
+        session.onActionCancel(callbacks);
+        assertTrue(session.autospaceInserted);
+
+        // Symbols layout exposes ':' key -> tapping ':' retracts trailing space before ':'
+        List<KeySpec> symbolSpecs = new ArrayList<>();
+        symbolSpecs.add(new KeySpec(':', 702f, 500f, 108f, 200f));
+        symbolSpecs.add(new KeySpec('\0', 540f, 700f, 432f, 200f));
+        session.geometry.setKeys(symbolSpecs, session.geometry.keyWidthPx, session.geometry.keyHeightPx, false);
+        session.onActionDown(0, 702f, 500f, 1350L, onSettings, editor, callbacks);
+        assertEquals("Hallo", editor.text());
+        assertFalse(session.autospaceInserted);
+    }
+
+    @Test
+    public void basicHandlerActionDownRetractsAutospaceBeforeColonOnSymbolsLayout() {
+        SettingsSnapshot onSettings = new SettingsSnapshot(true, true, 300, 150);
+        DecodePort decoder = (tokens, prev) -> Collections.emptyList();
+
+        session.onActionDown(0, letterAX, letterAY, 2000L, onSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 2030L, session.geometry);
+        editor.stockType("Hallo");
+        session.onPointerUp(0, letterSX, letterSY, 2050L, true, callbacks);
+        session.onActionUp(2050L, onSettings, editor, decoder, callbacks);
+        session.finalizeStockSwipeAutospace(true, editor);
+        assertEquals("Hallo ", editor.text());
+
+        // Control key (?123) preserves autospaceInserted
+        session.onBasicHandlerActionDown('\0', editor);
+        assertTrue(session.autospaceInserted);
+
+        // Tapping ':' on symbols layout retracts the trailing space immediately before ':' is committed
+        session.onBasicHandlerActionDown(':', editor);
+        assertEquals("Hallo", editor.text());
+        assertFalse(session.autospaceInserted);
+    }
+
     private static WordCandidate cand(String word, float score) {
         return new WordCandidate(word, score, 0f, 0f, 0f);
     }

@@ -434,7 +434,20 @@ public final class GboardMultiSwipeRuntime {
             Object gestureHandler = lastGestureHandler;
             if (gestureHandler == null) return false;
             HandlerSession session = SESSIONS.get(gestureHandler);
-            return session != null && session.core.shouldSuppressBasicHandler(multiswipeEnabledCached, isActionDown);
+            if (session == null) return false;
+            if (isActionDown && session.core.autospaceInserted) {
+                View basicView = extractKeyboardViewFromBasicHandler(basicHandler);
+                if (basicView == null) {
+                    basicView = extractKeyboardView(gestureHandler);
+                }
+                if (basicView != null) {
+                    char keyChar = findSoftKeyCharAt(basicView, event.getX(), event.getY());
+                    Context context = extractContext(gestureHandler);
+                    session.core.onBasicHandlerActionDown(
+                            keyChar, createEditorAdapter(gestureHandler, context));
+                }
+            }
+            return session.core.shouldSuppressBasicHandler(multiswipeEnabledCached, isActionDown);
         } catch (Throwable ignored) {
             return false;
         }
@@ -1470,6 +1483,64 @@ public final class GboardMultiSwipeRuntime {
         } catch (Throwable ignored) {
         }
         return cachedContext;
+    }
+
+    private static volatile Field basicKeyboardViewField;
+    private static volatile Class<?> basicKeyboardViewScannedClass;
+
+    private static View extractKeyboardViewFromBasicHandler(Object basicHandler) {
+        if (basicHandler == null) return null;
+        try {
+            Class<?> cls = basicHandler.getClass();
+            if (basicKeyboardViewScannedClass != cls) {
+                Field found = null;
+                for (Class<?> c = cls; c != null && c != Object.class && found == null; c = c.getSuperclass()) {
+                    for (Field f : c.getDeclaredFields()) {
+                        if (View.class.isAssignableFrom(f.getType())) {
+                            f.setAccessible(true);
+                            Object val = f.get(basicHandler);
+                            if (val instanceof View && val.getClass().getSimpleName().contains("SoftKeyboardView")) {
+                                found = f;
+                                break;
+                            }
+                        }
+                    }
+                }
+                basicKeyboardViewField = found;
+                basicKeyboardViewScannedClass = cls;
+            }
+            if (basicKeyboardViewField != null) {
+                Object v = basicKeyboardViewField.get(basicHandler);
+                if (v instanceof View) {
+                    return (View) v;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static char findSoftKeyCharAt(View view, float localX, float localY) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return '\0';
+        if (view.getClass().getSimpleName().contains("SoftKeyView")) {
+            return extractSingleLetterFromSoftKeyView(view);
+        }
+        if (view instanceof ViewGroup group) {
+            for (int i = group.getChildCount() - 1; i >= 0; i--) {
+                View child = group.getChildAt(i);
+                if (child == null || child.getVisibility() != View.VISIBLE) continue;
+                float cx = child.getX();
+                float cy = child.getY();
+                if (localX >= cx && localX <= cx + child.getWidth()
+                        && localY >= cy && localY <= cy + child.getHeight()) {
+                    char hit = findSoftKeyCharAt(child, localX - cx, localY - cy);
+                    if (hit != '\0') {
+                        return hit;
+                    }
+                }
+            }
+        }
+        return '\0';
     }
 
     private static View extractKeyboardView(Object handler) {

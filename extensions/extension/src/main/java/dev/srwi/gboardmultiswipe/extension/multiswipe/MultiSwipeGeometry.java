@@ -371,6 +371,20 @@ public final class MultiSwipeGeometry {
         return false;
     }
 
+    /**
+     * Returns true when {@code (px, py)} hits a non-character control/modifier/layout-switch key
+     * (e.g. Shift, ?123, Backspace, Enter) excluding Space.
+     */
+    public boolean isNonCharControlKeyAt(float px, float py) {
+        for (int i = 0; i < nonLetterKeys.size(); i++) {
+            KeySpec k = nonLetterKeys.get(i);
+            if (k.character == '\0' && !isSpaceKey(k) && k.contains(px, py, 0f, 0f)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public KeySpec findKeyAt(float px, float py) {
         for (int i = 0; i < allKeys.size(); i++) {
             KeySpec k = allKeys.get(i);

@@ -553,6 +553,7 @@ final class MultiSwipeWordSession {
     String currentComposingWord = null;
     List<String> currentAlternativeWords = null;
     boolean autospaceInserted = false;
+    String autospaceSnapshot = null;
     boolean autospaceTimerPending = false;
     long autospaceFirstSpaceTapDownTimeMs = 0L;
 
@@ -662,25 +663,41 @@ final class MultiSwipeWordSession {
         }
 
         boolean downOnSpace = geometry.isSpaceKeyAt(x, y);
+        String snapshotNow = (editor != null) ? editor.readTextBeforeCursorSnapshot() : null;
 
-        // MS-12: Retract auto-inserted trailing space before hugging punctuation, or track
-        // Spacebar double-tap-to-period on ACTION_DOWN (since BasicMotionEventHandler owns taps
-        // and may cancel AbstractGestureMotionEventHandler before ACTION_UP).
+        // MS-12: Retract auto-inserted trailing space before hugging punctuation (preserving
+        // autospace across non-character modifier/layout-switch keys like ?123/Shift while the
+        // editor text is unchanged), or track Spacebar double-tap-to-period on ACTION_DOWN.
+        if (autospaceInserted && autospaceSnapshot != null && snapshotNow != null
+                && !snapshotNow.equals(autospaceSnapshot)) {
+            autospaceInserted = false;
+            autospaceSnapshot = null;
+        }
         if (autospaceInserted) {
             KeySpec hit = geometry.findKeyAt(x, y);
-            if (hit == null) {
-                hit = geometry.nearestAnyKey(x, y);
-            }
-            if (hit != null && geometry.isPunctuationChar(hit.character) && editor != null) {
-                String before = editor.readCharBeforeCursor();
-                if (before != null && !before.isEmpty() && before.charAt(before.length() - 1) == ' ') {
-                    editor.deleteCharsBeforeCursor(1);
-                }
+            if (hit == null && geometry.isNonCharControlKeyAt(x, y)) {
+                // Modifier / layout-switch key (e.g. ?123, Shift): preserve autospaceInserted
+                // so a subsequent punctuation key like ':' on the symbols layout still retracts.
                 autospaceFirstSpaceTapDownTimeMs = 0L;
             } else {
-                autospaceFirstSpaceTapDownTimeMs = (downOnSpace && activePointers.isEmpty()) ? eventTimeMs : 0L;
+                if (hit == null) {
+                    hit = geometry.nearestAnyKey(x, y);
+                }
+                if (hit != null && geometry.isPunctuationChar(hit.character) && editor != null) {
+                    String before = editor.readCharBeforeCursor();
+                    if (before != null && !before.isEmpty() && before.charAt(before.length() - 1) == ' ') {
+                        editor.deleteCharsBeforeCursor(1);
+                    }
+                    autospaceFirstSpaceTapDownTimeMs = 0L;
+                    autospaceInserted = false;
+                    autospaceSnapshot = null;
+                    snapshotNow = editor.readTextBeforeCursorSnapshot();
+                } else {
+                    autospaceFirstSpaceTapDownTimeMs = (downOnSpace && activePointers.isEmpty()) ? eventTimeMs : 0L;
+                    autospaceInserted = false;
+                    autospaceSnapshot = null;
+                }
             }
-            autospaceInserted = false;
         } else {
             if (autospaceFirstSpaceTapDownTimeMs > 0L
                     && downOnSpace
@@ -688,19 +705,18 @@ final class MultiSwipeWordSession {
                     && settings.doubleSpacePeriodEnabled
                     && (eventTimeMs - autospaceFirstSpaceTapDownTimeMs) <= DOUBLE_SPACE_PERIOD_TIMEOUT_MS
                     && editor != null) {
-                String before = editor.readTextBeforeCursorSnapshot();
+                String before = snapshotNow;
                 if (before != null && before.length() >= 3 && before.endsWith("  ")) {
                     char prev = before.charAt(before.length() - 3);
                     if (!Character.isWhitespace(prev) && prev != '.') {
                         editor.deleteCharsBeforeCursor(2);
                         editor.commitText(".");
+                        snapshotNow = editor.readTextBeforeCursorSnapshot();
                     }
                 }
             }
             autospaceFirstSpaceTapDownTimeMs = 0L;
         }
-
-        String snapshotNow = (editor != null) ? editor.readTextBeforeCursorSnapshot() : null;
         boolean cursorNavigatedAway = multiswipeWordActive
                 && expectedSnapshotAfterPreview != null
                 && snapshotNow != null
@@ -1230,6 +1246,7 @@ final class MultiSwipeWordSession {
             autospaceInserted = autoSpaceEnabled;
 
             String afterSnapshot = editor.readTextBeforeCursorSnapshot();
+            autospaceSnapshot = autoSpaceEnabled ? afterSnapshot : null;
             if (afterSnapshot != null) {
                 lastObservedTextBeforeCursor = afterSnapshot;
             }
@@ -1267,11 +1284,46 @@ final class MultiSwipeWordSession {
         autospaceInserted = true;
 
         String afterSnapshot = editor.readTextBeforeCursorSnapshot();
+        autospaceSnapshot = afterSnapshot;
         if (afterSnapshot != null) {
             lastObservedTextBeforeCursor = afterSnapshot;
         }
         passiveTapBuffer.clear();
         singleTouchCombineBuffer.clear();
+    }
+
+    /**
+     * Handles {@code ACTION_DOWN} from Gboard's {@code BasicMotionEventHandler} (which runs on
+     * all layouts, including {@code ?123} symbols where {@code AbstractGestureMotionEventHandler}
+     * is inactive). Retracts the auto-inserted trailing space immediately before hugging
+     * punctuation such as {@code ':'} is committed.
+     */
+    void onBasicHandlerActionDown(char keyChar, EditorAdapter editor) {
+        if (!autospaceInserted || editor == null) {
+            return;
+        }
+        String snapshotNow = editor.readTextBeforeCursorSnapshot();
+        if (autospaceSnapshot != null && snapshotNow != null && !snapshotNow.equals(autospaceSnapshot)) {
+            autospaceInserted = false;
+            autospaceSnapshot = null;
+            return;
+        }
+        if (geometry.isPunctuationChar(keyChar)) {
+            String before = editor.readCharBeforeCursor();
+            if (before != null && !before.isEmpty() && before.charAt(before.length() - 1) == ' ') {
+                editor.deleteCharsBeforeCursor(1);
+                String after = editor.readTextBeforeCursorSnapshot();
+                if (after != null) {
+                    lastObservedTextBeforeCursor = after;
+                }
+            }
+            autospaceInserted = false;
+            autospaceSnapshot = null;
+            autospaceFirstSpaceTapDownTimeMs = 0L;
+        } else if (keyChar != '\0') {
+            autospaceInserted = false;
+            autospaceSnapshot = null;
+        }
     }
 
     // ---- Hook predicates (MS-06, MS-07, MS-17) ----
