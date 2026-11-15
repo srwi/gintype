@@ -34,6 +34,7 @@ final class MultiSwipeWordSession {
         final int singleTouchCombineDelayMs;
         final boolean doubleSpacePeriodEnabled;
         final boolean autoSpaceBeforeWord;
+        final int tapToMultiSwipeDelayMs;
 
         SettingsSnapshot(
                 boolean enabled,
@@ -41,7 +42,8 @@ final class MultiSwipeWordSession {
                 int autoSpaceDelayMs,
                 int singleTouchCombineDelayMs
         ) {
-            this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs, true, false);
+            this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
+                    true, false, GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
         }
 
         SettingsSnapshot(
@@ -52,7 +54,8 @@ final class MultiSwipeWordSession {
                 boolean doubleSpacePeriodEnabled
         ) {
             this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
-                    doubleSpacePeriodEnabled, false);
+                    doubleSpacePeriodEnabled, false,
+                    GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
         }
 
         SettingsSnapshot(
@@ -63,12 +66,27 @@ final class MultiSwipeWordSession {
                 boolean doubleSpacePeriodEnabled,
                 boolean autoSpaceBeforeWord
         ) {
+            this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
+                    doubleSpacePeriodEnabled, autoSpaceBeforeWord,
+                    GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
+        }
+
+        SettingsSnapshot(
+                boolean enabled,
+                boolean autoSpaceEnabled,
+                int autoSpaceDelayMs,
+                int singleTouchCombineDelayMs,
+                boolean doubleSpacePeriodEnabled,
+                boolean autoSpaceBeforeWord,
+                int tapToMultiSwipeDelayMs
+        ) {
             this.enabled = enabled;
             this.autoSpaceEnabled = autoSpaceEnabled;
             this.autoSpaceDelayMs = autoSpaceDelayMs;
             this.singleTouchCombineDelayMs = singleTouchCombineDelayMs;
             this.doubleSpacePeriodEnabled = doubleSpacePeriodEnabled;
             this.autoSpaceBeforeWord = autoSpaceBeforeWord;
+            this.tapToMultiSwipeDelayMs = tapToMultiSwipeDelayMs;
         }
     }
 
@@ -432,7 +450,26 @@ final class MultiSwipeWordSession {
                 long eventTimeMs,
                 boolean autoSpaceEnabled
         ) {
-            long maxGap = autoSpaceEnabled ? MAX_PASSIVE_TAP_GAP_MS : Long.MAX_VALUE;
+            validateOnActionDown(
+                    snapshotNow,
+                    downOnLetter,
+                    eventTimeMs,
+                    (int) MAX_PASSIVE_TAP_GAP_MS,
+                    autoSpaceEnabled);
+        }
+
+        void validateOnActionDown(
+                String snapshotNow,
+                boolean downOnLetter,
+                long eventTimeMs,
+                int tapToMultiSwipeDelayMs,
+                boolean autoSpaceEnabled
+        ) {
+            if (autoSpaceEnabled && tapToMultiSwipeDelayMs <= 0) {
+                clear();
+                return;
+            }
+            long maxGap = autoSpaceEnabled ? tapToMultiSwipeDelayMs : Long.MAX_VALUE;
             validateGapAndPrefix(snapshotNow, downOnLetter, eventTimeMs, maxGap);
         }
 
@@ -452,6 +489,31 @@ final class MultiSwipeWordSession {
                 long eventTimeMs,
                 boolean autoSpaceEnabled
         ) {
+            recordStroke(
+                    completedTokens,
+                    hasSwipe,
+                    sawNonLetter,
+                    strokeHadMultiTouch,
+                    tapBaselineAtDown,
+                    eventTimeMs,
+                    (int) MAX_PASSIVE_TAP_GAP_MS,
+                    autoSpaceEnabled);
+        }
+
+        void recordStroke(
+                List<MultiSwipeInputToken> completedTokens,
+                boolean hasSwipe,
+                boolean sawNonLetter,
+                boolean strokeHadMultiTouch,
+                String tapBaselineAtDown,
+                long eventTimeMs,
+                int tapToMultiSwipeDelayMs,
+                boolean autoSpaceEnabled
+        ) {
+            if (autoSpaceEnabled && tapToMultiSwipeDelayMs <= 0) {
+                clear();
+                return;
+            }
             List<MultiSwipeInputToken> tapOnlyTokens = (!hasSwipe && !sawNonLetter)
                     ? collectPureTapTokens(completedTokens)
                     : null;
@@ -804,7 +866,11 @@ final class MultiSwipeWordSession {
             lastObservedTextBeforeCursor = snapshotNow;
             textSnapshotAtActionDown = snapshotNow;
             passiveTapBuffer.validateOnActionDown(
-                    snapshotNow, downOnLetter, eventTimeMs, settings.autoSpaceEnabled);
+                    snapshotNow,
+                    downOnLetter,
+                    eventTimeMs,
+                    settings.tapToMultiSwipeDelayMs,
+                    settings.autoSpaceEnabled);
             singleTouchCombineBuffer.validateOnActionDown(
                     snapshotNow,
                     downOnLetter,
@@ -1089,6 +1155,7 @@ final class MultiSwipeWordSession {
                 strokeHadMultiTouch,
                 tapBaselineAtDown,
                 eventTimeMs,
+                settings.tapToMultiSwipeDelayMs,
                 settings.autoSpaceEnabled);
         singleTouchCombineBuffer.recordStroke(
                 completedCopy,
@@ -1121,8 +1188,8 @@ final class MultiSwipeWordSession {
             if (settings.autoSpaceEnabled) {
                 if (!singleTouchCombineBuffer.tokens.isEmpty() && settings.singleTouchCombineDelayMs > 0) {
                     bufferTimerMs = settings.singleTouchCombineDelayMs;
-                } else if (!passiveTapBuffer.tokens.isEmpty()) {
-                    bufferTimerMs = MAX_PASSIVE_TAP_GAP_MS;
+                } else if (!passiveTapBuffer.tokens.isEmpty() && settings.tapToMultiSwipeDelayMs > 0) {
+                    bufferTimerMs = settings.tapToMultiSwipeDelayMs;
                 }
             }
             callbacks.onBufferTimerUpdated(bufferTimerMs);

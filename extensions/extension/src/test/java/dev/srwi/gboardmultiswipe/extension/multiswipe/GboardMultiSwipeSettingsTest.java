@@ -50,6 +50,8 @@ public class GboardMultiSwipeSettingsTest {
 
         assertEquals(GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
                 GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR,
                 GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
         assertTrue(prefs.contains(GboardMultiSwipeSettings.PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS));
@@ -58,6 +60,15 @@ public class GboardMultiSwipeSettingsTest {
         assertTrue(GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(prefs, 900));
         assertEquals(GboardMultiSwipeSettings.MAX_SINGLE_TOUCH_COMBINE_DELAY_MS,
                 GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
+
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
+        assertTrue(prefs.contains(GboardMultiSwipeSettings.PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS));
+        assertTrue(GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(prefs, 0));
+        assertEquals(0, GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
+        assertTrue(GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(prefs, 5000));
+        assertEquals(GboardMultiSwipeSettings.MAX_TAP_TO_MULTISWIPE_DELAY_MS,
+                GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
     }
 
     @Test
@@ -200,6 +211,8 @@ public class GboardMultiSwipeSettingsTest {
                 GboardMultiSwipeSettings.readAutoSpaceDelayMs(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
                 GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR,
                 GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_BEAM_WIDTH,
@@ -315,9 +328,11 @@ public class GboardMultiSwipeSettingsTest {
                         "Auto-space delay", "", "300 ms", () -> {},
                         "Single-finger combine timeout", "", "150 ms", () -> {},
                         "Spacebar timer indicator", "", false, v -> {},
-                        "Auto-space before next word (Gboard style)", "", true, v -> {});
-        assertEquals(6, withBeforeWord.size());
+                        "Auto-space before next word (Gboard style)", "", true, v -> {},
+                        "Tap-to-MultiSwipe timeout", "", "750 ms (Default)", () -> {});
+        assertEquals(7, withBeforeWord.size());
         assertEquals("Auto-space before next word (Gboard style)", withBeforeWord.get(2).getTitle());
+        assertEquals("Tap-to-MultiSwipe timeout", withBeforeWord.get(5).getTitle());
     }
 
     @Test

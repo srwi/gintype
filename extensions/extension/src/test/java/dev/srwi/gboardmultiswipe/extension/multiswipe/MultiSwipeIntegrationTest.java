@@ -307,6 +307,63 @@ public class MultiSwipeIntegrationTest {
     }
 
     @Test
+    public void tapToMultiSwipeDelayControlsPassiveTapPrefixPromotionWhenAutoSpaceOn() {
+        // When tapToMultiSwipeDelayMs == 0 and singleTouchCombineDelayMs == 0,
+        // tapped "so" is NOT merged into a following 2-finger MultiSwipe "sicher".
+        SettingsSnapshot tapCombineOff = new SettingsSnapshot(true, true, 300, 0, true, false, 0);
+        List<Integer> decodedTokenCounts = new ArrayList<>();
+        DecodePort decoder = (tokens, prevWord) -> {
+            decodedTokenCounts.add(tokens.size());
+            return Collections.singletonList(cand("sicher", 1f));
+        };
+
+        KeySpec s = key('s');
+        KeySpec o = key('o');
+        session.onActionDown(0, s.centerX, s.centerY, 1000L, tapCombineOff, editor, callbacks);
+        session.onActionUp(1030L, tapCombineOff, editor, decoder, callbacks);
+        editor.stockType("s");
+
+        session.onActionDown(0, o.centerX, o.centerY, 1100L, tapCombineOff, editor, callbacks);
+        session.onActionUp(1130L, tapCombineOff, editor, decoder, callbacks);
+        editor.stockType("o");
+
+        // 2-finger MultiSwipe immediately (120ms later) -> stays two words: "so sicher"
+        session.onActionDown(0, letterSX, letterSY, 1250L, tapCombineOff, editor, callbacks);
+        session.onPointerDown(1, letterLX, letterLY, 1270L);
+        session.activePointers.get(0).addPoint(letterLX, letterLY, 1300L, session.geometry);
+        session.onPointerUp(0, letterLX, letterLY, 1310L, true, callbacks);
+        session.onActionUp(1330L, tapCombineOff, editor, decoder, callbacks);
+
+        assertEquals(1, decodedTokenCounts.size());
+        assertEquals(2, (int) decodedTokenCounts.get(0));
+        assertEquals("so sicher", editor.text());
+
+        // With custom tapToMultiSwipeDelayMs = 200ms, a 250ms pause does NOT merge "so" into "sicher"
+        session.onActionCancel(callbacks);
+        editor = new FakeEditor();
+        decodedTokenCounts.clear();
+        SettingsSnapshot shortTapWindow = new SettingsSnapshot(true, true, 300, 0, true, false, 200);
+
+        session.onActionDown(0, s.centerX, s.centerY, 2000L, shortTapWindow, editor, callbacks);
+        session.onActionUp(2030L, shortTapWindow, editor, decoder, callbacks);
+        editor.stockType("s");
+
+        session.onActionDown(0, o.centerX, o.centerY, 2100L, shortTapWindow, editor, callbacks);
+        session.onActionUp(2130L, shortTapWindow, editor, decoder, callbacks);
+        editor.stockType("o");
+
+        session.onActionDown(0, letterSX, letterSY, 2380L, shortTapWindow, editor, callbacks);
+        session.onPointerDown(1, letterLX, letterLY, 2400L);
+        session.activePointers.get(0).addPoint(letterLX, letterLY, 2430L, session.geometry);
+        session.onPointerUp(0, letterLX, letterLY, 2440L, true, callbacks);
+        session.onActionUp(2460L, shortTapWindow, editor, decoder, callbacks);
+
+        assertEquals(1, decodedTokenCounts.size());
+        assertEquals(2, (int) decodedTokenCounts.get(0));
+        assertEquals("so sicher", editor.text());
+    }
+
+    @Test
     public void autoSpaceOffCombinesSequentialStrokesAcrossLongPausesUntilSpaceOrNavigation() {
         // Even with combineDelayMs=0 stored, Auto-Space OFF ignores timeouts and combines until Space/Nav.
         SettingsSnapshot autoSpaceOff = new SettingsSnapshot(true, false, 300, 0);

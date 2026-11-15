@@ -264,7 +264,13 @@
         <translation locale="en">Single-finger combine timeout</translation>
         </string>
     <string name="gboard_patches_multiswipe_combine_delay_summary">
-        <translation locale="en">If a second swipe or tap follows a stock Gboard swipe/tap within this window, retroactively combine both in MultiSwipe (0 = off).</translation>
+        <translation locale="en">Combine consecutive 1-finger strokes (e.g. swipe + tap or swipe + swipe) into one MultiSwipe word within this window (0 = off).</translation>
+        </string>
+    <string name="gboard_patches_multiswipe_tap_to_multiswipe_delay_title">
+        <translation locale="en">Tap-to-MultiSwipe timeout</translation>
+        </string>
+    <string name="gboard_patches_multiswipe_tap_to_multiswipe_delay_summary">
+        <translation locale="en">Merge preceding letter taps into a following 2-finger MultiSwipe (e.g. tap "ex" + swipe "ample"). Lower or set to 0 if tapped words merge into your next MultiSwipe.</translation>
         </string>
     <string name="gboard_patches_multiswipe_spacebar_timer_indicator_title">
         <translation locale="en">Spacebar timer indicator</translation>

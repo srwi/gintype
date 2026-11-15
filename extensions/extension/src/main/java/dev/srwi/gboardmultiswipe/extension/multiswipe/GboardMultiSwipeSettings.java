@@ -17,6 +17,8 @@ public final class GboardMultiSwipeSettings {
     public static final String PREF_KEY_AUTO_SPACE_DELAY_MS = "pref_multiswipe_auto_space_delay_ms";
     public static final String PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS =
             "pref_multiswipe_single_touch_combine_delay_ms";
+    public static final String PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS =
+            "pref_multiswipe_tap_to_multiswipe_delay_ms";
     public static final String PREF_KEY_SPACEBAR_TIMER_INDICATOR =
             "pref_multiswipe_spacebar_timer_indicator";
     public static final String PREF_KEY_BEAM_WIDTH = "pref_multiswipe_beam_width";
@@ -33,6 +35,9 @@ public final class GboardMultiSwipeSettings {
     public static final int MIN_SINGLE_TOUCH_COMBINE_DELAY_MS = 0;
     public static final int MAX_SINGLE_TOUCH_COMBINE_DELAY_MS = 500;
     public static final int DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS = 150;
+    public static final int MIN_TAP_TO_MULTISWIPE_DELAY_MS = 0;
+    public static final int MAX_TAP_TO_MULTISWIPE_DELAY_MS = 2000;
+    public static final int DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS = 750;
     public static final boolean DEFAULT_SPACEBAR_TIMER_INDICATOR = false;
     public static final int MIN_BEAM_WIDTH = 32;
     public static final int MAX_BEAM_WIDTH = 1024;
@@ -101,6 +106,10 @@ public final class GboardMultiSwipeSettings {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS);
         }
+        if (!preferences.contains(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putInt(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS, DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
+        }
         if (!preferences.contains(PREF_KEY_SPACEBAR_TIMER_INDICATOR)) {
             if (editor == null) editor = preferences.edit();
             editor.putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR);
@@ -139,6 +148,7 @@ public final class GboardMultiSwipeSettings {
                     .putBoolean(PREF_KEY_AUTO_SPACE_BEFORE_WORD, DEFAULT_AUTO_SPACE_BEFORE_WORD)
                     .putInt(PREF_KEY_AUTO_SPACE_DELAY_MS, DEFAULT_AUTO_SPACE_DELAY_MS)
                     .putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS)
+                    .putInt(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS, DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS)
                     .putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR)
                     .putInt(PREF_KEY_BEAM_WIDTH, DEFAULT_BEAM_WIDTH)
                     .putFloat(PREF_KEY_FREQ_WEIGHT_FLOOR, DEFAULT_FREQ_WEIGHT_FLOOR)
@@ -234,6 +244,27 @@ public final class GboardMultiSwipeSettings {
     public static boolean writeSingleTouchCombineDelayMs(SharedPreferences preferences, int delayMs) {
         return writeInt(preferences, PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS,
                 delayMs, MIN_SINGLE_TOUCH_COMBINE_DELAY_MS, MAX_SINGLE_TOUCH_COMBINE_DELAY_MS);
+    }
+
+    public static int readTapToMultiSwipeDelayMs(Context context) {
+        try {
+            SharedPreferences preferences = resolvePreferences(context);
+            return readTapToMultiSwipeDelayMs(preferences);
+        } catch (Throwable ignored) {
+            return DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS;
+        }
+    }
+
+    public static int readTapToMultiSwipeDelayMs(SharedPreferences preferences) {
+        return readInt(preferences, PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS,
+                DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                MIN_TAP_TO_MULTISWIPE_DELAY_MS,
+                MAX_TAP_TO_MULTISWIPE_DELAY_MS);
+    }
+
+    public static boolean writeTapToMultiSwipeDelayMs(SharedPreferences preferences, int delayMs) {
+        return writeInt(preferences, PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS,
+                delayMs, MIN_TAP_TO_MULTISWIPE_DELAY_MS, MAX_TAP_TO_MULTISWIPE_DELAY_MS);
     }
 
     public static int readBeamWidth(SharedPreferences preferences) {

@@ -1022,9 +1022,12 @@ public final class GboardMultiSwipeRuntime {
         boolean doubleSpacePeriodEnabled = readDoubleSpacePeriodEnabled(context);
         boolean autoSpaceBeforeWord = (context != null)
                 && GboardMultiSwipeSettings.isAutoSpaceBeforeWord(context);
+        int tapToMultiSwipeDelayMs = (context != null)
+                ? GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(context)
+                : GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS;
         return new MultiSwipeWordSession.SettingsSnapshot(
                 enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs,
-                doubleSpacePeriodEnabled, autoSpaceBeforeWord);
+                doubleSpacePeriodEnabled, autoSpaceBeforeWord, tapToMultiSwipeDelayMs);
     }
 
     private static boolean readDoubleSpacePeriodEnabled(Context context) {

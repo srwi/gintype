@@ -32,6 +32,7 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     private static final String TAG = "GboardPatches";
     private static final int AUTO_SPACE_DELAY_STEP_MS = 25;
     private static final int COMBINE_DELAY_STEP_MS = 10;
+    private static final int TAP_TO_MULTISWIPE_DELAY_STEP_MS = 25;
     private static final int BEAM_WIDTH_STEP = 16;
     private static final float FREQ_WEIGHT_FLOOR_STEP = 0.01f;
     private static final float GEO_EXPONENT_STEP = 0.05f;
@@ -69,6 +70,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     private final String combineDelayTitle;
     private final String combineDelaySummary;
     private final String combineDelayOffLabel;
+    private final String tapToMultiSwipeDelayTitle;
+    private final String tapToMultiSwipeDelaySummary;
     private final String spacebarTimerIndicatorTitle;
     private final String spacebarTimerIndicatorSummary;
     private final String defaultValueTemplate;
@@ -132,6 +135,10 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
         combineDelayTitle = text(context, R.string.gboard_patches_multiswipe_combine_delay_title);
         combineDelaySummary = text(context, R.string.gboard_patches_multiswipe_combine_delay_summary);
         combineDelayOffLabel = text(context, R.string.gboard_patches_multiswipe_combine_delay_off);
+        tapToMultiSwipeDelayTitle = text(
+                context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_title);
+        tapToMultiSwipeDelaySummary = text(
+                context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_summary);
         spacebarTimerIndicatorTitle = text(
                 context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_title);
         spacebarTimerIndicatorSummary = text(
@@ -217,6 +224,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                     GboardMultiSwipeSettings.readAutoSpaceBeforeWord(preferences);
             int autoSpaceDelayMs = GboardMultiSwipeSettings.readAutoSpaceDelayMs(preferences);
             int combineDelayMs = GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(preferences);
+            int tapToMultiSwipeDelayMs =
+                    GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(preferences);
             boolean spacebarTimerIndicatorEnabled =
                     GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(preferences);
             int beamWidth = GboardMultiSwipeSettings.readBeamWidth(preferences);
@@ -269,7 +278,18 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                     autoSpaceBeforeWordTitle,
                     autoSpaceBeforeWordSummary,
                     autoSpaceBeforeWord,
-                    value -> GboardMultiSwipeSettings.writeAutoSpaceBeforeWord(preferences, value));
+                    value -> GboardMultiSwipeSettings.writeAutoSpaceBeforeWord(preferences, value),
+                    tapToMultiSwipeDelayTitle,
+                    tapToMultiSwipeDelaySummary,
+                    formatTapToMultiSwipeDelayLabel(tapToMultiSwipeDelayMs),
+                    () -> showIntSliderDialog(
+                            host, tapToMultiSwipeDelayTitle, tapToMultiSwipeDelaySummary,
+                            GboardMultiSwipeSettings.MIN_TAP_TO_MULTISWIPE_DELAY_MS,
+                            GboardMultiSwipeSettings.MAX_TAP_TO_MULTISWIPE_DELAY_MS,
+                            TAP_TO_MULTISWIPE_DELAY_STEP_MS,
+                            GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                            tapToMultiSwipeDelayMs, this::formatTapToMultiSwipeDelayLabel,
+                            v -> GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(preferences, v)));
 
             List<GboardPatchesSettingsContract.Row> tuningRows = new ArrayList<>(4);
             tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -742,6 +762,16 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
         return String.format(Locale.US, delayValueTemplate, delayMs);
     }
 
+    private String formatTapToMultiSwipeDelayLabel(int delayMs) {
+        if (delayMs == 0) {
+            return combineDelayOffLabel;
+        }
+        if (delayMs == GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS) {
+            return String.format(Locale.US, delayValueDefaultTemplate, delayMs);
+        }
+        return String.format(Locale.US, delayValueTemplate, delayMs);
+    }
+
     private String formatBeamWidthLabel(int beamWidth) {
         String num = Integer.toString(beamWidth);
         if (beamWidth == GboardMultiSwipeSettings.DEFAULT_BEAM_WIDTH) {
@@ -854,7 +884,48 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             boolean autoSpaceBeforeWord,
             GboardPatchesSettingsContract.ToggleAction onToggleAutoSpaceBeforeWord
     ) {
-        List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(6);
+        return buildBehaviorRows(
+                enabledTitle, enabledSummary, enabled, onToggleEnabled,
+                autoSpaceTitle, autoSpaceSummary, autoSpaceEnabled, onToggleAutoSpace,
+                delayTitle, delaySummary, delayValueLabel, onSelectDelay,
+                combineDelayTitle, combineDelaySummary, combineValueLabel, onSelectCombineDelay,
+                spacebarTimerTitle, spacebarTimerSummary, spacebarTimerEnabled, onToggleSpacebarTimer,
+                autoSpaceBeforeWordTitle, autoSpaceBeforeWordSummary, autoSpaceBeforeWord,
+                onToggleAutoSpaceBeforeWord,
+                null, null, null, null);
+    }
+
+    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
+            String enabledTitle,
+            String enabledSummary,
+            boolean enabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
+            String autoSpaceTitle,
+            String autoSpaceSummary,
+            boolean autoSpaceEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
+            String delayTitle,
+            String delaySummary,
+            String delayValueLabel,
+            Runnable onSelectDelay,
+            String combineDelayTitle,
+            String combineDelaySummary,
+            String combineValueLabel,
+            Runnable onSelectCombineDelay,
+            String spacebarTimerTitle,
+            String spacebarTimerSummary,
+            boolean spacebarTimerEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer,
+            String autoSpaceBeforeWordTitle,
+            String autoSpaceBeforeWordSummary,
+            boolean autoSpaceBeforeWord,
+            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpaceBeforeWord,
+            String tapToMultiSwipeDelayTitle,
+            String tapToMultiSwipeDelaySummary,
+            String tapToMultiSwipeValueLabel,
+            Runnable onSelectTapToMultiSwipeDelay
+    ) {
+        List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(7);
         behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
                 enabledTitle,
                 enabledSummary,
@@ -888,6 +959,14 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                     combineValueLabel,
                     enabled,
                     onSelectCombineDelay));
+            if (tapToMultiSwipeDelayTitle != null) {
+                behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                        tapToMultiSwipeDelayTitle,
+                        tapToMultiSwipeDelaySummary,
+                        tapToMultiSwipeValueLabel,
+                        enabled,
+                        onSelectTapToMultiSwipeDelay));
+            }
             if (spacebarTimerTitle != null) {
                 behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
                         spacebarTimerTitle,

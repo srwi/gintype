@@ -134,8 +134,8 @@ flowchart TD
 #### `MS-08` — Passive Pre-Swipe Tap Prefix Promotion & Baseline Rollback
 - **Rule:** Pure-letter tap prefixes (including multi-touch rollover taps) followed by a MultiSwipe swipe combine into a single MultiSwipe word, rolling back the prefix characters already inserted by stock Gboard.
 - **Timing & Capacity:**
-  - When `autoSpaceEnabled == true`: gap must be `<= 750ms` (`MAX_PASSIVE_TAP_GAP_MS`) and token count `<= 8` (`MAX_PASSIVE_TAP_TOKENS`).
-  - When `autoSpaceEnabled == false`: time gap is **unlimited** and capacity extends to `KineticaConstants.MAX_WORD_LEN` (`40`).
+  - When `autoSpaceEnabled == true`: active only when `pref_multiswipe_tap_to_multiswipe_delay_ms > 0` (default `750ms`, range `0..2000ms`), gap must be `<= tapToMultiSwipeDelayMs`, and token count `<= 8` (`MAX_PASSIVE_TAP_TOKENS`).
+  - When `autoSpaceEnabled == false`: time gap is **unlimited** (timeout setting ignored) and capacity extends to `KineticaConstants.MAX_WORD_LEN` (`40`).
 - **Guards & Rollback:**
   - Cleared immediately on any expired gap (when `autoSpaceEnabled == true`), non-letter `ACTION_DOWN` (Space, Enter, Backspace, punctuation), non-letter token (`sawNonLetterThisSession`), any non-MultiSwipe swipe, cursor navigation, or if the typed delta since `baselineText` exceeds `tokenCount + 2` or contains non-letter characters.
   - Rollback supports both exact prefix extension (`currentStr.startsWith(baseline)`) and `>= 256`-character sliding-window `InputConnection` snapshots (up to `32` extra chars).
@@ -244,8 +244,8 @@ flowchart TD
 
 #### `MS-19` — Settings Persistence, UI Visibility, Clamping & Trace Diagnostics
 - **Rule:** All MultiSwipe settings persist in Gboard shared preferences with strict range sanitization, defaults reset, conditional timeout UI visibility, and opt-in JSONL telemetry:
-  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceBeforeWord=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineDelayMs=150` `[0..500]`, `spacebarTimerIndicator=false`, `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
-  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space before next word (Gboard style)`, `Auto-space delay`, `Single-finger combine timeout`, and `Spacebar timer indicator` rows are hidden from the MultiSwipe settings screen because auto-space modes and timers do not apply when Auto-Space is off.
+  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceBeforeWord=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineDelayMs=150` `[0..500]`, `tapToMultiSwipeDelayMs=750` `[0..2000]`, `spacebarTimerIndicator=false`, `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
+  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space before next word (Gboard style)`, `Auto-space delay`, `Single-finger combine timeout`, `Tap-to-MultiSwipe timeout`, and `Spacebar timer indicator` rows are hidden from the MultiSwipe settings screen because auto-space modes and timers do not apply when Auto-Space is off.
   - **Trace Logging:** Disabled by default. When enabled, emits `geom` (once per unique geometry hash), `word`, `pass` (skipped stock gestures), and `commit` JSONL records to logcat (`GboardMultiSwipeTrace`) and rolling `multiswipe_trace.jsonl` files, exportable by trailing minute window (`1..1440`, or `0` for all) while retaining referenced `geom` headers.
 - **Implementation:** `GboardMultiSwipeSettings`, `GboardMultiSwipeSettingsFeature`, `GboardMultiSwipeTraceLogger`.
 
