@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import android.content.SharedPreferences;
+import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -138,6 +139,47 @@ public class GboardMultiSwipeSettingsTest {
         assertEquals(600, KineticaConstants.beamMaxAttemptsForWidth(256));
         assertEquals(900, KineticaConstants.beamMaxAttemptsForWidth(384));
         assertEquals(1200, KineticaConstants.beamMaxAttemptsForWidth(512));
+    }
+
+    @Test
+    public void persistsAndResetsBackspaceModePreference() {
+        InMemorySharedPreferences prefs = new InMemorySharedPreferences();
+
+        assertEquals(GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD,
+                GboardMultiSwipeSettings.readBackspaceMode(prefs));
+
+        GboardMultiSwipeSettings.ensureDefaults(prefs);
+        assertTrue(prefs.contains(GboardMultiSwipeSettings.PREF_KEY_BACKSPACE_MODE));
+        assertEquals(GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD,
+                GboardMultiSwipeSettings.readBackspaceMode(prefs));
+
+        assertTrue(GboardMultiSwipeSettings.writeBackspaceMode(
+                prefs, GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT));
+        assertEquals(GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT,
+                GboardMultiSwipeSettings.readBackspaceMode(prefs));
+
+        assertTrue(GboardMultiSwipeSettings.writeBackspaceMode(prefs, "invalid_mode"));
+        assertEquals(GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD,
+                GboardMultiSwipeSettings.readBackspaceMode(prefs));
+
+        List<GboardPatchesSettingsContract.Row> rowsAutoOff =
+                GboardMultiSwipeSettingsFeature.buildBehaviorRows(
+                        "Enable", "Summary", true, v -> {},
+                        "AutoSpace", "Summary", false, v -> {},
+                        "Delay", "Summary", "300 ms", () -> {},
+                        "Combine", "Summary", "150 ms", () -> {},
+                        "Timer", "Summary", false, v -> {},
+                        "Before", "Summary", true, v -> {},
+                        "TapDelay", "Summary", "750 ms", () -> {},
+                        "Backspace behavior", "Summary", "Delete whole word (Default)", () -> {});
+        assertEquals(3, rowsAutoOff.size());
+        assertEquals("Backspace behavior", rowsAutoOff.get(2).getTitle());
+
+        assertTrue(GboardMultiSwipeSettings.writeBackspaceMode(
+                prefs, GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT));
+        assertTrue(GboardMultiSwipeSettings.resetToDefaults(prefs));
+        assertEquals(GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD,
+                GboardMultiSwipeSettings.readBackspaceMode(prefs));
         assertEquals(2400, KineticaConstants.beamMaxAttemptsForWidth(1024));
         assertEquals(KineticaConstants.MAX_EMIT_ATTEMPTS,
                 KineticaConstants.beamMaxAttemptsForWidth(4096));

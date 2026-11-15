@@ -160,7 +160,7 @@ flowchart TD
 - **Details:**
   - Cancels any pending autospace timer, preserves `wordTokens`, keeps the MultiSwipe trail accent active, appends the new stroke's tokens, and re-decodes the full `wordTokens` buffer (retaining all `wordTokens` and the previous displayed match if `0` candidates are returned).
   - Displays the updated top candidate as live composing text (`ic.setComposingText(word, 1)`).
-  - Touching down outside the letter area (Space, Enter, Backspace, Shift, punctuation) or navigating in the text field immediately breaks continuation and clears the word buffer.
+  - Touching down outside the letter area (Space, Enter, Shift, punctuation) or navigating in the text field immediately breaks continuation and clears the word buffer. A short Backspace tap in `last_input` mode (`MS-21`) keeps `multiswipeWordActive` active as long as at least one `SWIPE` token remains after removing the latest-started token.
 - **Implementation:** `MultiSwipeWordSession.onActionDown`, `GboardMultiSwipeRuntime.onGestureEventEntry`, `previewWordToInputConnection`.
 
 ---
@@ -187,6 +187,7 @@ flowchart TD
     - If the user taps Spacebar once after an autospace (`autospaceInserted == true`), the auto-inserted space is **kept** so multiple spaces can still be typed normally (`"word  "`, `"word   "`). However, if the user performs a quick second Spacebar tap within `500ms` (`DOUBLE_SPACE_PERIOD_TIMEOUT_MS`) and Gboard's own `enable_double_space_period` preference is enabled (default `true`), MultiSwipe replaces the two trailing spaces before the second tap (`"  "`) with `"."` on `ACTION_DOWN` right before Gboard inserts its space, yielding `". "` just like native double-space-period. When `enable_double_space_period` is disabled, double-tapping Spacebar inserts spaces normally without inserting a period.
     - `autospaceInserted` is cleared on any subsequent character/Space `ACTION_DOWN` or if the editor text changed away from `autospaceSnapshot`.
 - **When `autoSpaceEnabled == false`:** No autospace timer is started (for either MultiSwipe or single-finger stock swipes), no trailing space is appended, and `autospaceInserted` remains `false`.
+- **Single-Word Commit Undo Tracking (`MS-21`):** When `finalizeAutospace` commits a MultiSwipe word, MultiSwipe retains an undo record for that single committed word (exact post-commit snapshot, word length + any trailing autospace) until the next non-Backspace key press, cursor/text change, or `MS-21` Backspace consumption.
 - **Implementation:** `MultiSwipeWordSession.finalizeAutospace`, `MultiSwipeWordSession.finalizeStockSwipeAutospace`, `GboardMultiSwipeRuntime.finalizeComposingAndAutospace`, `MultiSwipeGeometry.NO_SPACE_BEFORE`.
 
 #### `MS-13` — Compound Word Attachment & Lowercasing Strictly After Backspace
@@ -201,6 +202,7 @@ flowchart TD
   - **Cursor Repositioning & Spacebar Swipe:** Moving the cursor in the text field (no Backspace key press) or swiping on the Spacebar (`isSpaceKey == true`) does **not** arm compound attachment — when `autoSpaceEnabled == true`, a normal leading space is inserted (e.g., `"Hallo schöne Welt"`), and when `autoSpaceEnabled == false`, initial casing is **not** forced lowercase.
   - Pressing Space or punctuation clears any armed Backspace attachment immediately; if text advances past the post-Backspace baseline via unrelated stock typing without buffer promotion, armed attachment also resets.
   - When armed (`attachingAfterBackspace`), MultiSwipe suppresses sentence-start capitalization (`capitalizeFirst = false`) and lowercases the first character (`lowercaseFirstChar`) of both `bestWord` and every entry in `alternativeWords`.
+  - When `MS-21` deletes a whole MultiSwipe word, any leading space that preceded the word (e.g., `"Hallo "` before `"Welt"`) remains intact, so `MS-13` does not trigger unless the user explicitly presses Backspace again to delete that space back onto a letter/digit stem.
 - **Implementation:** `MultiSwipeWordSession` (`didDeleteTrailingChars`, `isAttachingAfterDeletion`, `lowercaseFirstChar`), `GboardMultiSwipeRuntime`, `MultiSwipeGeometry.isSpaceKeyAt`.
 
 #### `MS-14` — Sentence-Start & Post-Newline Capitalization
@@ -239,13 +241,13 @@ flowchart TD
 - **Implementation:** `GboardMultiSwipeDictionaryManager`, `GboardLmReader`.
 
 #### `MS-18` — Thicc Top Bar Synchronization
-- **Rule:** Whenever MultiSwipe decodes a live preview or finalizes a committed word, it sends `(word, alternativeWords)` to `GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(...)` so Thicc Top Bar's vertical alternative wheels and sentence branch history remain synchronized with MultiSwipe words.
+- **Rule:** Whenever MultiSwipe decodes a live preview (including re-decoding after `MS-21` `last_input` Backspace) or finalizes a committed word, it sends `(word, alternativeWords)` to `GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(...)` so Thicc Top Bar's vertical alternative wheels and sentence branch history remain synchronized with MultiSwipe words.
 - **Implementation:** `GboardMultiSwipeRuntime`, `MultiSwipeWordSession`, `GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord`.
 
 #### `MS-19` — Settings Persistence, UI Visibility, Clamping & Trace Diagnostics
 - **Rule:** All MultiSwipe settings persist in Gboard shared preferences with strict range sanitization, defaults reset, conditional timeout UI visibility, and opt-in JSONL telemetry:
-  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceBeforeWord=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineDelayMs=150` `[0..500]`, `tapToMultiSwipeDelayMs=750` `[0..2000]`, `spacebarTimerIndicator=false`, `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
-  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space before next word (Gboard style)`, `Auto-space delay`, `Single-finger combine timeout`, `Tap-to-MultiSwipe timeout`, and `Spacebar timer indicator` rows are hidden from the MultiSwipe settings screen because auto-space modes and timers do not apply when Auto-Space is off.
+  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceBeforeWord=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineDelayMs=150` `[0..500]`, `tapToMultiSwipeDelayMs=750` `[0..2000]`, `spacebarTimerIndicator=false`, `backspaceMode="whole_word"` (`{"whole_word", "last_input"}`), `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
+  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space before next word (Gboard style)`, `Auto-space delay`, `Single-finger combine timeout`, `Tap-to-MultiSwipe timeout`, and `Spacebar timer indicator` rows are hidden from the MultiSwipe settings screen because auto-space modes and timers do not apply when Auto-Space is off. The `Backspace behavior` row remains visible regardless of `autoSpaceEnabled`.
   - **Trace Logging:** Disabled by default. When enabled, emits `geom` (once per unique geometry hash), `word`, `pass` (skipped stock gestures), and `commit` JSONL records to logcat (`GboardMultiSwipeTrace`) and rolling `multiswipe_trace.jsonl` files, exportable by trailing minute window (`1..1440`, or `0` for all) while retaining referenced `geom` headers.
 - **Implementation:** `GboardMultiSwipeSettings`, `GboardMultiSwipeSettingsFeature`, `GboardMultiSwipeTraceLogger`.
 
@@ -255,6 +257,18 @@ flowchart TD
   2. **Timer-Elapse Flash:** Whenever any active timer completes without being cancelled, the spacebar indicator briefly flashes and fades out smoothly.
   3. **Cancellation & Reset:** Any touch down (`ACTION_DOWN`), buffer clear, or gesture reset smoothly fades out an active fill without flashing.
 - **Implementation:** `SpacebarTimerOverlay`, `GboardMultiSwipeRuntime.resolveSpacebarTargetView`, `MultiSwipeWordSession` (`onScheduleAutospaceTimer`, `onCancelAutospaceTimer`, `onBufferTimerUpdated`).
+
+#### `MS-21` — Configurable MultiSwipe Backspace Behavior (`whole_word` vs. `last_input`)
+- **Rule:** A short tap on the Backspace key immediately following a MultiSwipe word (either while `multiswipeWordActive == true`, or immediately after `finalizeAutospace` while no other key press or cursor/text change has occurred) deletes according to `pref_multiswipe_backspace_mode`:
+  1. **Scope & Native Preservation:** Applies **only** to short single taps on Backspace (no drag/swipe-delete and no long-press repeat; holding or swiping from Backspace passes through 100% natively to stock Gboard). Does not apply to stock single-finger swipes (`MS-02`), nor after Space/Enter/punctuation has been pressed.
+  2. **`whole_word` Mode (Default):** Both while pending (`multiswipeWordActive == true`) and after commit, a single Backspace tap deletes the entire MultiSwipe word (including any trailing auto-space appended in `autoSpaceBeforeWord == false` mode). Any leading space that preceded the word (e.g., `"Hallo "` before `"Welt"`) is preserved. A subsequent Backspace tap deletes a single character normally.
+  3. **`last_input` Mode:**
+     - **While pending (`multiswipeWordActive == true`):** Removes the single token in `wordTokens` with the latest `startTimeMs` (tie-breaking on the most recently added token):
+       - If at least one `SWIPE` token remains: re-decodes `wordTokens`, updates the live composing preview, notifies Thicc Top Bar (`MS-18`), keeps `multiswipeWordActive = true`, and restarts the autospace timer if `autoSpaceEnabled == true`.
+       - If only `TAP` tokens remain (no `SWIPE` token left, e.g., after `MS-08` `"fn"` + `"ktion"`): restores the originally typed tap prefix (`"fn"`) as normal text, returns the tap tokens to `PassiveTapBuffer`, and ends `multiswipeWordActive`.
+       - If no tokens remain: deletes the entire word just like `whole_word`.
+     - **After commit (`multiswipeWordActive == false`):** Individual stroke tokens are no longer active; a single Backspace tap deletes the entire last committed MultiSwipe word just like `whole_word`.
+- **Implementation:** `MultiSwipeWordSession` (`onBackspaceTap`, `LastCommittedWordUndo`), `MultiSwipeGeometry.isBackspaceKeyAt`, `GboardMultiSwipeRuntime`, `GboardMultiSwipeSettings`.
 
 ---
 
@@ -282,6 +296,7 @@ flowchart TD
 | `MS-18` | `MultiSwipeWordSession` -> `LifecycleCallbacks.onWordDecoded` / `onWordCommitted` | `MultiSwipeIntegrationTest#notifiesThiccTopBarListenerOnPreviewAndCommit` | **Covered** |
 | `MS-19` | `GboardMultiSwipeSettings`, `GboardMultiSwipeSettingsFeature`, `GboardMultiSwipeTraceLogger` | `GboardMultiSwipeSettingsTest` (all tests, incl. hiding timeout rows when Auto-Space is off), `MultiSwipeDecoderTest#traceLoggerEmitsGeometryOnceAndSerializesRawTouchPointsAndCandidates` | **Covered** |
 | `MS-20` | `SpacebarTimerOverlay`, `MultiSwipeGeometry.getSpaceKey`, `MultiSwipeWordSession`, `GboardMultiSwipeRuntime` | `GboardMultiSwipeSettingsTest`, `MultiSwipeIntegrationTest#spacebarTimerIndicatorNotifiesBufferAndAutospaceTimers` | **Partial** (timer callbacks & settings covered; Android `ViewOverlay`/`ValueAnimator` rendering runtime-only) |
+| `MS-21` | `MultiSwipeWordSession` (`onBackspaceTap`, `LastCommittedWordUndo`), `MultiSwipeGeometry.isBackspaceKeyAt`, `GboardMultiSwipeRuntime`, `GboardMultiSwipeSettings` | `GboardMultiSwipeSettingsTest#persistsAndResetsBackspaceModePreference`, `MultiSwipeIntegrationTest#backspaceWholeWordModeDeletesPendingAndCommittedWordsPreservingLeadingSpace`, `backspaceLastInputModeRemovesLatestStartTimeTokenAndRestoresTapPrefix`, `backspaceAfterSpaceOrSecondTapDeletesSingleChar` | **Covered** |
 
 ---
 

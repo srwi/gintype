@@ -127,6 +127,8 @@ public final class GboardMultiSwipeRuntime {
     private static volatile Field softKeyViewDefField;
     private static volatile Field softKeyDefLabelsField;
     private static volatile Field softKeyDefDescField;
+    private static volatile Method basicHandlerTouchMethod;
+    private static volatile boolean suppressingBasicCancelReplay = false;
     private static final Set<Class<?>> probedClasses = Collections.synchronizedSet(new HashSet<>());
     private static volatile Context cachedContext = null;
     private static volatile Object cachedSampleKeyView = null;
@@ -260,6 +262,10 @@ public final class GboardMultiSwipeRuntime {
                 }
 
                 case MotionEvent.ACTION_MOVE: {
+                    if (session.core.pendingBackspaceTap && event.getPointerCount() > 0) {
+                        session.core.maybeCancelPendingBackspaceTap(
+                                event.getX(0), event.getY(0), eventTime, callbacks);
+                    }
                     int pointerCount = event.getPointerCount();
                     int historySize = event.getHistorySize();
 
@@ -428,13 +434,51 @@ public final class GboardMultiSwipeRuntime {
      * events intact for normal single-finger and rollover taps.
      */
     public static boolean shouldSuppressBasicMotionEventHandler(Object basicHandler, MotionEvent event) {
+        if (suppressingBasicCancelReplay) return false;
         if (!multiswipeEnabledCached || event == null) return false;
-        boolean isActionDown = (event.getActionMasked() == MotionEvent.ACTION_DOWN);
+        int actionMasked = event.getActionMasked();
+        boolean isActionDown = (actionMasked == MotionEvent.ACTION_DOWN);
         try {
             Object gestureHandler = lastGestureHandler;
             if (gestureHandler == null) return false;
             HandlerSession session = SESSIONS.get(gestureHandler);
             if (session == null) return false;
+            if (actionMasked == MotionEvent.ACTION_MOVE && session.core.pendingBackspaceTap
+                    && event.getPointerCount() > 0) {
+                Context context = extractContext(gestureHandler);
+                MultiSwipeWordSession.EditorAdapter editor = createEditorAdapter(gestureHandler, context);
+                String activeLang = GboardMultiSwipeDictionaryManager.detectActiveLanguage(context);
+                MultiSwipeWordSession.LifecycleCallbacks callbacks =
+                        createCallbacks(gestureHandler, session, context, activeLang, editor);
+                session.core.maybeCancelPendingBackspaceTap(
+                        event.getX(0), event.getY(0), event.getEventTime(), callbacks);
+            }
+            if (actionMasked == MotionEvent.ACTION_UP) {
+                if (session.core.shouldSuppressBasicUpForEvent(event.getEventTime())) {
+                    dispatchCancelToBasicHandler(basicHandler, event);
+                    return true;
+                }
+                if (session.core.pendingBackspaceTap && event.getPointerCount() > 0) {
+                    Context context = extractContext(gestureHandler);
+                    MultiSwipeWordSession.SettingsSnapshot settings = readSettingsSnapshot(context);
+                    MultiSwipeWordSession.EditorAdapter editor = createEditorAdapter(gestureHandler, context);
+                    String activeLang = GboardMultiSwipeDictionaryManager.detectActiveLanguage(context);
+                    MultiSwipeWordSession.DecodePort decoder = createDecodePort(context, session, activeLang);
+                    MultiSwipeWordSession.LifecycleCallbacks callbacks =
+                            createCallbacks(gestureHandler, session, context, activeLang, editor);
+                    if (session.core.tryConsumePendingBackspaceTap(
+                            event.getEventTime(),
+                            event.getX(0),
+                            event.getY(0),
+                            settings,
+                            editor,
+                            decoder,
+                            callbacks)) {
+                        dispatchCancelToBasicHandler(basicHandler, event);
+                        return true;
+                    }
+                }
+            }
             if (isActionDown && session.core.autospaceInserted) {
                 View basicView = extractKeyboardViewFromBasicHandler(basicHandler);
                 if (basicView == null) {
@@ -450,6 +494,35 @@ public final class GboardMultiSwipeRuntime {
             return session.core.shouldSuppressBasicHandler(multiswipeEnabledCached, isActionDown);
         } catch (Throwable ignored) {
             return false;
+        }
+    }
+
+    private static void dispatchCancelToBasicHandler(Object basicHandler, MotionEvent originalEvent) {
+        if (basicHandler == null || originalEvent == null) return;
+        MotionEvent cancelEvent = null;
+        try {
+            Method m = basicHandlerTouchMethod;
+            if (m == null) {
+                Class<?> cls = basicHandler.getClass();
+                try {
+                    m = cls.getDeclaredMethod("t", MotionEvent.class);
+                } catch (NoSuchMethodException ignored) {
+                    m = cls.getMethod("g", MotionEvent.class);
+                }
+                m.setAccessible(true);
+                basicHandlerTouchMethod = m;
+            }
+            cancelEvent = MotionEvent.obtain(originalEvent);
+            cancelEvent.setAction(MotionEvent.ACTION_CANCEL);
+            suppressingBasicCancelReplay = true;
+            m.invoke(basicHandler, cancelEvent);
+        } catch (Throwable t) {
+            Log.w(TAG, "dispatchCancelToBasicHandler failed", t);
+        } finally {
+            suppressingBasicCancelReplay = false;
+            if (cancelEvent != null) {
+                cancelEvent.recycle();
+            }
         }
     }
 
@@ -1025,9 +1098,13 @@ public final class GboardMultiSwipeRuntime {
         int tapToMultiSwipeDelayMs = (context != null)
                 ? GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(context)
                 : GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS;
+        String backspaceMode = (context != null)
+                ? GboardMultiSwipeSettings.readBackspaceMode(context)
+                : GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE;
         return new MultiSwipeWordSession.SettingsSnapshot(
                 enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs,
-                doubleSpacePeriodEnabled, autoSpaceBeforeWord, tapToMultiSwipeDelayMs);
+                doubleSpacePeriodEnabled, autoSpaceBeforeWord, tapToMultiSwipeDelayMs,
+                backspaceMode);
     }
 
     private static boolean readDoubleSpacePeriodEnabled(Context context) {
@@ -1124,6 +1201,46 @@ public final class GboardMultiSwipeRuntime {
                     ic.commitText(text, 1);
                 } catch (Throwable t) {
                     Log.w(TAG, "commitText failed", t);
+                }
+            }
+
+            @Override
+            public void deleteActiveComposingWord(int charCount) {
+                if (charCount <= 0) return;
+                InputConnection ic = resolveActiveInputConnection(handler, context);
+                if (ic == null) return;
+                try {
+                    ic.beginBatchEdit();
+                    try {
+                        ic.finishComposingText();
+                        ic.deleteSurroundingText(charCount, 0);
+                    } finally {
+                        ic.endBatchEdit();
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "deleteActiveComposingWord failed", t);
+                }
+            }
+
+            @Override
+            public void replaceComposingWithText(int composingCharCount, String replacement) {
+                InputConnection ic = resolveActiveInputConnection(handler, context);
+                if (ic == null) return;
+                try {
+                    ic.beginBatchEdit();
+                    try {
+                        ic.finishComposingText();
+                        if (composingCharCount > 0) {
+                            ic.deleteSurroundingText(composingCharCount, 0);
+                        }
+                        if (replacement != null && !replacement.isEmpty()) {
+                            ic.commitText(replacement, 1);
+                        }
+                    } finally {
+                        ic.endBatchEdit();
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "replaceComposingWithText failed", t);
                 }
             }
         };
@@ -1970,12 +2087,23 @@ public final class GboardMultiSwipeRuntime {
                         if (isSupportedGeometryChar(ch)) {
                             return ch;
                         }
+                    } else if (isBackspaceDescription(s)) {
+                        return MultiSwipeGeometry.KEY_CHAR_BACKSPACE;
                     }
                 }
             }
         } catch (Throwable ignored) {
         }
         return '\0';
+    }
+
+    private static boolean isBackspaceDescription(String desc) {
+        if (desc == null || desc.isEmpty()) return false;
+        String lower = desc.toLowerCase();
+        return lower.contains("delete")
+                || lower.contains("backspace")
+                || lower.contains("löschen")
+                || lower.contains("entfernen");
     }
 
     private static void collectLetterKeysFromViewHierarchy(

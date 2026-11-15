@@ -21,6 +21,11 @@ public final class GboardMultiSwipeSettings {
             "pref_multiswipe_tap_to_multiswipe_delay_ms";
     public static final String PREF_KEY_SPACEBAR_TIMER_INDICATOR =
             "pref_multiswipe_spacebar_timer_indicator";
+    public static final String PREF_KEY_BACKSPACE_MODE =
+            "pref_multiswipe_backspace_mode";
+    public static final String BACKSPACE_MODE_WHOLE_WORD = "whole_word";
+    public static final String BACKSPACE_MODE_LAST_INPUT = "last_input";
+    public static final String DEFAULT_BACKSPACE_MODE = BACKSPACE_MODE_WHOLE_WORD;
     public static final String PREF_KEY_BEAM_WIDTH = "pref_multiswipe_beam_width";
     public static final String PREF_KEY_FREQ_WEIGHT_FLOOR = "pref_multiswipe_freq_weight_floor";
     public static final String PREF_KEY_GEO_EXPONENT = "pref_multiswipe_geo_exponent";
@@ -114,6 +119,10 @@ public final class GboardMultiSwipeSettings {
             if (editor == null) editor = preferences.edit();
             editor.putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR);
         }
+        if (!preferences.contains(PREF_KEY_BACKSPACE_MODE)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putString(PREF_KEY_BACKSPACE_MODE, DEFAULT_BACKSPACE_MODE);
+        }
         if (!preferences.contains(PREF_KEY_BEAM_WIDTH)) {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_BEAM_WIDTH, DEFAULT_BEAM_WIDTH);
@@ -150,6 +159,7 @@ public final class GboardMultiSwipeSettings {
                     .putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS)
                     .putInt(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS, DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS)
                     .putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR)
+                    .putString(PREF_KEY_BACKSPACE_MODE, DEFAULT_BACKSPACE_MODE)
                     .putInt(PREF_KEY_BEAM_WIDTH, DEFAULT_BEAM_WIDTH)
                     .putFloat(PREF_KEY_FREQ_WEIGHT_FLOOR, DEFAULT_FREQ_WEIGHT_FLOOR)
                     .putFloat(PREF_KEY_GEO_EXPONENT, DEFAULT_GEO_EXPONENT)
@@ -265,6 +275,42 @@ public final class GboardMultiSwipeSettings {
     public static boolean writeTapToMultiSwipeDelayMs(SharedPreferences preferences, int delayMs) {
         return writeInt(preferences, PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS,
                 delayMs, MIN_TAP_TO_MULTISWIPE_DELAY_MS, MAX_TAP_TO_MULTISWIPE_DELAY_MS);
+    }
+
+    public static String readBackspaceMode(Context context) {
+        try {
+            SharedPreferences preferences = resolvePreferences(context);
+            return readBackspaceMode(preferences);
+        } catch (Throwable ignored) {
+            return DEFAULT_BACKSPACE_MODE;
+        }
+    }
+
+    public static String readBackspaceMode(SharedPreferences preferences) {
+        if (preferences == null) return DEFAULT_BACKSPACE_MODE;
+        try {
+            return sanitizeBackspaceMode(preferences.getString(PREF_KEY_BACKSPACE_MODE, DEFAULT_BACKSPACE_MODE));
+        } catch (ClassCastException ignored) {
+            return DEFAULT_BACKSPACE_MODE;
+        }
+    }
+
+    public static boolean writeBackspaceMode(SharedPreferences preferences, String mode) {
+        if (preferences == null) return false;
+        try {
+            return preferences.edit()
+                    .putString(PREF_KEY_BACKSPACE_MODE, sanitizeBackspaceMode(mode))
+                    .commit();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static String sanitizeBackspaceMode(String mode) {
+        if (BACKSPACE_MODE_LAST_INPUT.equals(mode)) {
+            return BACKSPACE_MODE_LAST_INPUT;
+        }
+        return BACKSPACE_MODE_WHOLE_WORD;
     }
 
     public static int readBeamWidth(SharedPreferences preferences) {

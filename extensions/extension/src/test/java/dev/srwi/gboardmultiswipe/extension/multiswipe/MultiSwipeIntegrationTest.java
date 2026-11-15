@@ -11,6 +11,7 @@ import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeWordSession.Edit
 import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeWordSession.LifecycleCallbacks;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeWordSession.SettingsSnapshot;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import org.junit.Before;
@@ -497,9 +498,8 @@ public class MultiSwipeIntegrationTest {
         DecodePort leisteDecoder = (tokens, prevWord) ->
                 Collections.singletonList(cand("Leiste", 1f));
 
-        // 1) Short text: swipe "Seiten" -> autospace -> Backspace -> Shift -> MultiSwipe "Leiste" = "Seitenleiste"
-        performTwoFingerSwipe(1000L, onSettings, seitenDecoder);
-        session.finalizeAutospace(true, editor, callbacks);
+        // 1) Short text: stock "Seiten " -> Backspace -> Shift -> MultiSwipe "Leiste" = "Seitenleiste" (MS-13)
+        editor.stockType("Seiten ");
         assertEquals("Seiten ", editor.text());
 
         session.onActionDown(0, backspaceX, backspaceY, 1400L, onSettings, editor, callbacks);
@@ -839,6 +839,187 @@ public class MultiSwipeIntegrationTest {
         session.finalizeAutospace(true, true, editor, callbacks);
         assertEquals("Es so Hallo so Welt", editor.text());
         assertFalse(session.autospaceInserted);
+    }
+
+    @Test
+    public void backspaceWholeWordModeDeletesPendingAndCommittedWordsPreservingLeadingSpace() {
+        SettingsSnapshot wholeWordSettings = new SettingsSnapshot(
+                true, true, 300, 150, true, true, 750,
+                GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD);
+        DecodePort halloDecoder = (tokens, prev) -> Collections.singletonList(cand("Hallo", -1f));
+        DecodePort weltDecoder = (tokens, prev) -> Collections.singletonList(cand("Welt", -1f));
+
+        // 1) Pending MultiSwipe word after an existing word: "Hallo" -> "Hallo Welt" -> Backspace -> "Hallo "
+        editor.stockType("Hallo");
+        performTwoFingerSwipe(1000L, wholeWordSettings, weltDecoder);
+        assertEquals("Hallo Welt", editor.text());
+        assertTrue(session.multiswipeWordActive);
+
+        performBackspaceTap(1150L, wholeWordSettings, weltDecoder);
+        assertEquals("Hallo ", editor.text());
+        assertFalse(session.multiswipeWordActive);
+
+        // Next MultiSwipe word after "Hallo " does NOT trigger MS-13 compound attachment
+        performTwoFingerSwipe(1500L, wholeWordSettings, weltDecoder);
+        assertEquals("Hallo Welt", editor.text());
+
+        // 2) Committed MultiSwipe word (after autospace timer expires): Backspace still deletes whole word
+        session.finalizeAutospace(true, true, editor, callbacks);
+        assertEquals("Hallo Welt", editor.text());
+        assertFalse(session.multiswipeWordActive);
+
+        performBackspaceTap(2000L, wholeWordSettings, weltDecoder);
+        assertEquals("Hallo ", editor.text());
+
+        // 3) After-word autospace mode (trailing space appended): deletes word + trailing space in one tap
+        editor.reset();
+        SettingsSnapshot afterWordSettings = new SettingsSnapshot(
+                true, true, 300, 150, true, false, 750,
+                GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD);
+        performTwoFingerSwipe(3000L, afterWordSettings, halloDecoder);
+        session.finalizeAutospace(true, false, editor, callbacks);
+        assertEquals("Hallo ", editor.text());
+        performBackspaceTap(3500L, afterWordSettings, halloDecoder);
+        assertEquals("", editor.text());
+    }
+
+    @Test
+    public void backspaceLastInputModeRemovesLatestStartTimeTokenAndRestoresTapPrefix() {
+        SettingsSnapshot lastInputSettings = new SettingsSnapshot(
+                true, false, 300, 150, true, true, 750,
+                GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT);
+        DecodePort multiDecoder = (tokens, prev) -> {
+            if (tokens.size() >= 2) {
+                return Arrays.asList(cand("Automütz", -1f), cand("Automobil", -2f));
+            }
+            return Arrays.asList(cand("Auto", -1f), cand("Autos", -2f));
+        };
+
+        // 1) Overlapping two-finger swipe where pointer 1 started later than pointer 0
+        session.onActionDown(0, letterAX, letterAY, 1000L, lastInputSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1040L, session.geometry);
+        session.onPointerDown(1, letterLX, letterLY, 1080L);
+        session.activePointers.get(1).addPoint(letterAX, letterAY, 1120L, session.geometry);
+        session.onPointerUp(0, letterSX, letterSY, 1130L, true, callbacks);
+        session.onActionUp(1150L, lastInputSettings, editor, multiDecoder, callbacks);
+        assertEquals("Automütz", editor.text());
+        assertTrue(session.multiswipeWordActive);
+
+        // Backspace removes only the later-started token (pointer 1) and keeps "Auto" active + updates Thicc Top Bar
+        performBackspaceTap(1250L, lastInputSettings, multiDecoder);
+        assertEquals("Auto", editor.text());
+        assertTrue(session.multiswipeWordActive);
+        assertEquals(1, session.wordTokens.size());
+        assertEquals("Auto", callbacks.decodedWords.get(callbacks.decodedWords.size() - 1));
+
+        // User can immediately continue swiping the remaining word (MS-10)
+        DecodePort bahnDecoder = (tokens, prev) -> Collections.singletonList(cand("Autobahn", -1f));
+        session.onActionDown(0, letterLX, letterLY, 1400L, lastInputSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterAX, letterAY, 1440L, session.geometry);
+        session.onActionUp(1460L, lastInputSettings, editor, bahnDecoder, callbacks);
+        assertEquals("Autobahn", editor.text());
+
+        // 2) After commit (with Auto-Space ON), last_input falls back to whole-word deletion (Gboard behavior)
+        SettingsSnapshot lastInputAutoOn = new SettingsSnapshot(
+                true, true, 300, 150, true, true, 750,
+                GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT);
+        editor.reset();
+        performTwoFingerSwipe(1800L, lastInputAutoOn, bahnDecoder);
+        assertEquals("Autobahn", editor.text());
+        session.finalizeAutospace(true, true, editor, callbacks);
+        assertFalse(session.multiswipeWordActive);
+        performBackspaceTap(2200L, lastInputAutoOn, bahnDecoder);
+        assertEquals("", editor.text());
+
+        // 3) Passive tap prefix ("fn") + swipe ("ktion"): Backspace restores "fn" instead of deleting everything
+        editor.reset();
+        DecodePort emptyDecoder = (tokens, prev) -> Collections.emptyList();
+        DecodePort funktionDecoder = (tokens, prev) -> Collections.singletonList(cand("Funktion", -1f));
+
+        session.onActionDown(0, letterAX, letterAY, 3000L, lastInputSettings, editor, callbacks);
+        session.onPointerUp(0, letterAX, letterAY, 3020L, true, callbacks);
+        session.onActionUp(3020L, lastInputSettings, editor, emptyDecoder, callbacks);
+        editor.stockType("f");
+
+        session.onActionDown(0, letterSX, letterSY, 3050L, lastInputSettings, editor, callbacks);
+        session.onPointerUp(0, letterSX, letterSY, 3070L, true, callbacks);
+        session.onActionUp(3070L, lastInputSettings, editor, emptyDecoder, callbacks);
+        editor.stockType("n");
+
+        performTwoFingerSwipe(3120L, lastInputSettings, funktionDecoder);
+        assertEquals("Funktion", editor.text());
+
+        // Remove the swipe? Wait: performTwoFingerSwipe added 2 tokens (tap+swipe), remove latest swipe -> tap+tap+tap?
+        // Actually in performTwoFingerSwipe pointer 0 is swipe and pointer 1 is tap (started +20ms later).
+        // Let's do a single-finger swipe after "fn" so only 1 swipe token is added on top of the 2 taps:
+        editor.reset();
+        session.onActionCancel(callbacks);
+        session.onActionDown(0, letterAX, letterAY, 4000L, lastInputSettings, editor, callbacks);
+        session.onPointerUp(0, letterAX, letterAY, 4020L, true, callbacks);
+        session.onActionUp(4020L, lastInputSettings, editor, emptyDecoder, callbacks);
+        editor.stockType("f");
+
+        session.onActionDown(0, letterSX, letterSY, 4050L, lastInputSettings, editor, callbacks);
+        session.onPointerUp(0, letterSX, letterSY, 4070L, true, callbacks);
+        session.onActionUp(4070L, lastInputSettings, editor, emptyDecoder, callbacks);
+        editor.stockType("n");
+
+        session.onActionDown(0, letterLX, letterLY, 4120L, lastInputSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterAX, letterAY, 4150L, session.geometry);
+        session.onActionUp(4170L, lastInputSettings, editor, funktionDecoder, callbacks);
+        assertEquals("Funktion", editor.text());
+
+        performBackspaceTap(4250L, lastInputSettings, funktionDecoder);
+        assertEquals("fn", editor.text());
+        assertFalse(session.multiswipeWordActive);
+        assertEquals(2, session.passiveTapBuffer.tokens.size());
+    }
+
+    @Test
+    public void backspaceAfterSpaceOrSecondTapDeletesSingleCharAndHoldPassesThrough() {
+        SettingsSnapshot wholeWordSettings = new SettingsSnapshot(
+                true, true, 300, 150, true, true, 750,
+                GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD);
+        DecodePort halloDecoder = (tokens, prev) -> Collections.singletonList(cand("Hallo", -1f));
+
+        // 1) Whole word deleted on 1st Backspace; 2nd Backspace falls back to Gboard (returns false)
+        editor.stockType("Hi");
+        performTwoFingerSwipe(1000L, wholeWordSettings, halloDecoder);
+        session.finalizeAutospace(true, true, editor, callbacks);
+        assertEquals("Hi Hallo", editor.text());
+
+        assertTrue(performBackspaceTap(1500L, wholeWordSettings, halloDecoder));
+        assertEquals("Hi ", editor.text());
+
+        assertFalse(performBackspaceTap(1650L, wholeWordSettings, halloDecoder));
+
+        // 2) Space after MultiSwipe word clears commit undo -> Backspace does NOT delete "Hallo"
+        editor.reset();
+        performTwoFingerSwipe(2000L, wholeWordSettings, halloDecoder);
+        session.finalizeAutospace(true, true, editor, callbacks);
+        session.onActionDown(0, spaceX, spaceY, 2400L, wholeWordSettings, editor, callbacks);
+        session.onActionCancel(callbacks);
+        editor.stockType(" ");
+        assertFalse(performBackspaceTap(2500L, wholeWordSettings, halloDecoder));
+
+        // 3) Long-press / hold (>350ms) on Backspace passes through to stock Gboard
+        editor.reset();
+        performTwoFingerSwipe(3000L, wholeWordSettings, halloDecoder);
+        session.onActionDown(0, backspaceX, backspaceY, 3100L, wholeWordSettings, editor, callbacks);
+        assertFalse(session.tryConsumePendingBackspaceTap(
+                3600L, backspaceX, backspaceY, wholeWordSettings, editor, halloDecoder, callbacks));
+    }
+
+    private boolean performBackspaceTap(
+            long downMs,
+            SettingsSnapshot settings,
+            DecodePort decoder
+    ) {
+        session.onActionDown(0, backspaceX, backspaceY, downMs, settings, editor, callbacks);
+        boolean handled = session.tryConsumePendingBackspaceTap(
+                downMs + 50L, backspaceX, backspaceY, settings, editor, decoder, callbacks);
+        session.onActionUp(downMs + 50L, settings, editor, decoder, callbacks);
+        return handled;
     }
 
     private static WordCandidate cand(String word, float score) {

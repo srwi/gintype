@@ -74,6 +74,10 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     private final String tapToMultiSwipeDelaySummary;
     private final String spacebarTimerIndicatorTitle;
     private final String spacebarTimerIndicatorSummary;
+    private final String backspaceModeTitle;
+    private final String backspaceModeSummary;
+    private final String backspaceModeWholeWordLabel;
+    private final String backspaceModeLastInputLabel;
     private final String defaultValueTemplate;
     private final String beamWidthTitle;
     private final String autoSpaceBeforeWordTitle;
@@ -143,6 +147,12 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                 context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_title);
         spacebarTimerIndicatorSummary = text(
                 context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_summary);
+        backspaceModeTitle = text(context, R.string.gboard_patches_multiswipe_backspace_mode_title);
+        backspaceModeSummary = text(context, R.string.gboard_patches_multiswipe_backspace_mode_summary);
+        backspaceModeWholeWordLabel = text(
+                context, R.string.gboard_patches_multiswipe_backspace_mode_whole_word);
+        backspaceModeLastInputLabel = text(
+                context, R.string.gboard_patches_multiswipe_backspace_mode_last_input);
         defaultValueTemplate = text(context, R.string.gboard_patches_multiswipe_value_default);
         beamWidthTitle = text(context, R.string.gboard_patches_multiswipe_beam_width_title);
         beamWidthSummary = text(context, R.string.gboard_patches_multiswipe_beam_width_summary);
@@ -228,6 +238,7 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                     GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(preferences);
             boolean spacebarTimerIndicatorEnabled =
                     GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(preferences);
+            String backspaceMode = GboardMultiSwipeSettings.readBackspaceMode(preferences);
             int beamWidth = GboardMultiSwipeSettings.readBeamWidth(preferences);
             float freqWeightFloor = GboardMultiSwipeSettings.readFreqWeightFloor(preferences);
             float geoExponent = GboardMultiSwipeSettings.readGeoExponent(preferences);
@@ -289,7 +300,11 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                             TAP_TO_MULTISWIPE_DELAY_STEP_MS,
                             GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
                             tapToMultiSwipeDelayMs, this::formatTapToMultiSwipeDelayLabel,
-                            v -> GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(preferences, v)));
+                            v -> GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(preferences, v)),
+                    backspaceModeTitle,
+                    backspaceModeSummary,
+                    formatBackspaceModeLabel(backspaceMode),
+                    () -> showBackspaceModeSelector(host, preferences, backspaceMode));
 
             List<GboardPatchesSettingsContract.Row> tuningRows = new ArrayList<>(4);
             tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -612,6 +627,37 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
         });
     }
 
+    private void showBackspaceModeSelector(
+            GboardPatchesSettingsContract.FeatureHost host,
+            SharedPreferences preferences,
+            String currentMode
+    ) {
+        String[] labels = {backspaceModeWholeWordLabel, backspaceModeLastInputLabel};
+        String[] values = {
+                GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD,
+                GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT
+        };
+        GboardPatchesSettingsContract.showChoiceDialog(
+                host,
+                backspaceModeTitle,
+                labels,
+                values,
+                GboardMultiSwipeSettings.sanitizeBackspaceMode(currentMode),
+                null,
+                null,
+                choice -> {
+                    GboardMultiSwipeSettings.writeBackspaceMode(preferences, choice);
+                    GboardPatchesSettingsContract.refresh(host);
+                });
+    }
+
+    private String formatBackspaceModeLabel(String mode) {
+        if (GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT.equals(mode)) {
+            return backspaceModeLastInputLabel;
+        }
+        return backspaceModeWholeWordLabel;
+    }
+
     private void showTraceExportMinutesSelector(GboardPatchesSettingsContract.FeatureHost host) {
         String[] labels = new String[PRESET_EXPORT_MINUTES.length + 1];
         String[] values = new String[PRESET_EXPORT_MINUTES.length + 1];
@@ -925,7 +971,54 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             String tapToMultiSwipeValueLabel,
             Runnable onSelectTapToMultiSwipeDelay
     ) {
-        List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(7);
+        return buildBehaviorRows(
+                enabledTitle, enabledSummary, enabled, onToggleEnabled,
+                autoSpaceTitle, autoSpaceSummary, autoSpaceEnabled, onToggleAutoSpace,
+                delayTitle, delaySummary, delayValueLabel, onSelectDelay,
+                combineDelayTitle, combineDelaySummary, combineValueLabel, onSelectCombineDelay,
+                spacebarTimerTitle, spacebarTimerSummary, spacebarTimerEnabled, onToggleSpacebarTimer,
+                autoSpaceBeforeWordTitle, autoSpaceBeforeWordSummary, autoSpaceBeforeWord,
+                onToggleAutoSpaceBeforeWord,
+                tapToMultiSwipeDelayTitle, tapToMultiSwipeDelaySummary, tapToMultiSwipeValueLabel,
+                onSelectTapToMultiSwipeDelay,
+                null, null, null, null);
+    }
+
+    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
+            String enabledTitle,
+            String enabledSummary,
+            boolean enabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
+            String autoSpaceTitle,
+            String autoSpaceSummary,
+            boolean autoSpaceEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
+            String delayTitle,
+            String delaySummary,
+            String delayValueLabel,
+            Runnable onSelectDelay,
+            String combineDelayTitle,
+            String combineDelaySummary,
+            String combineValueLabel,
+            Runnable onSelectCombineDelay,
+            String spacebarTimerTitle,
+            String spacebarTimerSummary,
+            boolean spacebarTimerEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer,
+            String autoSpaceBeforeWordTitle,
+            String autoSpaceBeforeWordSummary,
+            boolean autoSpaceBeforeWord,
+            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpaceBeforeWord,
+            String tapToMultiSwipeDelayTitle,
+            String tapToMultiSwipeDelaySummary,
+            String tapToMultiSwipeValueLabel,
+            Runnable onSelectTapToMultiSwipeDelay,
+            String backspaceModeTitle,
+            String backspaceModeSummary,
+            String backspaceModeValueLabel,
+            Runnable onSelectBackspaceMode
+    ) {
+        List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(8);
         behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
                 enabledTitle,
                 enabledSummary,
@@ -975,6 +1068,14 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                         spacebarTimerEnabled,
                         onToggleSpacebarTimer));
             }
+        }
+        if (backspaceModeTitle != null) {
+            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    backspaceModeTitle,
+                    backspaceModeSummary,
+                    backspaceModeValueLabel,
+                    enabled,
+                    onSelectBackspaceMode));
         }
         return behaviorRows;
     }

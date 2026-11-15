@@ -26,6 +26,7 @@ final class MultiSwipeWordSession {
     static final int MAX_PASSIVE_TAP_TOKENS = 8;
     static final long ROLLOVER_MULTI_TOUCH_WINDOW_MS = 220L;
     static final long DOUBLE_SPACE_PERIOD_TIMEOUT_MS = 500L;
+    static final long BACKSPACE_HOLD_TIMEOUT_MS = 280L;
 
     static final class SettingsSnapshot {
         final boolean enabled;
@@ -35,6 +36,7 @@ final class MultiSwipeWordSession {
         final boolean doubleSpacePeriodEnabled;
         final boolean autoSpaceBeforeWord;
         final int tapToMultiSwipeDelayMs;
+        final String backspaceMode;
 
         SettingsSnapshot(
                 boolean enabled,
@@ -43,7 +45,8 @@ final class MultiSwipeWordSession {
                 int singleTouchCombineDelayMs
         ) {
             this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
-                    true, false, GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
+                    true, false, GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                    GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
         }
 
         SettingsSnapshot(
@@ -55,7 +58,8 @@ final class MultiSwipeWordSession {
         ) {
             this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
                     doubleSpacePeriodEnabled, false,
-                    GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
+                    GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                    GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
         }
 
         SettingsSnapshot(
@@ -68,7 +72,8 @@ final class MultiSwipeWordSession {
         ) {
             this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
                     doubleSpacePeriodEnabled, autoSpaceBeforeWord,
-                    GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
+                    GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                    GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
         }
 
         SettingsSnapshot(
@@ -80,6 +85,21 @@ final class MultiSwipeWordSession {
                 boolean autoSpaceBeforeWord,
                 int tapToMultiSwipeDelayMs
         ) {
+            this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
+                    doubleSpacePeriodEnabled, autoSpaceBeforeWord, tapToMultiSwipeDelayMs,
+                    GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
+        }
+
+        SettingsSnapshot(
+                boolean enabled,
+                boolean autoSpaceEnabled,
+                int autoSpaceDelayMs,
+                int singleTouchCombineDelayMs,
+                boolean doubleSpacePeriodEnabled,
+                boolean autoSpaceBeforeWord,
+                int tapToMultiSwipeDelayMs,
+                String backspaceMode
+        ) {
             this.enabled = enabled;
             this.autoSpaceEnabled = autoSpaceEnabled;
             this.autoSpaceDelayMs = autoSpaceDelayMs;
@@ -87,6 +107,7 @@ final class MultiSwipeWordSession {
             this.doubleSpacePeriodEnabled = doubleSpacePeriodEnabled;
             this.autoSpaceBeforeWord = autoSpaceBeforeWord;
             this.tapToMultiSwipeDelayMs = tapToMultiSwipeDelayMs;
+            this.backspaceMode = GboardMultiSwipeSettings.sanitizeBackspaceMode(backspaceMode);
         }
     }
 
@@ -97,6 +118,15 @@ final class MultiSwipeWordSession {
         int previewWord(String word, String baselineBeforeText, boolean prependLeadingSpace);
         void commitFinishedWord(String word, boolean appendSpace);
         void commitText(String text);
+        default void deleteActiveComposingWord(int charCount) {
+            deleteCharsBeforeCursor(charCount);
+        }
+        default void replaceComposingWithText(int composingCharCount, String replacement) {
+            deleteCharsBeforeCursor(composingCharCount);
+            if (replacement != null && !replacement.isEmpty()) {
+                commitText(replacement);
+            }
+        }
     }
 
     interface DecodePort {
@@ -626,13 +656,30 @@ final class MultiSwipeWordSession {
     int lastPromotedPassiveCount = 0;
     boolean stockSwipeAutospacePending = false;
 
+    static final class LastCommittedWordUndo {
+        final String expectedSnapshot;
+        final int deleteCharCount;
+
+        LastCommittedWordUndo(String expectedSnapshot, int deleteCharCount) {
+            this.expectedSnapshot = expectedSnapshot;
+            this.deleteCharCount = deleteCharCount;
+        }
+    }
+
     String currentComposingWord = null;
     List<String> currentAlternativeWords = null;
+    String promotedTapPrefix = null;
     boolean autospaceInserted = false;
     String autospaceSnapshot = null;
     boolean autospaceTimerPending = false;
     long autospaceFirstSpaceTapDownTimeMs = 0L;
     boolean pendingLeadingSpaceBeforeNextWord = false;
+    LastCommittedWordUndo lastCommittedWordUndo = null;
+    boolean pendingBackspaceTap = false;
+    float backspaceDownX = 0f;
+    float backspaceDownY = 0f;
+    long backspaceDownTimeMs = 0L;
+    long suppressedBasicUpEventTimeMs = -1L;
 
     void resetGestureState() {
         activePointers.clear();
@@ -658,6 +705,7 @@ final class MultiSwipeWordSession {
         wordTokens.clear();
         currentComposingWord = null;
         currentAlternativeWords = null;
+        promotedTapPrefix = null;
         expectedSnapshotAfterPreview = null;
         multiswipeWordActive = false;
         leadingSpaceEvaluated = false;
@@ -667,6 +715,10 @@ final class MultiSwipeWordSession {
 
     float multiSwipeThresholdPx() {
         return Math.max(MULTI_TOUCH_SWIPE_THRESHOLD_PX, geometry.keyWidthPx * 0.24f);
+    }
+
+    float backspaceSwipeThresholdPx() {
+        return Math.max(MULTI_TOUCH_SWIPE_THRESHOLD_PX, geometry.keyWidthPx * 0.35f);
     }
 
     PointerTrack registerPointerDown(int pointerId, float x, float y, long timeMs) {
@@ -849,6 +901,31 @@ final class MultiSwipeWordSession {
 
         resetGestureState();
 
+        boolean downOnBackspace = !downOnLetter && activePointers.isEmpty() && geometry.isBackspaceKeyAt(x, y);
+        boolean canHandleBackspace = downOnBackspace
+                && ((multiswipeWordActive && currentComposingWord != null
+                        && !currentComposingWord.isEmpty() && !cursorNavigatedAway)
+                    || (!multiswipeWordActive && lastCommittedWordUndo != null
+                        && snapshotNow != null
+                        && snapshotNow.equals(lastCommittedWordUndo.expectedSnapshot)));
+
+        if (canHandleBackspace) {
+            pendingBackspaceTap = true;
+            backspaceDownX = x;
+            backspaceDownY = y;
+            backspaceDownTimeMs = eventTimeMs;
+            updateBackspaceCompoundStateOnActionDown(snapshotNow, downOnLetter, x, y);
+            lastObservedTextBeforeCursor = snapshotNow;
+            if (callbacks != null) {
+                callbacks.onTrailAccentChanged(multiswipeWordActive);
+            }
+            registerPointerDown(pointerId, x, y, eventTimeMs);
+            return false;
+        }
+
+        pendingBackspaceTap = false;
+        lastCommittedWordUndo = null;
+
         if (!isWordContinuing) {
             boolean hitSpaceOrPunct = !downOnLetter
                     && (geometry.isSpaceKeyAt(x, y) || geometry.isPunctuationAt(x, y));
@@ -931,6 +1008,7 @@ final class MultiSwipeWordSession {
     }
 
     void onPointerDown(int pointerId, float x, float y, long eventTimeMs) {
+        pendingBackspaceTap = false;
         registerPointerDown(pointerId, x, y, eventTimeMs);
         sawMultiTouch = true;
     }
@@ -974,6 +1052,17 @@ final class MultiSwipeWordSession {
             DecodePort decoder,
             LifecycleCallbacks callbacks
     ) {
+        if (pendingBackspaceTap || suppressedBasicUpEventTimeMs == eventTimeMs) {
+            PointerTrack track = activePointers.isEmpty()
+                    ? null : activePointers.values().iterator().next();
+            float upX = (track != null) ? track.lastX : backspaceDownX;
+            float upY = (track != null) ? track.lastY : backspaceDownY;
+            if (tryConsumePendingBackspaceTap(
+                    eventTimeMs, upX, upY, settings, editor, decoder, callbacks)) {
+                resetGestureState();
+                return;
+            }
+        }
         float swipeThreshold = multiSwipeThresholdPx();
         boolean isMultiSwipeGesture = sawMultiTouch
                 || multiswipeTakeoverActive
@@ -1068,12 +1157,20 @@ final class MultiSwipeWordSession {
             if (!wasMultiSwipeWordActive) {
                 int beforePromoted = wordTokens.size();
                 if (promoteSingleTouchCombine && !promoteMultiTouchPassive) {
+                    String rawPrefix = extractTypedPrefixSinceBaseline(
+                            singleTouchCombineBuffer.baselineText, textSnapshotAtActionDown);
                     textSnapshotAtActionDown = singleTouchCombineBuffer.promoteInto(
                             wordTokens, textSnapshotAtActionDown);
+                    promotedTapPrefix = (rawPrefix != null && !containsSwipeToken(wordTokens))
+                            ? rawPrefix : null;
                     passiveTapBuffer.clear();
                 } else {
+                    String rawPrefix = extractTypedPrefixSinceBaseline(
+                            passiveTapBuffer.baselineText, textSnapshotAtActionDown);
                     textSnapshotAtActionDown = passiveTapBuffer.promoteInto(
                             wordTokens, textSnapshotAtActionDown);
+                    promotedTapPrefix = (rawPrefix != null && !containsSwipeToken(wordTokens))
+                            ? rawPrefix : null;
                     singleTouchCombineBuffer.clear();
                 }
                 lastPromotedPassiveCount += Math.max(0, wordTokens.size() - beforePromoted);
@@ -1335,6 +1432,8 @@ final class MultiSwipeWordSession {
         suppressNextLeadingSpace = false;
         suppressLeadingSpaceBaseline = null;
         pendingLeadingSpaceBeforeNextWord = false;
+        pendingBackspaceTap = false;
+        lastCommittedWordUndo = null;
     }
 
     void finalizeAutospace(
@@ -1368,6 +1467,9 @@ final class MultiSwipeWordSession {
             autospaceSnapshot = autoSpaceEnabled ? afterSnapshot : null;
             if (afterSnapshot != null) {
                 lastObservedTextBeforeCursor = afterSnapshot;
+                lastCommittedWordUndo = new LastCommittedWordUndo(
+                        afterSnapshot,
+                        committedWord.length() + (appendSpace ? 1 : 0));
             }
             String prevWord = extractPreviousWord(
                     textSnapshotAtActionDown, afterSnapshot, lastCommittedWord);
@@ -1456,6 +1558,196 @@ final class MultiSwipeWordSession {
             autospaceInserted = false;
             autospaceSnapshot = null;
         }
+    }
+
+    // ---- MS-21: Configurable Backspace Handling ----
+
+    void maybeCancelPendingBackspaceTap(
+            float x,
+            float y,
+            long eventTimeMs,
+            LifecycleCallbacks callbacks
+    ) {
+        if (!pendingBackspaceTap) return;
+        float dx = x - backspaceDownX;
+        float dy = y - backspaceDownY;
+        float maxDist = backspaceSwipeThresholdPx();
+        if ((dx * dx + dy * dy) > (maxDist * maxDist)
+                || (eventTimeMs - backspaceDownTimeMs) > BACKSPACE_HOLD_TIMEOUT_MS) {
+            pendingBackspaceTap = false;
+            lastCommittedWordUndo = null;
+            clearWordBuffer(callbacks);
+        }
+    }
+
+    boolean shouldSuppressBasicUpForEvent(long eventTimeMs) {
+        return suppressedBasicUpEventTimeMs == eventTimeMs;
+    }
+
+    boolean tryConsumePendingBackspaceTap(
+            long eventTimeMs,
+            float x,
+            float y,
+            SettingsSnapshot settings,
+            EditorAdapter editor,
+            DecodePort decoder,
+            LifecycleCallbacks callbacks
+    ) {
+        if (suppressedBasicUpEventTimeMs == eventTimeMs) {
+            return true;
+        }
+        if (!pendingBackspaceTap) {
+            return false;
+        }
+        pendingBackspaceTap = false;
+
+        float dx = x - backspaceDownX;
+        float dy = y - backspaceDownY;
+        float maxDist = backspaceSwipeThresholdPx();
+        long elapsed = eventTimeMs - backspaceDownTimeMs;
+        if ((dx * dx + dy * dy) > (maxDist * maxDist) || elapsed < 0L || elapsed > BACKSPACE_HOLD_TIMEOUT_MS) {
+            lastCommittedWordUndo = null;
+            clearWordBuffer(callbacks);
+            return false;
+        }
+
+        String snapshotNow = (editor != null) ? editor.readTextBeforeCursorSnapshot() : null;
+
+        // Case 1: Active/pending MultiSwipe word in last_input mode
+        if (multiswipeWordActive
+                && settings != null
+                && GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT.equals(settings.backspaceMode)
+                && !wordTokens.isEmpty()) {
+            removeLatestStartedToken(wordTokens);
+            if (containsSwipeToken(wordTokens)) {
+                suppressedBasicUpEventTimeMs = eventTimeMs;
+                pendingBackspaceCheck = false;
+                suppressNextLeadingSpace = false;
+                suppressLeadingSpaceBaseline = null;
+                multiswipeTakeoverActive = true;
+                multiswipeWordActive = true;
+                lastTouchUpTimeMs = eventTimeMs;
+                if (callbacks != null) {
+                    callbacks.onTrailAccentChanged(true);
+                }
+                decodeAndPreview(settings, editor, decoder, callbacks, null, snapshotNow);
+                if (settings.autoSpaceEnabled && callbacks != null) {
+                    callbacks.onCancelAutospaceTimer();
+                    autospaceTimerPending = true;
+                    callbacks.onScheduleAutospaceTimer(settings.autoSpaceDelayMs);
+                } else {
+                    autospaceTimerPending = false;
+                }
+                return true;
+            }
+            if (!wordTokens.isEmpty() && currentComposingWord != null && !currentComposingWord.isEmpty()) {
+                // Only TAP tokens remain (MS-08 / MS-09): restore typed tap prefix into editor and PassiveTapBuffer.
+                String restoredPrefix = buildRestoredTapPrefix(wordTokens, promotedTapPrefix);
+                if (editor != null && restoredPrefix != null && !restoredPrefix.isEmpty()) {
+                    editor.replaceComposingWithText(currentComposingWord.length(), restoredPrefix);
+                }
+                List<MultiSwipeInputToken> remainingTaps = new ArrayList<>(wordTokens);
+                String baselineBeforeTaps = textSnapshotAtActionDown;
+                clearWordBuffer(callbacks);
+                if (baselineBeforeTaps != null) {
+                    passiveTapBuffer.clear();
+                    passiveTapBuffer.tokens.addAll(remainingTaps);
+                    passiveTapBuffer.baselineText = baselineBeforeTaps;
+                    passiveTapBuffer.lastUpTimeMs = eventTimeMs;
+                }
+                suppressedBasicUpEventTimeMs = eventTimeMs;
+                pendingBackspaceCheck = false;
+                suppressNextLeadingSpace = false;
+                suppressLeadingSpaceBaseline = null;
+                multiswipeTakeoverActive = false;
+                if (callbacks != null) {
+                    callbacks.onTrailAccentChanged(false);
+                }
+                if (editor != null) {
+                    lastObservedTextBeforeCursor = editor.readTextBeforeCursorSnapshot();
+                }
+                return true;
+            }
+            // Fall through to whole-word deletion when 0 tokens remain.
+        }
+
+        // Case 2: Whole-word deletion while pending (whole_word mode, or 1-token word in last_input mode)
+        if (multiswipeWordActive && currentComposingWord != null && !currentComposingWord.isEmpty()) {
+            if (editor != null) {
+                editor.deleteActiveComposingWord(currentComposingWord.length());
+            }
+            suppressedBasicUpEventTimeMs = eventTimeMs;
+            clearWordBuffer(callbacks);
+            lastCommittedWordUndo = null;
+            pendingLeadingSpaceBeforeNextWord = false;
+            pendingBackspaceCheck = false;
+            suppressNextLeadingSpace = false;
+            suppressLeadingSpaceBaseline = null;
+            multiswipeTakeoverActive = false;
+            if (callbacks != null) {
+                callbacks.onTrailAccentChanged(false);
+            }
+            if (editor != null) {
+                lastObservedTextBeforeCursor = editor.readTextBeforeCursorSnapshot();
+            }
+            return true;
+        }
+
+        // Case 3: Whole-word deletion of the immediately preceding committed MultiSwipe word
+        if (lastCommittedWordUndo != null
+                && snapshotNow != null
+                && snapshotNow.equals(lastCommittedWordUndo.expectedSnapshot)) {
+            if (editor != null && lastCommittedWordUndo.deleteCharCount > 0) {
+                editor.deleteCharsBeforeCursor(lastCommittedWordUndo.deleteCharCount);
+            }
+            suppressedBasicUpEventTimeMs = eventTimeMs;
+            lastCommittedWordUndo = null;
+            autospaceInserted = false;
+            autospaceSnapshot = null;
+            pendingLeadingSpaceBeforeNextWord = false;
+            pendingBackspaceCheck = false;
+            suppressNextLeadingSpace = false;
+            suppressLeadingSpaceBaseline = null;
+            if (editor != null) {
+                lastObservedTextBeforeCursor = editor.readTextBeforeCursorSnapshot();
+            }
+            return true;
+        }
+
+        lastCommittedWordUndo = null;
+        clearWordBuffer(callbacks);
+        return false;
+    }
+
+    private static void removeLatestStartedToken(List<MultiSwipeInputToken> tokens) {
+        if (tokens == null || tokens.isEmpty()) return;
+        int bestIdx = tokens.size() - 1;
+        long bestStart = tokens.get(bestIdx).startTimeMs;
+        for (int i = tokens.size() - 2; i >= 0; i--) {
+            long tStart = tokens.get(i).startTimeMs;
+            if (tStart > bestStart) {
+                bestStart = tStart;
+                bestIdx = i;
+            }
+        }
+        tokens.remove(bestIdx);
+    }
+
+    private static String buildRestoredTapPrefix(
+            List<MultiSwipeInputToken> tapTokens,
+            String savedPrefix
+    ) {
+        if (savedPrefix != null && savedPrefix.length() == tapTokens.size()) {
+            return savedPrefix;
+        }
+        StringBuilder sb = new StringBuilder(tapTokens.size());
+        for (int i = 0; i < tapTokens.size(); i++) {
+            MultiSwipeInputToken t = tapTokens.get(i);
+            if (t != null && t.character != '\0') {
+                sb.append(t.character);
+            }
+        }
+        return sb.toString();
     }
 
     // ---- Hook predicates (MS-06, MS-07, MS-17) ----

@@ -40,6 +40,7 @@ public final class MultiSwipeGeometry {
     }
 
     public static final String NO_SPACE_BEFORE = ".,!?;:)]}\u00bb\u2026";
+    public static final char KEY_CHAR_BACKSPACE = '\b';
 
     public boolean isPunctuationChar(char c) {
         return NO_SPACE_BEFORE.indexOf(c) >= 0;
@@ -74,7 +75,7 @@ public final class MultiSwipeGeometry {
 
         for (int i = 0; i < specs.size(); i++) {
             KeySpec spec = specs.get(i);
-            if (spec.character != '\0') {
+            if (spec.character != '\0' && spec.character != KEY_CHAR_BACKSPACE) {
                 allKeys.add(spec);
             }
             int idx = MultiSwipeAlphabet.charIndex(spec.character);
@@ -362,8 +363,34 @@ public final class MultiSwipeGeometry {
     public boolean isPunctuationAt(float px, float py) {
         for (int i = 0; i < nonLetterKeys.size(); i++) {
             KeySpec k = nonLetterKeys.get(i);
-            if (k.character != '\0' && k.character != ' '
+            if (k.character != '\0' && k.character != ' ' && k.character != KEY_CHAR_BACKSPACE
                     && !Character.isLetterOrDigit(k.character)
+                    && k.contains(px, py, 0f, 0f)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns true when {@code (px, py)} hits the Backspace/Delete key (explicitly tagged
+     * {@link #KEY_CHAR_BACKSPACE}, or fallback positional match on the right edge of the letter rows).
+     */
+    public boolean isBackspaceKeyAt(float px, float py) {
+        for (int i = 0; i < nonLetterKeys.size(); i++) {
+            KeySpec k = nonLetterKeys.get(i);
+            if (k.character == KEY_CHAR_BACKSPACE && k.contains(px, py, 0f, 0f)) {
+                return true;
+            }
+        }
+        float midX = midlinePx();
+        for (int i = 0; i < nonLetterKeys.size(); i++) {
+            KeySpec k = nonLetterKeys.get(i);
+            if (k.character == '\0'
+                    && !isSpaceKey(k)
+                    && k.centerX > midX
+                    && k.centerY >= minLetterY
+                    && k.centerY <= maxLetterY
                     && k.contains(px, py, 0f, 0f)) {
                 return true;
             }
