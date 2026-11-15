@@ -107,7 +107,10 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
+    private static final long SCROLL_ANIM_DURATION_MS = 180L;
+
     private ValueAnimator activeEntranceAnimator;
+    private ValueAnimator activeScrollAnimator;
     private ViewTreeObserver.OnPreDrawListener pendingPreDrawListener;
     private boolean pendingEntranceAnimation = false;
     private int pendingEntrancePrevWidth = 0;
@@ -483,6 +486,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 }
                 clearPendingPreDrawListener();
 
+                cancelScrollAnimation();
                 int targetScrollX = Math.max(0, containerWidth - barWidth);
                 scrollTo(targetScrollX, 0);
 
@@ -538,6 +542,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
         if (visibility != View.VISIBLE && getVisibility() == View.VISIBLE) {
             displayedColumnWords.clear();
             cancelEntranceAnimation();
+            cancelScrollAnimation();
         }
         super.setVisibility(visibility);
     }
@@ -577,9 +582,48 @@ public class ThiccTopBarView extends HorizontalScrollView {
             }
 
             int targetCenter = contentLayout.getLeft() + (target.getLeft() + target.getRight()) / 2;
-            int scrollX = Math.max(0, targetCenter - barWidth / 2);
-            smoothScrollTo(scrollX, 0);
+            int maxScrollX = Math.max(0, contentLayout.getWidth() - barWidth);
+            int scrollX = Math.max(0, Math.min(maxScrollX, targetCenter - barWidth / 2));
+            animateScrollTo(scrollX);
         });
+    }
+
+    private void cancelScrollAnimation() {
+        if (activeScrollAnimator != null) {
+            activeScrollAnimator.cancel();
+            activeScrollAnimator = null;
+        }
+    }
+
+    private void animateScrollTo(int targetScrollX) {
+        int startScrollX = getScrollX();
+        if (Math.abs(targetScrollX - startScrollX) <= 1) {
+            cancelScrollAnimation();
+            scrollTo(targetScrollX, 0);
+            return;
+        }
+        cancelScrollAnimation();
+        ValueAnimator animator = ValueAnimator.ofInt(startScrollX, targetScrollX);
+        animator.setDuration(SCROLL_ANIM_DURATION_MS);
+        animator.setInterpolator(new DecelerateInterpolator(1.5f));
+        animator.addUpdateListener(anim -> scrollTo((Integer) anim.getAnimatedValue(), 0));
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (activeScrollAnimator == animation) {
+                    activeScrollAnimator = null;
+                }
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                if (activeScrollAnimator == animation) {
+                    activeScrollAnimator = null;
+                }
+            }
+        });
+        activeScrollAnimator = animator;
+        animator.start();
     }
 
     public void clearHistorySelection() {
