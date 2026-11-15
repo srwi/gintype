@@ -260,14 +260,25 @@ public final class GboardThiccTopBarRuntime {
                 // Extract slot candidates directly from holderView slots
                 List<CandidateItem> items = ThiccTopBarGboardReflector.extractSlotCandidatesFromHolder(holderView, candidateListObj);
 
-                // Check if Gboard is in Undo state (e.g. after swipe-to-delete or revert auto-correct)
+                // Ignore Gboard's native Undo/restore candidate when Thicc Top Bar is active:
+                // sync the bar with the remaining text instead of dismissing Thicc Top Bar.
                 if (ThiccTopBarGboardReflector.isUndoActive(holderView, items)) {
-                    Log.i(TAG, "onCandidatesUpdated: Undo is active. Dismissing matrix bar and restoring native Undo UI.");
-                    SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
-                    hideJumpToEndArrow();
-                    barView.setVisibility(View.GONE);
-                    ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+                    if (ThiccTopBarTextHelper.isSentenceEnded(holderView) || ThiccTopBarTextHelper.isInputEmpty(holderView)) {
+                        SENTENCE_BUFFER.clear();
+                        hideJumpToEndArrow();
+                        barView.setVisibility(View.GONE);
+                        ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+                    } else {
+                        ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+                        if (!SENTENCE_BUFFER.isEmpty()) {
+                            showHistoryOnlyBar(holderView, barView);
+                        } else {
+                            hideJumpToEndArrow();
+                            barView.setVisibility(View.GONE);
+                            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+                        }
+                    }
                     return;
                 }
 
@@ -407,17 +418,6 @@ public final class GboardThiccTopBarRuntime {
                     return;
                 }
 
-                // Check if Gboard is in Undo state
-                if (ThiccTopBarGboardReflector.isUndoActive(holderView, Collections.emptyList())) {
-                    Log.i(TAG, "onCandidatesCleared: Undo is active. Dismissing matrix bar and restoring native Undo UI.");
-                    SENTENCE_BUFFER.clear();
-                    activeOriginalSuggestions = null;
-                    hideJumpToEndArrow();
-                    barView.setVisibility(View.GONE);
-                    ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
-                    return;
-                }
-
                 if (isHistorySelectionSessionActive(holderView, barView)) {
                     barView.setVisibility(View.VISIBLE);
                     ThiccTopBarGboardReflector.applyKeyboardBackground(barView, holderView);
@@ -546,16 +546,8 @@ public final class GboardThiccTopBarRuntime {
         ACTIVE_BARS.put(attachTarget, bar);
 
         final ThiccTopBarView finalBar = bar;
-        // Keep quick toggles suppressed and MatrixBar at front whenever MatrixBar is visible,
-        // UNLESS Gboard surfaces an Undo view!
+        // Keep quick toggles suppressed and MatrixBar at front whenever MatrixBar is visible.
         attachTarget.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (ThiccTopBarGboardReflector.isUndoViewActive(attachTarget)) {
-                if (finalBar.getVisibility() != View.GONE) {
-                    finalBar.setVisibility(View.GONE);
-                }
-                ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
-                return;
-            }
             if (finalBar.getVisibility() == View.VISIBLE) {
                 ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                 if (attachTarget.getChildCount() > 0 && attachTarget.getChildAt(attachTarget.getChildCount() - 1) != finalBar) {
@@ -566,13 +558,6 @@ public final class GboardThiccTopBarRuntime {
 
         // Watch for holderView visibility / layout changes
         holderView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (ThiccTopBarGboardReflector.isUndoViewActive(attachTarget)) {
-                if (finalBar.getVisibility() != View.GONE) {
-                    finalBar.setVisibility(View.GONE);
-                }
-                ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
-                return;
-            }
             if (finalBar.getVisibility() != View.VISIBLE
                     && ThiccTopBarGboardReflector.getHolderCandidateCount(holderView) == 0) {
                 ThiccTopBarGboardReflector.hideStaleCandidateSlots(holderView);
