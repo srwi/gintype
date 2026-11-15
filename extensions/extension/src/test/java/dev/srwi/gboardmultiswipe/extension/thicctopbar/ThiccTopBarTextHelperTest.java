@@ -1016,6 +1016,26 @@ public final class ThiccTopBarTextHelperTest {
         Assert.assertEquals("heute", bufSecondPara.getEntries().get(2).committedWord);
     }
 
+    @Test
+    public void syncSentenceBufferFromText_preservesCapitalizationOnSwappedWord() {
+        Map<String, List<String>> cache = new HashMap<>();
+        // Simulate lowercase cache entry from an earlier word, plus exact capitalized entry
+        cache.put("dass", Arrays.asList("das", "dass", "daß"));
+        cache.put("Dass", Arrays.asList("Das", "Dass", "Daß"));
+
+        ThiccTopBarSentenceBuffer buf = new ThiccTopBarSentenceBuffer();
+        TestInputConnection ic = new TestInputConnection("Dass ist gut", 12, 12);
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(ic, null, buf, cache);
+        Assert.assertEquals(Arrays.asList("Das", "Dass", "Daß"), buf.getEntries().get(0).alternatives);
+
+        // Even when only lowercase fallback exists in cache, TitleCase word preserves leading uppercase
+        Map<String, List<String>> lowercaseOnlyCache = new HashMap<>();
+        lowercaseOnlyCache.put("dass", Arrays.asList("das", "dass", "daß"));
+        ThiccTopBarSentenceBuffer bufFallback = new ThiccTopBarSentenceBuffer();
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(ic, null, bufFallback, lowercaseOnlyCache);
+        Assert.assertEquals(Arrays.asList("Das", "Dass", "Daß"), bufFallback.getEntries().get(0).alternatives);
+    }
+
     private static ThiccTopBarSentenceBuffer createSentenceBuffer(String... words) {
         ThiccTopBarSentenceBuffer buf = new ThiccTopBarSentenceBuffer();
         for (String w : words) {

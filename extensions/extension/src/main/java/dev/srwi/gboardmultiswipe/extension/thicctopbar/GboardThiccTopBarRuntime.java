@@ -912,21 +912,27 @@ public final class GboardThiccTopBarRuntime {
     static void cacheAlternativeGroup(List<String> words, String primaryWord) {
         if (words == null || words.isEmpty()) return;
         List<String> copy = new ArrayList<>(words);
-        String primaryKey = (primaryWord != null && !primaryWord.isEmpty()) ? primaryWord.toLowerCase() : null;
-        if (primaryKey != null) {
-            List<String> existing = WORD_ALTERNATIVES_CACHE.get(primaryKey);
-            if (copy.size() >= 2 || existing == null || existing.isEmpty()) {
-                WORD_ALTERNATIVES_CACHE.put(primaryKey, copy);
-            }
+        String primaryExact = (primaryWord != null && !primaryWord.isEmpty()) ? primaryWord : null;
+        String primaryKey = primaryExact != null ? primaryExact.toLowerCase() : null;
+        if (primaryExact != null) {
+            putAlternativeGroupIfBetter(primaryExact, copy, true);
+            putAlternativeGroupIfBetter(primaryKey, copy, true);
         }
         for (String w : words) {
             if (w == null || w.isEmpty()) continue;
+            putAlternativeGroupIfBetter(w, copy, copy.size() >= 2);
             String key = w.toLowerCase();
-            if (key.equals(primaryKey)) continue;
-            List<String> existing = WORD_ALTERNATIVES_CACHE.get(key);
-            if (existing == null || (existing.size() < 2 && copy.size() >= 2)) {
-                WORD_ALTERNATIVES_CACHE.put(key, copy);
+            if (!key.equals(primaryKey)) {
+                putAlternativeGroupIfBetter(key, copy, false);
             }
+        }
+    }
+
+    private static void putAlternativeGroupIfBetter(String key, List<String> copy, boolean overwriteMulti) {
+        if (key == null || key.isEmpty()) return;
+        List<String> existing = WORD_ALTERNATIVES_CACHE.get(key);
+        if (existing == null || existing.isEmpty() || (overwriteMulti && copy.size() >= 2) || (existing.size() < 2 && copy.size() >= 2)) {
+            WORD_ALTERNATIVES_CACHE.put(key, copy);
         }
     }
 

@@ -402,6 +402,18 @@ public final class ThiccTopBarTextHelper {
         return parts.hasWord() ? parts.word : word;
     }
 
+    private static boolean isTitleCaseWord(String word) {
+        if (word == null || word.isEmpty() || !Character.isUpperCase(word.charAt(0))) {
+            return false;
+        }
+        for (int i = 1; i < word.length(); i++) {
+            if (Character.isLowerCase(word.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static void syncSentenceBufferFromText(
             View view,
             String currentWord,
@@ -504,13 +516,25 @@ public final class ThiccTopBarTextHelper {
                 String prefix = parts.prefix;
                 String suffix = parts.suffix;
 
-                List<String> rawAlts = alternativesCache != null ? alternativesCache.get(baseWord.toLowerCase()) : null;
+                List<String> rawAlts = null;
+                boolean usedLowercaseFallback = false;
+                if (alternativesCache != null) {
+                    rawAlts = alternativesCache.get(baseWord);
+                    if (rawAlts == null || rawAlts.isEmpty()) {
+                        rawAlts = alternativesCache.get(baseWord.toLowerCase());
+                        usedLowercaseFallback = (rawAlts != null && !rawAlts.isEmpty());
+                    }
+                }
+                boolean preserveTitleCase = usedLowercaseFallback && isTitleCaseWord(baseWord);
                 List<String> formattedAlts = new ArrayList<>();
                 int selIdx = 0;
 
                 if (rawAlts != null && !rawAlts.isEmpty()) {
                     for (int a = 0; a < rawAlts.size(); a++) {
                         String rawAlt = rawAlts.get(a);
+                        if (preserveTitleCase && !rawAlt.isEmpty() && Character.isLowerCase(rawAlt.charAt(0))) {
+                            rawAlt = Character.toUpperCase(rawAlt.charAt(0)) + rawAlt.substring(1);
+                        }
                         formattedAlts.add(prefix + rawAlt + suffix);
                         if (rawAlt.equalsIgnoreCase(baseWord)) {
                             selIdx = a;
