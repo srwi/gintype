@@ -1,16 +1,8 @@
 package dev.srwi.gboardmultiswipe.extension.multiswipe;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.graphics.Typeface;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.LinearLayout;
-import android.widget.SeekBar;
-import android.widget.TextView;
 import dev.srwi.gboardmultiswipe.extension.R;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesFeatureAvailability;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesIcons;
@@ -24,8 +16,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Settings screen for MultiSwipe multi-finger swipe, auto-space, Kinetica decoder tuning,
- * and debug trace diagnostics.
+ * Settings screen for MultiSwipe multi-finger swipe, auto-space, and navigation to
+ * Kinetica algorithm and diagnostics sub-pages.
  */
 public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSettingsContract.Feature {
 
@@ -33,13 +25,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     private static final int AUTO_SPACE_DELAY_STEP_MS = 25;
     private static final int COMBINE_DELAY_STEP_MS = 10;
     private static final int TAP_TO_MULTISWIPE_DELAY_STEP_MS = 25;
-    private static final int BEAM_WIDTH_STEP = 16;
-    private static final float FREQ_WEIGHT_FLOOR_STEP = 0.01f;
-    private static final float GEO_EXPONENT_STEP = 0.05f;
-    private static final float BEAM_FREQ_WEIGHT_STEP = 0.05f;
-    private static final int[] PRESET_EXPORT_MINUTES = {5, 15, 30, 60, 180, 0};
-    private static final String VALUE_CUSTOM = "custom";
-    private static final float FLOAT_MATCH_EPS = 0.0005f;
+    private static final String SPACE_PLACEMENT_BEFORE = "before";
+    private static final String SPACE_PLACEMENT_AFTER = "after";
 
     private interface IntFormatter {
         String format(int value);
@@ -49,27 +36,31 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
         boolean save(int value);
     }
 
-    private interface FloatSaver {
-        boolean save(float value);
-    }
-
+    private final GboardKineticaSettingsFeature kineticaFeature;
+    private final GboardMultiSwipeDiagnosticsFeature diagnosticsFeature;
     private final String title;
     private final String summary;
-    private final String headerBadge;
-    private final String sectionBehavior;
-    private final String sectionTuning;
+    private final String sectionGestures;
+    private final String sectionAutoSpace;
+    private final String sectionAdvanced;
     private final String enabledTitle;
     private final String enabledSummary;
     private final String autoSpaceTitle;
     private final String autoSpaceSummary;
+    private final String spacePlacementTitle;
+    private final String spacePlacementSummary;
+    private final String spacePlacementBeforeLabel;
+    private final String spacePlacementAfterLabel;
     private final String delayTitle;
     private final String delaySummary;
     private final String delayValueTemplate;
     private final String delayValueDefaultTemplate;
-    private final String delayCustomLabel;
+    private final String combineEnabledTitle;
+    private final String combineEnabledSummary;
     private final String combineDelayTitle;
     private final String combineDelaySummary;
-    private final String combineDelayOffLabel;
+    private final String tapToMultiSwipeEnabledTitle;
+    private final String tapToMultiSwipeEnabledSummary;
     private final String tapToMultiSwipeDelayTitle;
     private final String tapToMultiSwipeDelaySummary;
     private final String spacebarTimerIndicatorTitle;
@@ -78,115 +69,61 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     private final String backspaceModeSummary;
     private final String backspaceModeWholeWordLabel;
     private final String backspaceModeLastInputLabel;
-    private final String defaultValueTemplate;
-    private final String beamWidthTitle;
-    private final String autoSpaceBeforeWordTitle;
-    private final String autoSpaceBeforeWordSummary;
-    private final String beamWidthSummary;
-    private final String freqWeightFloorTitle;
-    private final String freqWeightFloorSummary;
-    private final String geoExponentTitle;
-    private final String geoExponentSummary;
-    private final String beamFreqWeightTitle;
-    private final String beamFreqWeightSummary;
-    private final String sliderDefaultLabel;
-    private final String sectionDiagnostics;
-    private final String traceLoggingTitle;
-    private final String traceLoggingSummary;
-    private final String traceExportTitle;
-    private final String traceExportSummary;
-    private final String traceExportDialogTitle;
-    private final String traceExportMinutesTemplate;
-    private final String traceExportHoursTemplate;
-    private final String traceExportAllLabel;
-    private final String traceExportHint;
-    private final String traceExportError;
-    private final String traceExportEmpty;
-    private final String traceExportDone;
-    private final String traceClearTitle;
-    private final String traceClearSummary;
-    private final String traceClearConfirmTitle;
-    private final String traceClearConfirmMessage;
-    private final String traceClearDone;
-    private final String sectionReset;
-    private final String resetTitle;
-    private final String resetSummary;
-    private final String resetConfirmTitle;
-    private final String resetConfirmMessage;
-    private final String resetDone;
     private final String errorTitle;
     private final String errorSummary;
 
     public GboardMultiSwipeSettingsFeature(Context context) {
+        kineticaFeature = new GboardKineticaSettingsFeature(context);
+        diagnosticsFeature = new GboardMultiSwipeDiagnosticsFeature(context);
         title = text(context, R.string.gboard_patches_multiswipe_title);
         summary = text(context, R.string.gboard_patches_multiswipe_summary);
-        headerBadge = text(context, R.string.gboard_patches_header_badge);
-        sectionBehavior = text(context, R.string.gboard_patches_multiswipe_section_behavior);
-        sectionTuning = text(context, R.string.gboard_patches_multiswipe_section_tuning);
+        sectionGestures = text(context, R.string.gboard_patches_multiswipe_section_gestures);
+        sectionAutoSpace = text(context, R.string.gboard_patches_multiswipe_section_auto_space);
+        sectionAdvanced = text(context, R.string.gboard_patches_multiswipe_section_advanced);
         enabledTitle = text(context, R.string.gboard_patches_multiswipe_enabled_title);
         enabledSummary = text(context, R.string.gboard_patches_multiswipe_enabled_summary);
         autoSpaceTitle = text(context, R.string.gboard_patches_multiswipe_auto_space_title);
         autoSpaceSummary = text(context, R.string.gboard_patches_multiswipe_auto_space_summary);
-        autoSpaceBeforeWordTitle = text(
-                context, R.string.gboard_patches_multiswipe_auto_space_before_word_title);
-        autoSpaceBeforeWordSummary = text(
-                context, R.string.gboard_patches_multiswipe_auto_space_before_word_summary);
+        spacePlacementTitle =
+                text(context, R.string.gboard_patches_multiswipe_space_placement_title);
+        spacePlacementSummary =
+                text(context, R.string.gboard_patches_multiswipe_space_placement_summary);
+        spacePlacementBeforeLabel =
+                text(context, R.string.gboard_patches_multiswipe_space_placement_before);
+        spacePlacementAfterLabel =
+                text(context, R.string.gboard_patches_multiswipe_space_placement_after);
         delayTitle = text(context, R.string.gboard_patches_multiswipe_auto_space_delay_title);
         delaySummary = text(context, R.string.gboard_patches_multiswipe_auto_space_delay_summary);
-        delayValueTemplate = text(context, R.string.gboard_patches_multiswipe_auto_space_delay_value);
-        delayValueDefaultTemplate = text(context, R.string.gboard_patches_multiswipe_auto_space_delay_value_default);
-        delayCustomLabel = text(context, R.string.gboard_patches_multiswipe_auto_space_delay_custom);
+        delayValueTemplate =
+                text(context, R.string.gboard_patches_multiswipe_auto_space_delay_value);
+        delayValueDefaultTemplate =
+                text(context, R.string.gboard_patches_multiswipe_auto_space_delay_value_default);
+        combineEnabledTitle =
+                text(context, R.string.gboard_patches_multiswipe_combine_enabled_title);
+        combineEnabledSummary =
+                text(context, R.string.gboard_patches_multiswipe_combine_enabled_summary);
         combineDelayTitle = text(context, R.string.gboard_patches_multiswipe_combine_delay_title);
-        combineDelaySummary = text(context, R.string.gboard_patches_multiswipe_combine_delay_summary);
-        combineDelayOffLabel = text(context, R.string.gboard_patches_multiswipe_combine_delay_off);
-        tapToMultiSwipeDelayTitle = text(
-                context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_title);
-        tapToMultiSwipeDelaySummary = text(
-                context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_summary);
-        spacebarTimerIndicatorTitle = text(
-                context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_title);
-        spacebarTimerIndicatorSummary = text(
-                context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_summary);
+        combineDelaySummary =
+                text(context, R.string.gboard_patches_multiswipe_combine_delay_summary);
+        tapToMultiSwipeEnabledTitle =
+                text(context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_enabled_title);
+        tapToMultiSwipeEnabledSummary =
+                text(context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_enabled_summary);
+        tapToMultiSwipeDelayTitle =
+                text(context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_title);
+        tapToMultiSwipeDelaySummary =
+                text(context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_summary);
+        spacebarTimerIndicatorTitle =
+                text(context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_title);
+        spacebarTimerIndicatorSummary =
+                text(context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_summary);
         backspaceModeTitle = text(context, R.string.gboard_patches_multiswipe_backspace_mode_title);
-        backspaceModeSummary = text(context, R.string.gboard_patches_multiswipe_backspace_mode_summary);
-        backspaceModeWholeWordLabel = text(
-                context, R.string.gboard_patches_multiswipe_backspace_mode_whole_word);
-        backspaceModeLastInputLabel = text(
-                context, R.string.gboard_patches_multiswipe_backspace_mode_last_input);
-        defaultValueTemplate = text(context, R.string.gboard_patches_multiswipe_value_default);
-        beamWidthTitle = text(context, R.string.gboard_patches_multiswipe_beam_width_title);
-        beamWidthSummary = text(context, R.string.gboard_patches_multiswipe_beam_width_summary);
-        freqWeightFloorTitle = text(context, R.string.gboard_patches_multiswipe_freq_weight_floor_title);
-        freqWeightFloorSummary = text(context, R.string.gboard_patches_multiswipe_freq_weight_floor_summary);
-        geoExponentTitle = text(context, R.string.gboard_patches_multiswipe_geo_exponent_title);
-        geoExponentSummary = text(context, R.string.gboard_patches_multiswipe_geo_exponent_summary);
-        beamFreqWeightTitle = text(context, R.string.gboard_patches_multiswipe_beam_freq_weight_title);
-        beamFreqWeightSummary = text(context, R.string.gboard_patches_multiswipe_beam_freq_weight_summary);
-        sliderDefaultLabel = text(context, R.string.gboard_patches_multiswipe_slider_default);
-        sectionDiagnostics = text(context, R.string.gboard_patches_multiswipe_section_diagnostics);
-        traceLoggingTitle = text(context, R.string.gboard_patches_multiswipe_trace_logging_title);
-        traceLoggingSummary = text(context, R.string.gboard_patches_multiswipe_trace_logging_summary);
-        traceExportTitle = text(context, R.string.gboard_patches_multiswipe_trace_export_title);
-        traceExportSummary = text(context, R.string.gboard_patches_multiswipe_trace_export_summary);
-        traceExportDialogTitle = text(context, R.string.gboard_patches_multiswipe_trace_export_dialog_title);
-        traceExportMinutesTemplate = text(context, R.string.gboard_patches_multiswipe_trace_export_minutes_item);
-        traceExportHoursTemplate = text(context, R.string.gboard_patches_multiswipe_trace_export_hours_item);
-        traceExportAllLabel = text(context, R.string.gboard_patches_multiswipe_trace_export_all);
-        traceExportHint = text(context, R.string.gboard_patches_multiswipe_trace_export_hint);
-        traceExportError = text(context, R.string.gboard_patches_multiswipe_trace_export_error);
-        traceExportEmpty = text(context, R.string.gboard_patches_multiswipe_trace_export_empty);
-        traceExportDone = text(context, R.string.gboard_patches_multiswipe_trace_export_done);
-        traceClearTitle = text(context, R.string.gboard_patches_multiswipe_trace_clear_title);
-        traceClearSummary = text(context, R.string.gboard_patches_multiswipe_trace_clear_summary);
-        traceClearConfirmTitle = text(context, R.string.gboard_patches_multiswipe_trace_clear_confirm_title);
-        traceClearConfirmMessage = text(context, R.string.gboard_patches_multiswipe_trace_clear_confirm_message);
-        traceClearDone = text(context, R.string.gboard_patches_multiswipe_trace_clear_done);
-        sectionReset = text(context, R.string.gboard_patches_multiswipe_section_reset);
-        resetTitle = text(context, R.string.gboard_patches_multiswipe_reset_title);
-        resetSummary = text(context, R.string.gboard_patches_multiswipe_reset_summary);
-        resetConfirmTitle = text(context, R.string.gboard_patches_multiswipe_reset_confirm_title);
-        resetConfirmMessage = text(context, R.string.gboard_patches_multiswipe_reset_confirm_message);
-        resetDone = text(context, R.string.gboard_patches_multiswipe_reset_done);
+        backspaceModeSummary =
+                text(context, R.string.gboard_patches_multiswipe_backspace_mode_summary);
+        backspaceModeWholeWordLabel =
+                text(context, R.string.gboard_patches_multiswipe_backspace_mode_whole_word);
+        backspaceModeLastInputLabel =
+                text(context, R.string.gboard_patches_multiswipe_backspace_mode_last_input);
         errorTitle = text(context, R.string.gboard_patches_multiswipe_error_title);
         errorSummary = text(context, R.string.gboard_patches_multiswipe_error_summary);
     }
@@ -218,6 +155,11 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     }
 
     @Override
+    public List<GboardPatchesSettingsContract.Feature> getNavigationChildren() {
+        return Arrays.asList(kineticaFeature, diagnosticsFeature);
+    }
+
+    @Override
     public GboardPatchesSettingsContract.Screen buildScreen(
             GboardPatchesSettingsContract.FeatureHost host) {
         try {
@@ -233,19 +175,18 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             boolean autoSpaceBeforeWord =
                     GboardMultiSwipeSettings.readAutoSpaceBeforeWord(preferences);
             int autoSpaceDelayMs = GboardMultiSwipeSettings.readAutoSpaceDelayMs(preferences);
+            boolean combineEnabled =
+                    GboardMultiSwipeSettings.readSingleTouchCombineEnabled(preferences);
             int combineDelayMs = GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(preferences);
+            boolean tapToMultiSwipeEnabled =
+                    GboardMultiSwipeSettings.readTapToMultiSwipeEnabled(preferences);
             int tapToMultiSwipeDelayMs =
                     GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(preferences);
             boolean spacebarTimerIndicatorEnabled =
                     GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(preferences);
             String backspaceMode = GboardMultiSwipeSettings.readBackspaceMode(preferences);
-            int beamWidth = GboardMultiSwipeSettings.readBeamWidth(preferences);
-            float freqWeightFloor = GboardMultiSwipeSettings.readFreqWeightFloor(preferences);
-            float geoExponent = GboardMultiSwipeSettings.readGeoExponent(preferences);
-            float beamFreqWeight = GboardMultiSwipeSettings.readBeamFreqWeight(preferences);
-            boolean traceLoggingEnabled = GboardMultiSwipeSettings.readTraceLoggingEnabled(preferences);
 
-            List<GboardPatchesSettingsContract.Row> behaviorRows = buildBehaviorRows(
+            List<GboardPatchesSettingsContract.Row> gestureRows = buildGestureRows(
                     enabledTitle,
                     enabledSummary,
                     enabled,
@@ -253,6 +194,57 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                         GboardMultiSwipeSettings.writeEnabled(preferences, value);
                         GboardPatchesSettingsContract.refresh(host);
                     },
+                    combineEnabledTitle,
+                    combineEnabledSummary,
+                    combineEnabled,
+                    value -> {
+                        GboardMultiSwipeSettings.writeSingleTouchCombineEnabled(preferences, value);
+                        GboardPatchesSettingsContract.refresh(host);
+                    },
+                    combineDelayTitle,
+                    combineDelaySummary,
+                    formatCombineDelayLabel(combineDelayMs),
+                    () -> showIntSliderDialog(
+                            host,
+                            combineDelayTitle,
+                            combineDelaySummary,
+                            GboardMultiSwipeSettings.MIN_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                            GboardMultiSwipeSettings.MAX_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                            COMBINE_DELAY_STEP_MS,
+                            GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                            combineDelayMs,
+                            this::formatCombineDelayLabel,
+                            v -> GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(
+                                    preferences, v)),
+                    tapToMultiSwipeEnabledTitle,
+                    tapToMultiSwipeEnabledSummary,
+                    tapToMultiSwipeEnabled,
+                    value -> {
+                        GboardMultiSwipeSettings.writeTapToMultiSwipeEnabled(preferences, value);
+                        GboardPatchesSettingsContract.refresh(host);
+                    },
+                    tapToMultiSwipeDelayTitle,
+                    tapToMultiSwipeDelaySummary,
+                    formatTapToMultiSwipeDelayLabel(tapToMultiSwipeDelayMs),
+                    () -> showIntSliderDialog(
+                            host,
+                            tapToMultiSwipeDelayTitle,
+                            tapToMultiSwipeDelaySummary,
+                            GboardMultiSwipeSettings.MIN_TAP_TO_MULTISWIPE_DELAY_MS,
+                            GboardMultiSwipeSettings.MAX_TAP_TO_MULTISWIPE_DELAY_MS,
+                            TAP_TO_MULTISWIPE_DELAY_STEP_MS,
+                            GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                            tapToMultiSwipeDelayMs,
+                            this::formatTapToMultiSwipeDelayLabel,
+                            v -> GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(
+                                    preferences, v)),
+                    backspaceModeTitle,
+                    backspaceModeSummary,
+                    formatBackspaceModeLabel(backspaceMode),
+                    () -> showBackspaceModeSelector(host, preferences, backspaceMode));
+
+            List<GboardPatchesSettingsContract.Row> autoSpaceRows = buildAutoSpaceRows(
+                    enabled,
                     autoSpaceTitle,
                     autoSpaceSummary,
                     autoSpaceEnabled,
@@ -260,164 +252,56 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                         GboardMultiSwipeSettings.writeAutoSpaceEnabled(preferences, value);
                         GboardPatchesSettingsContract.refresh(host);
                     },
+                    spacePlacementTitle,
+                    spacePlacementSummary,
+                    formatSpacePlacementLabel(autoSpaceBeforeWord),
+                    () -> showSpacePlacementSelector(host, preferences, autoSpaceBeforeWord),
                     delayTitle,
                     delaySummary,
                     formatDelayLabel(autoSpaceDelayMs),
                     () -> showIntSliderDialog(
-                            host, delayTitle, delaySummary,
+                            host,
+                            delayTitle,
+                            delaySummary,
                             GboardMultiSwipeSettings.MIN_AUTO_SPACE_DELAY_MS,
                             GboardMultiSwipeSettings.MAX_AUTO_SPACE_DELAY_MS,
                             AUTO_SPACE_DELAY_STEP_MS,
                             GboardMultiSwipeSettings.DEFAULT_AUTO_SPACE_DELAY_MS,
-                            autoSpaceDelayMs, this::formatDelayLabel,
+                            autoSpaceDelayMs,
+                            this::formatDelayLabel,
                             v -> GboardMultiSwipeSettings.writeAutoSpaceDelayMs(preferences, v)),
-                    combineDelayTitle,
-                    combineDelaySummary,
-                    formatCombineDelayLabel(combineDelayMs),
-                    () -> showIntSliderDialog(
-                            host, combineDelayTitle, combineDelaySummary,
-                            GboardMultiSwipeSettings.MIN_SINGLE_TOUCH_COMBINE_DELAY_MS,
-                            GboardMultiSwipeSettings.MAX_SINGLE_TOUCH_COMBINE_DELAY_MS,
-                            COMBINE_DELAY_STEP_MS,
-                            GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
-                            combineDelayMs, this::formatCombineDelayLabel,
-                            v -> GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(preferences, v)),
                     spacebarTimerIndicatorTitle,
                     spacebarTimerIndicatorSummary,
                     spacebarTimerIndicatorEnabled,
-                    value -> GboardMultiSwipeSettings.writeSpacebarTimerIndicatorEnabled(preferences, value),
-                    autoSpaceBeforeWordTitle,
-                    autoSpaceBeforeWordSummary,
-                    autoSpaceBeforeWord,
-                    value -> GboardMultiSwipeSettings.writeAutoSpaceBeforeWord(preferences, value),
-                    tapToMultiSwipeDelayTitle,
-                    tapToMultiSwipeDelaySummary,
-                    formatTapToMultiSwipeDelayLabel(tapToMultiSwipeDelayMs),
-                    () -> showIntSliderDialog(
-                            host, tapToMultiSwipeDelayTitle, tapToMultiSwipeDelaySummary,
-                            GboardMultiSwipeSettings.MIN_TAP_TO_MULTISWIPE_DELAY_MS,
-                            GboardMultiSwipeSettings.MAX_TAP_TO_MULTISWIPE_DELAY_MS,
-                            TAP_TO_MULTISWIPE_DELAY_STEP_MS,
-                            GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
-                            tapToMultiSwipeDelayMs, this::formatTapToMultiSwipeDelayLabel,
-                            v -> GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(preferences, v)),
-                    backspaceModeTitle,
-                    backspaceModeSummary,
-                    formatBackspaceModeLabel(backspaceMode),
-                    () -> showBackspaceModeSelector(host, preferences, backspaceMode));
+                    value -> GboardMultiSwipeSettings.writeSpacebarTimerIndicatorEnabled(
+                            preferences, value));
 
-            List<GboardPatchesSettingsContract.Row> tuningRows = new ArrayList<>(4);
-            tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    beamWidthTitle,
-                    beamWidthSummary,
-                    formatBeamWidthLabel(beamWidth),
-                    enabled,
-                    () -> showIntSliderDialog(
-                            host, beamWidthTitle, beamWidthSummary,
-                            GboardMultiSwipeSettings.MIN_BEAM_WIDTH,
-                            GboardMultiSwipeSettings.MAX_BEAM_WIDTH,
-                            BEAM_WIDTH_STEP,
-                            GboardMultiSwipeSettings.DEFAULT_BEAM_WIDTH,
-                            beamWidth, this::formatBeamWidthLabel,
-                            v -> syncAfterSave(preferences,
-                                    GboardMultiSwipeSettings.writeBeamWidth(preferences, v)))));
-            tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    freqWeightFloorTitle,
-                    freqWeightFloorSummary,
-                    formatFloatLabel(freqWeightFloor, GboardMultiSwipeSettings.DEFAULT_FREQ_WEIGHT_FLOOR),
-                    enabled,
-                    () -> showFloatSliderDialog(
-                            host, freqWeightFloorTitle, freqWeightFloorSummary,
-                            GboardMultiSwipeSettings.MIN_FREQ_WEIGHT_FLOOR,
-                            GboardMultiSwipeSettings.MAX_FREQ_WEIGHT_FLOOR,
-                            FREQ_WEIGHT_FLOOR_STEP,
-                            GboardMultiSwipeSettings.DEFAULT_FREQ_WEIGHT_FLOOR,
-                            freqWeightFloor,
-                            v -> syncAfterSave(preferences,
-                                    GboardMultiSwipeSettings.writeFreqWeightFloor(preferences, v)))));
-            tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    geoExponentTitle,
-                    geoExponentSummary,
-                    formatFloatLabel(geoExponent, GboardMultiSwipeSettings.DEFAULT_GEO_EXPONENT),
-                    enabled,
-                    () -> showFloatSliderDialog(
-                            host, geoExponentTitle, geoExponentSummary,
-                            GboardMultiSwipeSettings.MIN_GEO_EXPONENT,
-                            GboardMultiSwipeSettings.MAX_GEO_EXPONENT,
-                            GEO_EXPONENT_STEP,
-                            GboardMultiSwipeSettings.DEFAULT_GEO_EXPONENT,
-                            geoExponent,
-                            v -> syncAfterSave(preferences,
-                                    GboardMultiSwipeSettings.writeGeoExponent(preferences, v)))));
-            tuningRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    beamFreqWeightTitle,
-                    beamFreqWeightSummary,
-                    formatFloatLabel(beamFreqWeight, GboardMultiSwipeSettings.DEFAULT_BEAM_FREQ_WEIGHT),
-                    enabled,
-                    () -> showFloatSliderDialog(
-                            host, beamFreqWeightTitle, beamFreqWeightSummary,
-                            GboardMultiSwipeSettings.MIN_BEAM_FREQ_WEIGHT,
-                            GboardMultiSwipeSettings.MAX_BEAM_FREQ_WEIGHT,
-                            BEAM_FREQ_WEIGHT_STEP,
-                            GboardMultiSwipeSettings.DEFAULT_BEAM_FREQ_WEIGHT,
-                            beamFreqWeight,
-                            v -> syncAfterSave(preferences,
-                                    GboardMultiSwipeSettings.writeBeamFreqWeight(preferences, v)))));
-
-            List<GboardPatchesSettingsContract.Row> diagnosticsRows = new ArrayList<>(3);
-            diagnosticsRows.add(new GboardPatchesSettingsContract.ToggleRow(
-                    traceLoggingTitle,
-                    traceLoggingSummary,
-                    true,
-                    traceLoggingEnabled,
-                    value -> {
-                        GboardMultiSwipeSettings.writeTraceLoggingEnabled(preferences, value);
-                        GboardPatchesSettingsContract.refresh(host);
-                    }));
-            diagnosticsRows.add(new GboardPatchesSettingsContract.CommandRow(
-                    traceExportTitle,
-                    traceExportSummary,
-                    true,
-                    () -> showTraceExportMinutesSelector(host)));
-            diagnosticsRows.add(new GboardPatchesSettingsContract.DangerRow(
-                    traceClearTitle,
-                    traceClearSummary,
-                    true,
-                    () -> {
-                        GboardMultiSwipeTraceLogger.clearTraceLogs(host.getContext());
-                        GboardPatchesSettingsContract.showMessage(host, traceClearDone);
-                    },
-                    traceClearConfirmTitle,
-                    traceClearConfirmMessage));
-
-            List<GboardPatchesSettingsContract.Row> resetRows = Collections.singletonList(
-                    new GboardPatchesSettingsContract.DangerRow(
-                            resetTitle,
-                            resetSummary,
+            List<GboardPatchesSettingsContract.Row> advancedRows = Arrays.asList(
+                    new GboardPatchesSettingsContract.NavigationRow(
+                            kineticaFeature.getEntryTitle(),
+                            kineticaFeature.getEntrySummary(),
+                            enabled,
+                            () -> GboardPatchesSettingsContract.openFeature(
+                                    host, kineticaFeature)),
+                    new GboardPatchesSettingsContract.NavigationRow(
+                            diagnosticsFeature.getEntryTitle(),
+                            diagnosticsFeature.getEntrySummary(),
                             true,
-                            () -> {
-                                GboardMultiSwipeSettings.resetToDefaults(preferences);
-                                GboardPatchesSettingsContract.refresh(host);
-                                GboardPatchesSettingsContract.showMessage(host, resetDone);
-                            },
-                            resetConfirmTitle,
-                            resetConfirmMessage));
+                            () -> GboardPatchesSettingsContract.openFeature(
+                                    host, diagnosticsFeature)));
 
             return new GboardPatchesSettingsContract.Screen(
                     title,
-                    headerBadge,
+                    null,
                     title,
                     summary,
                     Collections.emptyList(),
                     Arrays.asList(
-                            new GboardPatchesSettingsContract.Section(sectionBehavior, behaviorRows),
-                            new GboardPatchesSettingsContract.Section(sectionTuning, tuningRows),
-                            new GboardPatchesSettingsContract.Section(sectionDiagnostics, diagnosticsRows),
+                            new GboardPatchesSettingsContract.Section(sectionGestures, gestureRows),
                             new GboardPatchesSettingsContract.Section(
-                                    sectionReset,
-                                    null,
-                                    GboardPatchesSettingsContract.SectionStyle.ADVANCED,
-                                    resetRows)),
+                                    sectionAutoSpace, autoSpaceRows),
+                            new GboardPatchesSettingsContract.Section(
+                                    sectionAdvanced, advancedRows)),
                     GboardPatchesSettingsContract.RefreshPolicy.none(),
                     GboardPatchesSettingsContract.PanelStyle.FLAT);
         } catch (Throwable throwable) {
@@ -430,13 +314,6 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
         }
     }
 
-    private static boolean syncAfterSave(SharedPreferences preferences, boolean ok) {
-        if (ok) {
-            GboardMultiSwipeSettings.syncDecoderConstants(preferences);
-        }
-        return ok;
-    }
-
     private void showIntSliderDialog(
             GboardPatchesSettingsContract.FeatureHost host,
             String dialogTitle,
@@ -447,12 +324,11 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             int defaultValue,
             int currentValue,
             IntFormatter formatter,
-            IntSaver saver
-    ) {
+            IntSaver saver) {
         int totalSteps = Math.max(1, (max - min) / step);
         int initialProgress = sliderStepForInt(currentValue, min, max, step);
         int defaultProgress = sliderStepForInt(defaultValue, min, max, step);
-        showStepSliderDialog(
+        GboardPatchesSettingsContract.showSliderDialog(
                 host,
                 dialogTitle,
                 description,
@@ -462,189 +338,53 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                 formatter.format(min),
                 formatter.format(max),
                 p -> formatter.format(intValueForSliderStep(p, min, max, step)),
-                p -> saver.save(intValueForSliderStep(p, min, max, step)));
+                p -> {
+                    int value = intValueForSliderStep(p, min, max, step);
+                    if (!saver.save(value)) {
+                        throw new IllegalStateException("Failed to persist " + dialogTitle);
+                    }
+                });
     }
 
-    private void showFloatSliderDialog(
+    private void showSpacePlacementSelector(
             GboardPatchesSettingsContract.FeatureHost host,
-            String dialogTitle,
-            String description,
-            float min,
-            float max,
-            float step,
-            float defaultValue,
-            float currentValue,
-            FloatSaver saver
-    ) {
-        int totalSteps = Math.max(1, Math.round((max - min) / step));
-        int initialProgress = sliderStepForFloat(currentValue, min, max, step);
-        int defaultProgress = sliderStepForFloat(defaultValue, min, max, step);
-        showStepSliderDialog(
+            SharedPreferences preferences,
+            boolean autoSpaceBeforeWord) {
+        String[] labels = {spacePlacementBeforeLabel, spacePlacementAfterLabel};
+        String[] values = {SPACE_PLACEMENT_BEFORE, SPACE_PLACEMENT_AFTER};
+        String current = autoSpaceBeforeWord ? SPACE_PLACEMENT_BEFORE : SPACE_PLACEMENT_AFTER;
+        GboardPatchesSettingsContract.showSingleChoiceDialog(
                 host,
-                dialogTitle,
-                description,
-                totalSteps,
-                initialProgress,
-                defaultProgress,
-                String.format(Locale.US, "%.2f", min),
-                String.format(Locale.US, "%.2f", max),
-                p -> formatFloatLabel(floatValueForSliderStep(p, min, max, step), defaultValue),
-                p -> saver.save(floatValueForSliderStep(p, min, max, step)));
+                spacePlacementTitle,
+                labels,
+                values,
+                current,
+                choice -> {
+                    GboardMultiSwipeSettings.writeAutoSpaceBeforeWord(
+                            preferences, SPACE_PLACEMENT_BEFORE.equals(choice));
+                    GboardPatchesSettingsContract.refresh(host);
+                });
     }
 
-    private interface StepFormatter {
-        String format(int step);
-    }
-
-    private void showStepSliderDialog(
-            GboardPatchesSettingsContract.FeatureHost host,
-            String dialogTitle,
-            String description,
-            int totalSteps,
-            int initialProgress,
-            int defaultProgress,
-            String minLabel,
-            String maxLabel,
-            StepFormatter formatter,
-            IntSaver stepSaver
-    ) {
-        GboardPatchesSettingsContract.showManagedDialog(host, onDismiss -> {
-            Context context = host.getContext();
-            if (context == null) return false;
-
-            LinearLayout content = new LinearLayout(context);
-            content.setOrientation(LinearLayout.VERTICAL);
-            content.setPadding(dp(context, 24), dp(context, 12), dp(context, 24), dp(context, 8));
-
-            if (description != null && !description.isEmpty()) {
-                TextView descView = new TextView(context);
-                descView.setText(description);
-                descView.setTextSize(13f);
-                descView.setPadding(0, 0, 0, dp(context, 12));
-                content.addView(descView);
-            }
-
-            TextView valueView = new TextView(context);
-            valueView.setTextSize(20f);
-            valueView.setTypeface(Typeface.DEFAULT_BOLD);
-            valueView.setGravity(Gravity.CENTER_HORIZONTAL);
-            valueView.setPadding(0, dp(context, 4), 0, dp(context, 12));
-            content.addView(valueView);
-
-            LinearLayout sliderRow = new LinearLayout(context);
-            sliderRow.setOrientation(LinearLayout.HORIZONTAL);
-            sliderRow.setGravity(Gravity.CENTER_VERTICAL);
-
-            Button minusBtn = new Button(context, null, android.R.attr.borderlessButtonStyle);
-            minusBtn.setText("−");
-            minusBtn.setTextSize(18f);
-            LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
-                    dp(context, 44), dp(context, 44));
-            sliderRow.addView(minusBtn, btnParams);
-
-            SeekBar seekBar = new SeekBar(context);
-            seekBar.setMax(totalSteps);
-            seekBar.setProgress(initialProgress);
-            LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            sliderRow.addView(seekBar, barParams);
-
-            Button plusBtn = new Button(context, null, android.R.attr.borderlessButtonStyle);
-            plusBtn.setText("+");
-            plusBtn.setTextSize(18f);
-            sliderRow.addView(plusBtn, new LinearLayout.LayoutParams(dp(context, 44), dp(context, 44)));
-
-            content.addView(sliderRow);
-
-            LinearLayout boundsRow = new LinearLayout(context);
-            boundsRow.setOrientation(LinearLayout.HORIZONTAL);
-            boundsRow.setPadding(dp(context, 44), dp(context, 2), dp(context, 44), 0);
-
-            TextView minView = new TextView(context);
-            minView.setText(minLabel);
-            minView.setTextSize(12f);
-            boundsRow.addView(minView, new LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-
-            TextView maxView = new TextView(context);
-            maxView.setText(maxLabel);
-            maxView.setTextSize(12f);
-            maxView.setGravity(Gravity.END);
-            boundsRow.addView(maxView, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-            content.addView(boundsRow);
-
-            Runnable syncUi = () -> {
-                int p = seekBar.getProgress();
-                valueView.setText(formatter.format(p));
-                minusBtn.setEnabled(p > 0);
-                plusBtn.setEnabled(p < totalSteps);
-            };
-            syncUi.run();
-
-            minusBtn.setOnClickListener(v -> {
-                int p = seekBar.getProgress();
-                if (p > 0) seekBar.setProgress(p - 1);
-            });
-            plusBtn.setOnClickListener(v -> {
-                int p = seekBar.getProgress();
-                if (p < totalSteps) seekBar.setProgress(p + 1);
-            });
-            seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-                @Override
-                public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
-                    syncUi.run();
-                }
-
-                @Override
-                public void onStartTrackingTouch(SeekBar bar) {}
-
-                @Override
-                public void onStopTrackingTouch(SeekBar bar) {}
-            });
-
-            AlertDialog dialog = new AlertDialog.Builder(context)
-                    .setTitle(dialogTitle)
-                    .setView(content)
-                    .setNeutralButton(sliderDefaultLabel, null)
-                    .setNegativeButton(text(context, R.string.gboard_patches_dialog_cancel), null)
-                    .setPositiveButton(text(context, R.string.gboard_patches_dialog_save),
-                            (d, which) -> {
-                                if (!stepSaver.save(seekBar.getProgress())) {
-                                    throw new IllegalStateException("Failed to persist " + dialogTitle);
-                                }
-                                GboardPatchesSettingsContract.refresh(host);
-                            })
-                    .create();
-            dialog.setOnShowListener(ignored -> dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-                    .setOnClickListener(v -> seekBar.setProgress(defaultProgress)));
-            dialog.setOnDismissListener(ignored -> {
-                if (onDismiss != null) onDismiss.run();
-            });
-            dialog.show();
-            return true;
-        });
+    private String formatSpacePlacementLabel(boolean autoSpaceBeforeWord) {
+        return autoSpaceBeforeWord ? spacePlacementBeforeLabel : spacePlacementAfterLabel;
     }
 
     private void showBackspaceModeSelector(
             GboardPatchesSettingsContract.FeatureHost host,
             SharedPreferences preferences,
-            String currentMode
-    ) {
+            String currentMode) {
         String[] labels = {backspaceModeWholeWordLabel, backspaceModeLastInputLabel};
         String[] values = {
                 GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD,
                 GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT
         };
-        GboardPatchesSettingsContract.showChoiceDialog(
+        GboardPatchesSettingsContract.showSingleChoiceDialog(
                 host,
                 backspaceModeTitle,
                 labels,
                 values,
                 GboardMultiSwipeSettings.sanitizeBackspaceMode(currentMode),
-                null,
-                null,
                 choice -> {
                     GboardMultiSwipeSettings.writeBackspaceMode(preferences, choice);
                     GboardPatchesSettingsContract.refresh(host);
@@ -656,75 +396,6 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             return backspaceModeLastInputLabel;
         }
         return backspaceModeWholeWordLabel;
-    }
-
-    private void showTraceExportMinutesSelector(GboardPatchesSettingsContract.FeatureHost host) {
-        String[] labels = new String[PRESET_EXPORT_MINUTES.length + 1];
-        String[] values = new String[PRESET_EXPORT_MINUTES.length + 1];
-        for (int i = 0; i < PRESET_EXPORT_MINUTES.length; i++) {
-            int mins = PRESET_EXPORT_MINUTES[i];
-            labels[i] = formatExportWindowLabel(mins);
-            values[i] = Integer.toString(mins);
-        }
-        labels[PRESET_EXPORT_MINUTES.length] = delayCustomLabel;
-        values[PRESET_EXPORT_MINUTES.length] = VALUE_CUSTOM;
-
-        GboardPatchesSettingsContract.showChoiceDialog(
-                host,
-                traceExportDialogTitle,
-                labels,
-                values,
-                Integer.toString(15),
-                VALUE_CUSTOM,
-                () -> GboardPatchesSettingsContract.showTextInputDialog(
-                        host,
-                        traceExportDialogTitle,
-                        traceExportHint,
-                        "15",
-                        raw -> {
-                            int mins = parseIntInRange(
-                                    raw,
-                                    GboardMultiSwipeSettings.MIN_TRACE_EXPORT_MINUTES,
-                                    GboardMultiSwipeSettings.MAX_TRACE_EXPORT_MINUTES,
-                                    traceExportError);
-                            exportTraceForMinutes(host, mins);
-                        }),
-                choice -> {
-                    int mins = Integer.parseInt(choice);
-                    exportTraceForMinutes(host, mins);
-                });
-    }
-
-    private void exportTraceForMinutes(GboardPatchesSettingsContract.FeatureHost host, int minutes) {
-        GboardMultiSwipeTraceLogger.TraceExportResult result =
-                GboardMultiSwipeTraceLogger.readTraceForExport(host.getContext(), minutes);
-        if (result.lineCount == 0 || result.content.isEmpty()) {
-            GboardPatchesSettingsContract.showMessage(host, traceExportEmpty);
-            return;
-        }
-        String fileName = minutes > 0
-                ? "multiswipe_trace_" + minutes + "m.jsonl"
-                : "multiswipe_trace_all.jsonl";
-        GboardPatchesSettingsContract.createTextDocument(
-                host,
-                fileName,
-                "text/plain",
-                result.content,
-                () -> GboardPatchesSettingsContract.showMessage(host, traceExportDone));
-    }
-
-    private String formatExportWindowLabel(int minutes) {
-        if (minutes <= 0) {
-            return traceExportAllLabel;
-        }
-        if (minutes >= 60 && minutes % 60 == 0) {
-            return String.format(Locale.US, traceExportHoursTemplate, minutes / 60);
-        }
-        return String.format(Locale.US, traceExportMinutesTemplate, minutes);
-    }
-
-    private static int dp(Context context, int value) {
-        return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
     static int sliderStepForInt(int value, int min, int max, int step) {
@@ -799,9 +470,6 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     }
 
     private String formatCombineDelayLabel(int delayMs) {
-        if (delayMs == 0) {
-            return combineDelayOffLabel;
-        }
         if (delayMs == GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS) {
             return String.format(Locale.US, delayValueDefaultTemplate, delayMs);
         }
@@ -809,35 +477,16 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     }
 
     private String formatTapToMultiSwipeDelayLabel(int delayMs) {
-        if (delayMs == 0) {
-            return combineDelayOffLabel;
-        }
         if (delayMs == GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS) {
             return String.format(Locale.US, delayValueDefaultTemplate, delayMs);
         }
         return String.format(Locale.US, delayValueTemplate, delayMs);
     }
 
-    private String formatBeamWidthLabel(int beamWidth) {
-        String num = Integer.toString(beamWidth);
-        if (beamWidth == GboardMultiSwipeSettings.DEFAULT_BEAM_WIDTH) {
-            return String.format(Locale.US, defaultValueTemplate, num);
-        }
-        return num;
-    }
-
-    private String formatFloatLabel(float value, float defaultValue) {
-        String num = String.format(Locale.US, "%.2f", value);
-        if (Math.abs(value - defaultValue) < FLOAT_MATCH_EPS) {
-            return String.format(Locale.US, defaultValueTemplate, num);
-        }
-        return num;
-    }
-
     private GboardPatchesSettingsContract.Screen buildErrorScreen() {
         return new GboardPatchesSettingsContract.Screen(
                 title,
-                headerBadge,
+                null,
                 title,
                 summary,
                 Collections.singletonList(new GboardPatchesSettingsContract.StatusBlock(
@@ -847,168 +496,23 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                 Collections.emptyList());
     }
 
-    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
+    static List<GboardPatchesSettingsContract.Row> buildGestureRows(
             String enabledTitle,
             String enabledSummary,
             boolean enabled,
             GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
-            String autoSpaceTitle,
-            String autoSpaceSummary,
-            boolean autoSpaceEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
-            String delayTitle,
-            String delaySummary,
-            String delayValueLabel,
-            Runnable onSelectDelay,
-            String combineDelayTitle,
-            String combineDelaySummary,
-            String combineValueLabel,
-            Runnable onSelectCombineDelay
-    ) {
-        return buildBehaviorRows(
-                enabledTitle, enabledSummary, enabled, onToggleEnabled,
-                autoSpaceTitle, autoSpaceSummary, autoSpaceEnabled, onToggleAutoSpace,
-                delayTitle, delaySummary, delayValueLabel, onSelectDelay,
-                combineDelayTitle, combineDelaySummary, combineValueLabel, onSelectCombineDelay,
-                null, null, false, null);
-    }
-
-    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
-            String enabledTitle,
-            String enabledSummary,
-            boolean enabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
-            String autoSpaceTitle,
-            String autoSpaceSummary,
-            boolean autoSpaceEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
-            String delayTitle,
-            String delaySummary,
-            String delayValueLabel,
-            Runnable onSelectDelay,
+            String combineEnabledTitle,
+            String combineEnabledSummary,
+            boolean combineEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleCombineEnabled,
             String combineDelayTitle,
             String combineDelaySummary,
             String combineValueLabel,
             Runnable onSelectCombineDelay,
-            String spacebarTimerTitle,
-            String spacebarTimerSummary,
-            boolean spacebarTimerEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer
-    ) {
-        return buildBehaviorRows(
-                enabledTitle, enabledSummary, enabled, onToggleEnabled,
-                autoSpaceTitle, autoSpaceSummary, autoSpaceEnabled, onToggleAutoSpace,
-                delayTitle, delaySummary, delayValueLabel, onSelectDelay,
-                combineDelayTitle, combineDelaySummary, combineValueLabel, onSelectCombineDelay,
-                spacebarTimerTitle, spacebarTimerSummary, spacebarTimerEnabled, onToggleSpacebarTimer,
-                null, null, false, null);
-    }
-
-    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
-            String enabledTitle,
-            String enabledSummary,
-            boolean enabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
-            String autoSpaceTitle,
-            String autoSpaceSummary,
-            boolean autoSpaceEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
-            String delayTitle,
-            String delaySummary,
-            String delayValueLabel,
-            Runnable onSelectDelay,
-            String combineDelayTitle,
-            String combineDelaySummary,
-            String combineValueLabel,
-            Runnable onSelectCombineDelay,
-            String spacebarTimerTitle,
-            String spacebarTimerSummary,
-            boolean spacebarTimerEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer,
-            String autoSpaceBeforeWordTitle,
-            String autoSpaceBeforeWordSummary,
-            boolean autoSpaceBeforeWord,
-            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpaceBeforeWord
-    ) {
-        return buildBehaviorRows(
-                enabledTitle, enabledSummary, enabled, onToggleEnabled,
-                autoSpaceTitle, autoSpaceSummary, autoSpaceEnabled, onToggleAutoSpace,
-                delayTitle, delaySummary, delayValueLabel, onSelectDelay,
-                combineDelayTitle, combineDelaySummary, combineValueLabel, onSelectCombineDelay,
-                spacebarTimerTitle, spacebarTimerSummary, spacebarTimerEnabled, onToggleSpacebarTimer,
-                autoSpaceBeforeWordTitle, autoSpaceBeforeWordSummary, autoSpaceBeforeWord,
-                onToggleAutoSpaceBeforeWord,
-                null, null, null, null);
-    }
-
-    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
-            String enabledTitle,
-            String enabledSummary,
-            boolean enabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
-            String autoSpaceTitle,
-            String autoSpaceSummary,
-            boolean autoSpaceEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
-            String delayTitle,
-            String delaySummary,
-            String delayValueLabel,
-            Runnable onSelectDelay,
-            String combineDelayTitle,
-            String combineDelaySummary,
-            String combineValueLabel,
-            Runnable onSelectCombineDelay,
-            String spacebarTimerTitle,
-            String spacebarTimerSummary,
-            boolean spacebarTimerEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer,
-            String autoSpaceBeforeWordTitle,
-            String autoSpaceBeforeWordSummary,
-            boolean autoSpaceBeforeWord,
-            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpaceBeforeWord,
-            String tapToMultiSwipeDelayTitle,
-            String tapToMultiSwipeDelaySummary,
-            String tapToMultiSwipeValueLabel,
-            Runnable onSelectTapToMultiSwipeDelay
-    ) {
-        return buildBehaviorRows(
-                enabledTitle, enabledSummary, enabled, onToggleEnabled,
-                autoSpaceTitle, autoSpaceSummary, autoSpaceEnabled, onToggleAutoSpace,
-                delayTitle, delaySummary, delayValueLabel, onSelectDelay,
-                combineDelayTitle, combineDelaySummary, combineValueLabel, onSelectCombineDelay,
-                spacebarTimerTitle, spacebarTimerSummary, spacebarTimerEnabled, onToggleSpacebarTimer,
-                autoSpaceBeforeWordTitle, autoSpaceBeforeWordSummary, autoSpaceBeforeWord,
-                onToggleAutoSpaceBeforeWord,
-                tapToMultiSwipeDelayTitle, tapToMultiSwipeDelaySummary, tapToMultiSwipeValueLabel,
-                onSelectTapToMultiSwipeDelay,
-                null, null, null, null);
-    }
-
-    static List<GboardPatchesSettingsContract.Row> buildBehaviorRows(
-            String enabledTitle,
-            String enabledSummary,
-            boolean enabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
-            String autoSpaceTitle,
-            String autoSpaceSummary,
-            boolean autoSpaceEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
-            String delayTitle,
-            String delaySummary,
-            String delayValueLabel,
-            Runnable onSelectDelay,
-            String combineDelayTitle,
-            String combineDelaySummary,
-            String combineValueLabel,
-            Runnable onSelectCombineDelay,
-            String spacebarTimerTitle,
-            String spacebarTimerSummary,
-            boolean spacebarTimerEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer,
-            String autoSpaceBeforeWordTitle,
-            String autoSpaceBeforeWordSummary,
-            boolean autoSpaceBeforeWord,
-            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpaceBeforeWord,
+            String tapToMultiSwipeEnabledTitle,
+            String tapToMultiSwipeEnabledSummary,
+            boolean tapToMultiSwipeEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleTapToMultiSwipeEnabled,
             String tapToMultiSwipeDelayTitle,
             String tapToMultiSwipeDelaySummary,
             String tapToMultiSwipeValueLabel,
@@ -1016,68 +520,92 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             String backspaceModeTitle,
             String backspaceModeSummary,
             String backspaceModeValueLabel,
-            Runnable onSelectBackspaceMode
-    ) {
-        List<GboardPatchesSettingsContract.Row> behaviorRows = new ArrayList<>(8);
-        behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
+            Runnable onSelectBackspaceMode) {
+        List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>(6);
+        rows.add(new GboardPatchesSettingsContract.ToggleRow(
                 enabledTitle,
                 enabledSummary,
                 true,
                 enabled,
                 onToggleEnabled));
-        behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
+        rows.add(new GboardPatchesSettingsContract.ToggleRow(
+                combineEnabledTitle,
+                combineEnabledSummary,
+                enabled,
+                combineEnabled,
+                onToggleCombineEnabled));
+        rows.add(new GboardPatchesSettingsContract.SelectorRow(
+                combineDelayTitle,
+                combineDelaySummary,
+                combineValueLabel,
+                enabled && combineEnabled,
+                onSelectCombineDelay));
+        rows.add(new GboardPatchesSettingsContract.ToggleRow(
+                tapToMultiSwipeEnabledTitle,
+                tapToMultiSwipeEnabledSummary,
+                enabled,
+                tapToMultiSwipeEnabled,
+                onToggleTapToMultiSwipeEnabled));
+        rows.add(new GboardPatchesSettingsContract.SelectorRow(
+                tapToMultiSwipeDelayTitle,
+                tapToMultiSwipeDelaySummary,
+                tapToMultiSwipeValueLabel,
+                enabled && tapToMultiSwipeEnabled,
+                onSelectTapToMultiSwipeDelay));
+        rows.add(new GboardPatchesSettingsContract.SelectorRow(
+                backspaceModeTitle,
+                backspaceModeSummary,
+                backspaceModeValueLabel,
+                enabled,
+                onSelectBackspaceMode));
+        return rows;
+    }
+
+    static List<GboardPatchesSettingsContract.Row> buildAutoSpaceRows(
+            boolean multiSwipeEnabled,
+            String autoSpaceTitle,
+            String autoSpaceSummary,
+            boolean autoSpaceEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleAutoSpace,
+            String spacePlacementTitle,
+            String spacePlacementSummary,
+            String spacePlacementValueLabel,
+            Runnable onSelectSpacePlacement,
+            String delayTitle,
+            String delaySummary,
+            String delayValueLabel,
+            Runnable onSelectDelay,
+            String spacebarTimerTitle,
+            String spacebarTimerSummary,
+            boolean spacebarTimerEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer) {
+        boolean autoSpaceControlsEnabled = multiSwipeEnabled && autoSpaceEnabled;
+        List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>(4);
+        rows.add(new GboardPatchesSettingsContract.ToggleRow(
                 autoSpaceTitle,
                 autoSpaceSummary,
-                enabled,
+                multiSwipeEnabled,
                 autoSpaceEnabled,
                 onToggleAutoSpace));
-        if (autoSpaceEnabled) {
-            if (autoSpaceBeforeWordTitle != null) {
-                behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
-                        autoSpaceBeforeWordTitle,
-                        autoSpaceBeforeWordSummary,
-                        enabled,
-                        autoSpaceBeforeWord,
-                        onToggleAutoSpaceBeforeWord));
-            }
-            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    delayTitle,
-                    delaySummary,
-                    delayValueLabel,
-                    enabled,
-                    onSelectDelay));
-            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    combineDelayTitle,
-                    combineDelaySummary,
-                    combineValueLabel,
-                    enabled,
-                    onSelectCombineDelay));
-            if (tapToMultiSwipeDelayTitle != null) {
-                behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                        tapToMultiSwipeDelayTitle,
-                        tapToMultiSwipeDelaySummary,
-                        tapToMultiSwipeValueLabel,
-                        enabled,
-                        onSelectTapToMultiSwipeDelay));
-            }
-            if (spacebarTimerTitle != null) {
-                behaviorRows.add(new GboardPatchesSettingsContract.ToggleRow(
-                        spacebarTimerTitle,
-                        spacebarTimerSummary,
-                        enabled,
-                        spacebarTimerEnabled,
-                        onToggleSpacebarTimer));
-            }
-        }
-        if (backspaceModeTitle != null) {
-            behaviorRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    backspaceModeTitle,
-                    backspaceModeSummary,
-                    backspaceModeValueLabel,
-                    enabled,
-                    onSelectBackspaceMode));
-        }
-        return behaviorRows;
+        rows.add(new GboardPatchesSettingsContract.SelectorRow(
+                spacePlacementTitle,
+                spacePlacementSummary,
+                spacePlacementValueLabel,
+                autoSpaceControlsEnabled,
+                onSelectSpacePlacement));
+        rows.add(new GboardPatchesSettingsContract.SelectorRow(
+                delayTitle,
+                delaySummary,
+                delayValueLabel,
+                autoSpaceControlsEnabled,
+                onSelectDelay));
+        rows.add(new GboardPatchesSettingsContract.ToggleRow(
+                spacebarTimerTitle,
+                spacebarTimerSummary,
+                autoSpaceControlsEnabled,
+                spacebarTimerEnabled,
+                onToggleSpacebarTimer));
+        return rows;
     }
 
     private static String text(Context context, int id) {

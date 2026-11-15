@@ -1090,13 +1090,13 @@ public final class GboardMultiSwipeRuntime {
                 ? GboardMultiSwipeSettings.readAutoSpaceDelayMs(context)
                 : GboardMultiSwipeSettings.DEFAULT_AUTO_SPACE_DELAY_MS;
         int combineDelayMs = (context != null)
-                ? GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(context)
+                ? GboardMultiSwipeSettings.readEffectiveSingleTouchCombineDelayMs(context)
                 : GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS;
         boolean doubleSpacePeriodEnabled = readDoubleSpacePeriodEnabled(context);
         boolean autoSpaceBeforeWord = (context != null)
                 && GboardMultiSwipeSettings.isAutoSpaceBeforeWord(context);
         int tapToMultiSwipeDelayMs = (context != null)
-                ? GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(context)
+                ? GboardMultiSwipeSettings.readEffectiveTapToMultiSwipeDelayMs(context)
                 : GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS;
         String backspaceMode = (context != null)
                 ? GboardMultiSwipeSettings.readBackspaceMode(context)

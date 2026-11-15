@@ -101,6 +101,11 @@ public final class GboardPatchesSettingsContract {
                 String currentValue, String customValue, Runnable customAction,
                 StringValueConsumer valueConsumer);
 
+        default void showSingleChoiceDialog(String title, String[] labels, String[] values,
+                String currentValue, StringValueConsumer valueConsumer) {
+            showChoiceDialog(title, labels, values, currentValue, null, null, valueConsumer);
+        }
+
         default void showMultiChoiceDialog(String title, String[] labels, String[] values,
                 boolean[] initiallySelected,
                 String positiveLabel, StringListConsumer valueConsumer) {
@@ -116,6 +121,12 @@ public final class GboardPatchesSettingsContract {
         void showPreviewDialog(PreviewSpec previewSpec);
 
         void showManagedDialog(ManagedDialogAction action);
+
+        default void showSliderDialog(String title, String description, int totalSteps,
+                int initialProgress, int defaultProgress, String minLabel, String maxLabel,
+                SliderValueFormatter formatter, PositiveIntegerConsumer saveConsumer) {
+            throw new UnsupportedOperationException("Slider dialog is unavailable");
+        }
 
         void createTextDocument(String fileName, String mimeType, String text,
                 Runnable completionAction);
@@ -199,6 +210,12 @@ public final class GboardPatchesSettingsContract {
                 customValue, customAction, valueConsumer));
     }
 
+    public static void showSingleChoiceDialog(FeatureHost host, String title, String[] labels,
+            String[] values, String currentValue, StringValueConsumer valueConsumer) {
+        submit(host, adapter -> adapter.showSingleChoiceDialog(
+                title, labels, values, currentValue, valueConsumer));
+    }
+
     public static void showMultiChoiceDialog(FeatureHost host, String title,
             String[] labels, String[] values, boolean[] initiallySelected,
             String positiveLabel, StringListConsumer valueConsumer) {
@@ -223,6 +240,14 @@ public final class GboardPatchesSettingsContract {
 
     public static void showManagedDialog(FeatureHost host, ManagedDialogAction action) {
         submit(host, adapter -> adapter.showManagedDialog(action));
+    }
+
+    public static void showSliderDialog(FeatureHost host, String title, String description,
+            int totalSteps, int initialProgress, int defaultProgress, String minLabel,
+            String maxLabel, SliderValueFormatter formatter,
+            PositiveIntegerConsumer saveConsumer) {
+        submit(host, adapter -> adapter.showSliderDialog(title, description, totalSteps,
+                initialProgress, defaultProgress, minLabel, maxLabel, formatter, saveConsumer));
     }
 
     public static void createTextDocument(FeatureHost host, String fileName, String mimeType,
@@ -364,6 +389,10 @@ public final class GboardPatchesSettingsContract {
 
     public interface PositiveIntegerConsumer {
         void accept(int value);
+    }
+
+    public interface SliderValueFormatter {
+        String format(int step);
     }
 
     public interface TextValueConsumer {

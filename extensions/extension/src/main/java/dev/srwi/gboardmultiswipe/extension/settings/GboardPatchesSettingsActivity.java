@@ -28,9 +28,11 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.Typeface;
+import android.graphics.drawable.ClipDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.media.MediaPlayer;
 import android.net.Uri;
@@ -70,6 +72,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.VideoView;
@@ -109,7 +112,7 @@ public final class GboardPatchesSettingsActivity extends Activity
     private static final String GBOARD_SETTINGS_ACTIVITY_CLASS =
             "com.google.android.apps.inputmethod.latin.preference.SettingsActivity";
     private static final String SUPPORTED_DEVELOPER_OPTIONS_TARGET_VERSION =
-            "18.5.4.993608717-release-arm64-v8a";
+            "18.5.6.993608717-release-arm64-v8a";
     private static final String GBOARD_PACKAGE_STABLE =
             "com.google.android.inputmethod.latin";
     private static final String GBOARD_PACKAGE_RENAMED =
@@ -691,6 +694,48 @@ public final class GboardPatchesSettingsActivity extends Activity
     }
 
     @Override
+    public void showSingleChoiceDialog(String title, String[] labels, String[] values,
+            String currentValue, GboardPatchesSettingsContract.StringValueConsumer valueConsumer) {
+        if (labels == null || values == null || labels.length != values.length
+                || valueConsumer == null) {
+            return;
+        }
+        int checkedIndex = resolveCheckedIndex(values, currentValue);
+        final Runnable[] pendingSelectionAction = new Runnable[1];
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(labels, checkedIndex, (dialogInterface, which) -> {
+                    if (which >= 0 && which < values.length) {
+                        String selectedValue = values[which];
+                        pendingSelectionAction[0] = () -> runSafely(
+                                "handle single-choice dialog selection",
+                                () -> {
+                                    valueConsumer.accept(selectedValue);
+                                    renderCurrentScreenSafely();
+                                });
+                    }
+                    dialogInterface.dismiss();
+                })
+                .setNegativeButton(text(R.string.gboard_patches_dialog_cancel), null)
+                .create();
+        dialog.setOnDismissListener(ignored -> {
+            Runnable action = pendingSelectionAction[0];
+            pendingSelectionAction[0] = null;
+            onManagedDialogDismissed();
+            if (action != null) {
+                postToDecorView(action);
+            }
+        });
+        try {
+            dialog.show();
+            onManagedDialogShown();
+            tintDialogButtons(dialog);
+        } catch (Throwable throwable) {
+            Log.w(TAG, "Failed to show single-choice dialog", throwable);
+        }
+    }
+
+    @Override
     public void showMultiChoiceDialog(String title, String[] labels, String[] values,
             boolean[] initiallySelected,
             String positiveLabel,
@@ -852,6 +897,128 @@ public final class GboardPatchesSettingsActivity extends Activity
         } catch (Throwable throwable) {
             Log.w(TAG, "Failed to show text input dialog", throwable);
         }
+    }
+
+    @Override
+    public void showSliderDialog(String title, String description, int totalSteps,
+            int initialProgress, int defaultProgress, String minLabel, String maxLabel,
+            GboardPatchesSettingsContract.SliderValueFormatter formatter,
+            GboardPatchesSettingsContract.PositiveIntegerConsumer saveConsumer) {
+        if (formatter == null || saveConsumer == null) {
+            return;
+        }
+        int safeTotalSteps = Math.max(1, totalSteps);
+        int safeInitial = Math.max(0, Math.min(safeTotalSteps, initialProgress));
+        int safeDefault = Math.max(0, Math.min(safeTotalSteps, defaultProgress));
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_HORIZONTAL);
+        content.setPadding(dp(24), dp(16), dp(24), dp(12));
+
+        TextView valueView = new TextView(this);
+        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+        valueView.setTypeface(mediumTypeface());
+        valueView.setTextColor(palette.textPrimary);
+        valueView.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        valueParams.bottomMargin = dp(8);
+        content.addView(valueView, valueParams);
+
+        SeekBar seekBar = new SeekBar(this);
+        seekBar.setMax(safeTotalSteps);
+        seekBar.setProgress(safeInitial);
+        applyMaterialSliderStyle(seekBar);
+        LinearLayout.LayoutParams seekParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        content.addView(seekBar, seekParams);
+
+        valueView.setText(formatter.format(safeInitial));
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                valueView.setText(formatter.format(progress));
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar bar) {
+            }
+        });
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setView(content)
+                .setNeutralButton(text(R.string.gboard_patches_slider_default), null)
+                .setNegativeButton(text(R.string.gboard_patches_dialog_cancel), null)
+                .setPositiveButton(text(R.string.gboard_patches_dialog_save), null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            tintDialogButtons(dialog);
+            View neutralButton = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+            if (neutralButton != null) {
+                neutralButton.setOnClickListener(view -> seekBar.setProgress(safeDefault));
+            }
+            View positiveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (positiveButton != null) {
+                positiveButton.setOnClickListener(view -> {
+                    try {
+                        saveConsumer.accept(seekBar.getProgress());
+                        dialog.dismiss();
+                        renderCurrentScreenSafely();
+                    } catch (Throwable throwable) {
+                        Log.w(TAG, "Failed to save slider setting", throwable);
+                        showMessage(text(R.string.gboard_patches_dialog_error_save_failed));
+                    }
+                });
+            }
+        });
+        dialog.setOnDismissListener(ignored -> onManagedDialogDismissed());
+        try {
+            dialog.show();
+            onManagedDialogShown();
+        } catch (Throwable throwable) {
+            Log.w(TAG, "Failed to show slider dialog", throwable);
+        }
+    }
+
+    private void applyMaterialSliderStyle(SeekBar seekBar) {
+        GradientDrawable trackBg = new GradientDrawable();
+        trackBg.setShape(GradientDrawable.RECTANGLE);
+        trackBg.setCornerRadius(dp(2));
+        trackBg.setColor(blendAlpha(palette.accent, 0.24f));
+
+        GradientDrawable trackFill = new GradientDrawable();
+        trackFill.setShape(GradientDrawable.RECTANGLE);
+        trackFill.setCornerRadius(dp(2));
+        trackFill.setColor(palette.accent);
+
+        LayerDrawable progressDrawable = new LayerDrawable(new Drawable[] {
+                trackBg,
+                new ClipDrawable(trackFill, Gravity.START, ClipDrawable.HORIZONTAL)
+        });
+        progressDrawable.setId(0, android.R.id.background);
+        progressDrawable.setId(1, android.R.id.progress);
+        progressDrawable.setLayerHeight(0, dp(4));
+        progressDrawable.setLayerGravity(0, Gravity.CENTER_VERTICAL);
+        progressDrawable.setLayerHeight(1, dp(4));
+        progressDrawable.setLayerGravity(1, Gravity.CENTER_VERTICAL);
+        seekBar.setProgressDrawable(progressDrawable);
+
+        GradientDrawable thumb = new GradientDrawable();
+        thumb.setShape(GradientDrawable.OVAL);
+        thumb.setColor(palette.accent);
+        thumb.setSize(dp(20), dp(20));
+        seekBar.setThumb(thumb);
+        seekBar.setThumbOffset(dp(10));
+        seekBar.setSplitTrack(false);
+        seekBar.setPadding(dp(12), dp(12), dp(12), dp(12));
     }
 
     @Override

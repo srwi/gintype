@@ -15,8 +15,12 @@ public final class GboardMultiSwipeSettings {
     public static final String PREF_KEY_AUTO_SPACE_BEFORE_WORD =
             "pref_multiswipe_auto_space_before_word";
     public static final String PREF_KEY_AUTO_SPACE_DELAY_MS = "pref_multiswipe_auto_space_delay_ms";
+    public static final String PREF_KEY_SINGLE_TOUCH_COMBINE_ENABLED =
+            "pref_multiswipe_single_touch_combine_enabled";
     public static final String PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS =
             "pref_multiswipe_single_touch_combine_delay_ms";
+    public static final String PREF_KEY_TAP_TO_MULTISWIPE_ENABLED =
+            "pref_multiswipe_tap_to_multiswipe_enabled";
     public static final String PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS =
             "pref_multiswipe_tap_to_multiswipe_delay_ms";
     public static final String PREF_KEY_SPACEBAR_TIMER_INDICATOR =
@@ -37,10 +41,12 @@ public final class GboardMultiSwipeSettings {
     public static final int MIN_AUTO_SPACE_DELAY_MS = 0;
     public static final int MAX_AUTO_SPACE_DELAY_MS = 2000;
     public static final int DEFAULT_AUTO_SPACE_DELAY_MS = 300;
-    public static final int MIN_SINGLE_TOUCH_COMBINE_DELAY_MS = 0;
+    public static final boolean DEFAULT_SINGLE_TOUCH_COMBINE_ENABLED = true;
+    public static final int MIN_SINGLE_TOUCH_COMBINE_DELAY_MS = 50;
     public static final int MAX_SINGLE_TOUCH_COMBINE_DELAY_MS = 500;
     public static final int DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS = 150;
-    public static final int MIN_TAP_TO_MULTISWIPE_DELAY_MS = 0;
+    public static final boolean DEFAULT_TAP_TO_MULTISWIPE_ENABLED = true;
+    public static final int MIN_TAP_TO_MULTISWIPE_DELAY_MS = 100;
     public static final int MAX_TAP_TO_MULTISWIPE_DELAY_MS = 2000;
     public static final int DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS = 750;
     public static final boolean DEFAULT_SPACEBAR_TIMER_INDICATOR = false;
@@ -107,9 +113,33 @@ public final class GboardMultiSwipeSettings {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_AUTO_SPACE_DELAY_MS, DEFAULT_AUTO_SPACE_DELAY_MS);
         }
+        if (!preferences.contains(PREF_KEY_SINGLE_TOUCH_COMBINE_ENABLED)) {
+            if (editor == null) editor = preferences.edit();
+            boolean legacyOff = preferences.contains(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS)
+                    && readIntRaw(preferences, PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                            DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS) <= 0;
+            editor.putBoolean(PREF_KEY_SINGLE_TOUCH_COMBINE_ENABLED,
+                    !legacyOff && DEFAULT_SINGLE_TOUCH_COMBINE_ENABLED);
+            if (legacyOff) {
+                editor.putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                        DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS);
+            }
+        }
         if (!preferences.contains(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS)) {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS);
+        }
+        if (!preferences.contains(PREF_KEY_TAP_TO_MULTISWIPE_ENABLED)) {
+            if (editor == null) editor = preferences.edit();
+            boolean legacyOff = preferences.contains(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS)
+                    && readIntRaw(preferences, PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS,
+                            DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS) <= 0;
+            editor.putBoolean(PREF_KEY_TAP_TO_MULTISWIPE_ENABLED,
+                    !legacyOff && DEFAULT_TAP_TO_MULTISWIPE_ENABLED);
+            if (legacyOff) {
+                editor.putInt(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS,
+                        DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
+            }
         }
         if (!preferences.contains(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS)) {
             if (editor == null) editor = preferences.edit();
@@ -156,7 +186,9 @@ public final class GboardMultiSwipeSettings {
                     .putBoolean(PREF_KEY_AUTO_SPACE, DEFAULT_AUTO_SPACE)
                     .putBoolean(PREF_KEY_AUTO_SPACE_BEFORE_WORD, DEFAULT_AUTO_SPACE_BEFORE_WORD)
                     .putInt(PREF_KEY_AUTO_SPACE_DELAY_MS, DEFAULT_AUTO_SPACE_DELAY_MS)
+                    .putBoolean(PREF_KEY_SINGLE_TOUCH_COMBINE_ENABLED, DEFAULT_SINGLE_TOUCH_COMBINE_ENABLED)
                     .putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS)
+                    .putBoolean(PREF_KEY_TAP_TO_MULTISWIPE_ENABLED, DEFAULT_TAP_TO_MULTISWIPE_ENABLED)
                     .putInt(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS, DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS)
                     .putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR)
                     .putString(PREF_KEY_BACKSPACE_MODE, DEFAULT_BACKSPACE_MODE)
@@ -165,6 +197,23 @@ public final class GboardMultiSwipeSettings {
                     .putFloat(PREF_KEY_GEO_EXPONENT, DEFAULT_GEO_EXPONENT)
                     .putFloat(PREF_KEY_BEAM_FREQ_WEIGHT, DEFAULT_BEAM_FREQ_WEIGHT)
                     .putBoolean(PREF_KEY_TRACE_LOGGING, DEFAULT_TRACE_LOGGING)
+                    .commit();
+            syncDecoderConstants(preferences);
+            return saved;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** Resets only the Kinetica decoder tuning parameters to their release defaults. */
+    public static boolean resetDecoderToDefaults(SharedPreferences preferences) {
+        if (preferences == null) return false;
+        try {
+            boolean saved = preferences.edit()
+                    .putInt(PREF_KEY_BEAM_WIDTH, DEFAULT_BEAM_WIDTH)
+                    .putFloat(PREF_KEY_FREQ_WEIGHT_FLOOR, DEFAULT_FREQ_WEIGHT_FLOOR)
+                    .putFloat(PREF_KEY_GEO_EXPONENT, DEFAULT_GEO_EXPONENT)
+                    .putFloat(PREF_KEY_BEAM_FREQ_WEIGHT, DEFAULT_BEAM_FREQ_WEIGHT)
                     .commit();
             syncDecoderConstants(preferences);
             return saved;
@@ -235,6 +284,42 @@ public final class GboardMultiSwipeSettings {
                 delayMs, MIN_AUTO_SPACE_DELAY_MS, MAX_AUTO_SPACE_DELAY_MS);
     }
 
+    public static boolean readSingleTouchCombineEnabled(Context context) {
+        try {
+            SharedPreferences preferences = resolvePreferences(context);
+            return preferences == null
+                    ? DEFAULT_SINGLE_TOUCH_COMBINE_ENABLED
+                    : readSingleTouchCombineEnabled(preferences);
+        } catch (Throwable ignored) {
+            return DEFAULT_SINGLE_TOUCH_COMBINE_ENABLED;
+        }
+    }
+
+    public static boolean readSingleTouchCombineEnabled(SharedPreferences preferences) {
+        if (preferences == null) return DEFAULT_SINGLE_TOUCH_COMBINE_ENABLED;
+        if (!preferences.contains(PREF_KEY_SINGLE_TOUCH_COMBINE_ENABLED)
+                && preferences.contains(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS)
+                && readIntRaw(preferences, PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                        DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS) <= 0) {
+            return false;
+        }
+        return GboardBooleanFlagSettings.readEnabled(
+                preferences, PREF_KEY_SINGLE_TOUCH_COMBINE_ENABLED,
+                DEFAULT_SINGLE_TOUCH_COMBINE_ENABLED);
+    }
+
+    public static boolean writeSingleTouchCombineEnabled(
+            SharedPreferences preferences, boolean enabled) {
+        return GboardBooleanFlagSettings.writeEnabled(
+                preferences, PREF_KEY_SINGLE_TOUCH_COMBINE_ENABLED, enabled);
+    }
+
+    public static int readEffectiveSingleTouchCombineDelayMs(Context context) {
+        return readSingleTouchCombineEnabled(context)
+                ? readSingleTouchCombineDelayMs(context)
+                : 0;
+    }
+
     public static int readSingleTouchCombineDelayMs(Context context) {
         try {
             SharedPreferences preferences = resolvePreferences(context);
@@ -254,6 +339,42 @@ public final class GboardMultiSwipeSettings {
     public static boolean writeSingleTouchCombineDelayMs(SharedPreferences preferences, int delayMs) {
         return writeInt(preferences, PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS,
                 delayMs, MIN_SINGLE_TOUCH_COMBINE_DELAY_MS, MAX_SINGLE_TOUCH_COMBINE_DELAY_MS);
+    }
+
+    public static boolean readTapToMultiSwipeEnabled(Context context) {
+        try {
+            SharedPreferences preferences = resolvePreferences(context);
+            return preferences == null
+                    ? DEFAULT_TAP_TO_MULTISWIPE_ENABLED
+                    : readTapToMultiSwipeEnabled(preferences);
+        } catch (Throwable ignored) {
+            return DEFAULT_TAP_TO_MULTISWIPE_ENABLED;
+        }
+    }
+
+    public static boolean readTapToMultiSwipeEnabled(SharedPreferences preferences) {
+        if (preferences == null) return DEFAULT_TAP_TO_MULTISWIPE_ENABLED;
+        if (!preferences.contains(PREF_KEY_TAP_TO_MULTISWIPE_ENABLED)
+                && preferences.contains(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS)
+                && readIntRaw(preferences, PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS,
+                        DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS) <= 0) {
+            return false;
+        }
+        return GboardBooleanFlagSettings.readEnabled(
+                preferences, PREF_KEY_TAP_TO_MULTISWIPE_ENABLED,
+                DEFAULT_TAP_TO_MULTISWIPE_ENABLED);
+    }
+
+    public static boolean writeTapToMultiSwipeEnabled(
+            SharedPreferences preferences, boolean enabled) {
+        return GboardBooleanFlagSettings.writeEnabled(
+                preferences, PREF_KEY_TAP_TO_MULTISWIPE_ENABLED, enabled);
+    }
+
+    public static int readEffectiveTapToMultiSwipeDelayMs(Context context) {
+        return readTapToMultiSwipeEnabled(context)
+                ? readTapToMultiSwipeDelayMs(context)
+                : 0;
     }
 
     public static int readTapToMultiSwipeDelayMs(Context context) {
@@ -371,6 +492,15 @@ public final class GboardMultiSwipeSettings {
                 readFreqWeightFloor(preferences),
                 readGeoExponent(preferences),
                 readBeamFreqWeight(preferences));
+    }
+
+    private static int readIntRaw(SharedPreferences preferences, String key, int defaultValue) {
+        if (preferences == null) return defaultValue;
+        try {
+            return preferences.getInt(key, defaultValue);
+        } catch (ClassCastException ignored) {
+            return defaultValue;
+        }
     }
 
     private static int readInt(

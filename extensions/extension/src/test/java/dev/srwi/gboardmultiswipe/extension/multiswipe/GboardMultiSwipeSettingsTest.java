@@ -57,7 +57,8 @@ public class GboardMultiSwipeSettingsTest {
                 GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
         assertTrue(prefs.contains(GboardMultiSwipeSettings.PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS));
         assertTrue(GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(prefs, 0));
-        assertEquals(0, GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertEquals(GboardMultiSwipeSettings.MIN_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
         assertTrue(GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(prefs, 900));
         assertEquals(GboardMultiSwipeSettings.MAX_SINGLE_TOUCH_COMBINE_DELAY_MS,
                 GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
@@ -66,7 +67,8 @@ public class GboardMultiSwipeSettingsTest {
                 GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
         assertTrue(prefs.contains(GboardMultiSwipeSettings.PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS));
         assertTrue(GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(prefs, 0));
-        assertEquals(0, GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
+        assertEquals(GboardMultiSwipeSettings.MIN_TAP_TO_MULTISWIPE_DELAY_MS,
+                GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
         assertTrue(GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(prefs, 5000));
         assertEquals(GboardMultiSwipeSettings.MAX_TAP_TO_MULTISWIPE_DELAY_MS,
                 GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
@@ -162,18 +164,18 @@ public class GboardMultiSwipeSettingsTest {
         assertEquals(GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD,
                 GboardMultiSwipeSettings.readBackspaceMode(prefs));
 
-        List<GboardPatchesSettingsContract.Row> rowsAutoOff =
-                GboardMultiSwipeSettingsFeature.buildBehaviorRows(
-                        "Enable", "Summary", true, v -> {},
-                        "AutoSpace", "Summary", false, v -> {},
-                        "Delay", "Summary", "300 ms", () -> {},
+        List<GboardPatchesSettingsContract.Row> gestureRows =
+                GboardMultiSwipeSettingsFeature.buildGestureRows(
+                        "Enable MultiSwipe", "Summary", true, v -> {},
+                        "Combine single-finger strokes", "Summary", false, v -> {},
                         "Combine", "Summary", "150 ms", () -> {},
-                        "Timer", "Summary", false, v -> {},
-                        "Before", "Summary", true, v -> {},
+                        "Merge preceding taps", "Summary", true, v -> {},
                         "TapDelay", "Summary", "750 ms", () -> {},
                         "Backspace behavior", "Summary", "Delete whole word (Default)", () -> {});
-        assertEquals(3, rowsAutoOff.size());
-        assertEquals("Backspace behavior", rowsAutoOff.get(2).getTitle());
+        assertEquals(6, gestureRows.size());
+        assertFalse(gestureRows.get(2).isEnabled());
+        assertTrue(gestureRows.get(4).isEnabled());
+        assertEquals("Backspace behavior", gestureRows.get(5).getTitle());
 
         assertTrue(GboardMultiSwipeSettings.writeBackspaceMode(
                 prefs, GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT));
@@ -342,39 +344,81 @@ public class GboardMultiSwipeSettingsTest {
     }
 
     @Test
-    public void hidesTimeoutSettingRowsWhenAutoSpaceIsDisabled() {
+    public void disablesDependentAutoSpaceRowsWhenAutoSpaceIsOff() {
         List<dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row> withAutoSpace =
-                GboardMultiSwipeSettingsFeature.buildBehaviorRows(
-                        "Enable MultiSwipe", "", true, v -> {},
-                        "Auto-Space", "", true, v -> {},
+                GboardMultiSwipeSettingsFeature.buildAutoSpaceRows(
+                        true,
+                        "Auto-space", "", true, v -> {},
+                        "Space placement", "", "Before next word (Gboard style)", () -> {},
                         "Auto-space delay", "", "300 ms", () -> {},
-                        "Single-finger combine timeout", "", "150 ms", () -> {},
                         "Spacebar timer indicator", "", false, v -> {});
-        assertEquals(5, withAutoSpace.size());
+        assertEquals(4, withAutoSpace.size());
+        for (dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row row : withAutoSpace) {
+            assertTrue(row.isEnabled());
+        }
 
         List<dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row> withoutAutoSpace =
-                GboardMultiSwipeSettingsFeature.buildBehaviorRows(
-                        "Enable MultiSwipe", "", true, v -> {},
-                        "Auto-Space", "", false, v -> {},
+                GboardMultiSwipeSettingsFeature.buildAutoSpaceRows(
+                        true,
+                        "Auto-space", "", false, v -> {},
+                        "Space placement", "", "Before next word (Gboard style)", () -> {},
                         "Auto-space delay", "", "300 ms", () -> {},
-                        "Single-finger combine timeout", "", "150 ms", () -> {},
                         "Spacebar timer indicator", "", false, v -> {});
-        assertEquals(2, withoutAutoSpace.size());
-        assertEquals("Enable MultiSwipe", withoutAutoSpace.get(0).getTitle());
-        assertEquals("Auto-Space", withoutAutoSpace.get(1).getTitle());
+        assertEquals(4, withoutAutoSpace.size());
+        assertTrue(withoutAutoSpace.get(0).isEnabled());
+        assertFalse(withoutAutoSpace.get(1).isEnabled());
+        assertFalse(withoutAutoSpace.get(2).isEnabled());
+        assertFalse(withoutAutoSpace.get(3).isEnabled());
+    }
 
-        List<dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row> withBeforeWord =
-                GboardMultiSwipeSettingsFeature.buildBehaviorRows(
-                        "Enable MultiSwipe", "", true, v -> {},
-                        "Auto-Space", "", true, v -> {},
-                        "Auto-space delay", "", "300 ms", () -> {},
-                        "Single-finger combine timeout", "", "150 ms", () -> {},
-                        "Spacebar timer indicator", "", false, v -> {},
-                        "Auto-space before next word (Gboard style)", "", true, v -> {},
-                        "Tap-to-MultiSwipe timeout", "", "750 ms (Default)", () -> {});
-        assertEquals(7, withBeforeWord.size());
-        assertEquals("Auto-space before next word (Gboard style)", withBeforeWord.get(2).getTitle());
-        assertEquals("Tap-to-MultiSwipe timeout", withBeforeWord.get(5).getTitle());
+    @Test
+    public void resetDecoderToDefaultsResetsOnlyKineticaParameters() {
+        InMemorySharedPreferences prefs = new InMemorySharedPreferences();
+        GboardMultiSwipeSettings.ensureDefaults(prefs);
+
+        assertTrue(GboardMultiSwipeSettings.writeAutoSpaceEnabled(prefs, false));
+        assertTrue(GboardMultiSwipeSettings.writeAutoSpaceDelayMs(prefs, 500));
+        assertTrue(GboardMultiSwipeSettings.writeBackspaceMode(
+                prefs, GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT));
+        assertTrue(GboardMultiSwipeSettings.writeBeamWidth(prefs, 512));
+        assertTrue(GboardMultiSwipeSettings.writeFreqWeightFloor(prefs, 0.50f));
+        assertTrue(GboardMultiSwipeSettings.writeGeoExponent(prefs, 5.00f));
+        assertTrue(GboardMultiSwipeSettings.writeBeamFreqWeight(prefs, 1.00f));
+
+        assertTrue(GboardMultiSwipeSettings.resetDecoderToDefaults(prefs));
+
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_BEAM_WIDTH,
+                GboardMultiSwipeSettings.readBeamWidth(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_FREQ_WEIGHT_FLOOR,
+                GboardMultiSwipeSettings.readFreqWeightFloor(prefs), 0.0001f);
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_GEO_EXPONENT,
+                GboardMultiSwipeSettings.readGeoExponent(prefs), 0.0001f);
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_BEAM_FREQ_WEIGHT,
+                GboardMultiSwipeSettings.readBeamFreqWeight(prefs), 0.0001f);
+        assertFalse(GboardMultiSwipeSettings.readAutoSpaceEnabled(prefs));
+        assertEquals(500, GboardMultiSwipeSettings.readAutoSpaceDelayMs(prefs));
+        assertEquals(GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT,
+                GboardMultiSwipeSettings.readBackspaceMode(prefs));
+    }
+
+    @Test
+    public void migratesLegacyZeroTimeoutToDisabledToggle() {
+        InMemorySharedPreferences prefs = new InMemorySharedPreferences();
+        prefs.edit()
+                .putInt(GboardMultiSwipeSettings.PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, 0)
+                .putInt(GboardMultiSwipeSettings.PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS, 0)
+                .commit();
+
+        assertFalse(GboardMultiSwipeSettings.readSingleTouchCombineEnabled(prefs));
+        assertFalse(GboardMultiSwipeSettings.readTapToMultiSwipeEnabled(prefs));
+
+        GboardMultiSwipeSettings.ensureDefaults(prefs);
+        assertFalse(GboardMultiSwipeSettings.readSingleTouchCombineEnabled(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
+                GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertFalse(GboardMultiSwipeSettings.readTapToMultiSwipeEnabled(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS,
+                GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
     }
 
     @Test
