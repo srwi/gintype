@@ -107,7 +107,7 @@ class GboardPackageRenamePatchContractTest {
     }
 
     private companion object {
-        const val TARGET_VERSION = "18.5.4.993608717-release-arm64-v8a"
+        const val TARGET_VERSION = "18.5.6.993608717-release-arm64-v8a"
         const val PACKAGE_RENAME_DESCRIPTION =
             "Rename the package to dev.srwi.com.google.android.inputmethod.latin and allow " +
                 "a custom app name so it can be installed alongside official Gboard."
