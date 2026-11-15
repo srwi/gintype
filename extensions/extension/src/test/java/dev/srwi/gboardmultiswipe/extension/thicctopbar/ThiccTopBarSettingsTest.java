@@ -158,6 +158,69 @@ public final class ThiccTopBarSettingsTest {
         Assert.assertEquals(1, VerticalWordWheelView.computeSwappedIndex(0, 2, true, true));
     }
 
+    @Test
+    public void swipeSensitivityDefaultsPersistenceAndSanitization() {
+        TestSharedPreferences prefs = new TestSharedPreferences();
+        Assert.assertEquals(
+                GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY,
+                GboardThiccTopBarSettings.readSwipeSensitivity(prefs),
+                0.0001f);
+
+        GboardThiccTopBarSettings.ensureDefaults(prefs);
+        Assert.assertEquals(
+                GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY,
+                GboardThiccTopBarSettings.readSwipeSensitivity(prefs),
+                0.0001f);
+
+        GboardThiccTopBarSettings.writeSwipeSensitivity(prefs, 0.75f);
+        Assert.assertEquals(0.75f, GboardThiccTopBarSettings.readSwipeSensitivity(prefs), 0.0001f);
+
+        // Re-running ensureDefaults must preserve explicit user values.
+        GboardThiccTopBarSettings.ensureDefaults(prefs);
+        Assert.assertEquals(0.75f, GboardThiccTopBarSettings.readSwipeSensitivity(prefs), 0.0001f);
+
+        Assert.assertEquals(
+                GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY,
+                GboardThiccTopBarSettings.sanitizeSwipeSensitivity(Float.NaN),
+                0.0001f);
+        Assert.assertEquals(
+                GboardThiccTopBarSettings.MIN_SWIPE_SENSITIVITY,
+                GboardThiccTopBarSettings.sanitizeSwipeSensitivity(0.05f),
+                0.0001f);
+        Assert.assertEquals(
+                GboardThiccTopBarSettings.MAX_SWIPE_SENSITIVITY,
+                GboardThiccTopBarSettings.sanitizeSwipeSensitivity(4.0f),
+                0.0001f);
+
+        prefs.values.put(GboardThiccTopBarSettings.PREF_KEY_SWIPE_SENSITIVITY, "invalid");
+        Assert.assertEquals(
+                GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY,
+                GboardThiccTopBarSettings.readSwipeSensitivity(prefs),
+                0.0001f);
+    }
+
+    @Test
+    public void horizontalStepThresholdScalesWithTopbarSizeAndSensitivity() {
+        float base = 16f;
+
+        // Default scale (1.0) and default sensitivity (1.0) preserves base step distance.
+        Assert.assertEquals(16f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, 1.0f, 1.0f), 0.001f);
+
+        // Larger top bar requires proportionally more distance per word step.
+        Assert.assertEquals(24f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, 1.5f, 1.0f), 0.001f);
+        Assert.assertEquals(32f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, 2.0f, 1.0f), 0.001f);
+
+        // Higher sensitivity reduces required distance; lower sensitivity increases it.
+        Assert.assertEquals(8f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, 1.0f, 2.0f), 0.001f);
+        Assert.assertEquals(32f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, 1.0f, 0.5f), 0.001f);
+
+        // Combined: 2.0x top bar size with 0.5x sensitivity yields 4.0x distance.
+        Assert.assertEquals(64f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, 2.0f, 0.5f), 0.001f);
+
+        // Out-of-range inputs are clamped/sanitized safely.
+        Assert.assertEquals(16f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, Float.NaN, Float.NaN), 0.001f);
+    }
+
     private static final class TestSharedPreferences implements SharedPreferences {
         final Map<String, Object> values = new HashMap<>();
 

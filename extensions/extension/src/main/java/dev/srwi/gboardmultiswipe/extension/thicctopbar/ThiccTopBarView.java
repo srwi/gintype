@@ -64,6 +64,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
     private final List<String> displayedColumnWords = new ArrayList<>();
     private int selectedHistoryIndex = -1;
     private float scaleFactor = GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE;
+    private float swipeSensitivity = GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY;
     private boolean invertVerticalSwipe = GboardThiccTopBarSettings.DEFAULT_INVERT_SWIPE;
 
     /** Update whether vertical flick gestures rotate word wheels in the inverted direction. */
@@ -78,6 +79,16 @@ public class ThiccTopBarView extends HorizontalScrollView {
         }
     }
 
+    /** Update the horizontal swipe sensitivity factor for word-cursor navigation. */
+    public void setSwipeSensitivity(float sensitivity) {
+        float sanitized = GboardThiccTopBarSettings.sanitizeSwipeSensitivity(sensitivity);
+        if (Math.abs(this.swipeSensitivity - sanitized) < 0.001f) {
+            return;
+        }
+        this.swipeSensitivity = sanitized;
+        updateNavStepThreshold();
+    }
+
     /** Update the scale factor for all word wheels and column dividers. */
     public void setScaleFactor(float scale) {
         float sanitized = GboardThiccTopBarSettings.sanitizeTopbarScale(scale);
@@ -85,6 +96,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
             return;
         }
         this.scaleFactor = sanitized;
+        updateNavStepThreshold();
         currentWheelView.setScaleFactor(sanitized);
         for (VerticalWordWheelView wheel : historyWheels) {
             wheel.setScaleFactor(sanitized);
@@ -122,7 +134,26 @@ public class ThiccTopBarView extends HorizontalScrollView {
     private float navLastStepX = 0f;
     private boolean isHorizontalNavigating = false;
     private final float navTouchSlopPx;
-    private final float navStepThresholdPx;
+    private final float baseNavStepThresholdPx;
+    private float navStepThresholdPx;
+
+    /**
+     * Compute the horizontal swipe distance in pixels required for one word-cursor step.
+     * Scales up with top bar size so larger text requires proportionally longer swipes,
+     * and scales inversely with user-configured swipe sensitivity.
+     */
+    public static float computeHorizontalStepThresholdPx(
+            float baseStepPx, float topbarScale, float swipeSensitivity) {
+        float safeBase = Float.isFinite(baseStepPx) && baseStepPx > 0f ? baseStepPx : 1f;
+        float safeScale = GboardThiccTopBarSettings.sanitizeTopbarScale(topbarScale);
+        float safeSensitivity = GboardThiccTopBarSettings.sanitizeSwipeSensitivity(swipeSensitivity);
+        return (safeBase * safeScale) / safeSensitivity;
+    }
+
+    private void updateNavStepThreshold() {
+        navStepThresholdPx = computeHorizontalStepThresholdPx(
+                baseNavStepThresholdPx, scaleFactor, swipeSensitivity);
+    }
 
     public ThiccTopBarView(Context context) {
         super(context);
@@ -133,8 +164,9 @@ public class ThiccTopBarView extends HorizontalScrollView {
 
         navTouchSlopPx = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 8f, getResources().getDisplayMetrics());
-        navStepThresholdPx = TypedValue.applyDimension(
+        baseNavStepThresholdPx = TypedValue.applyDimension(
                 TypedValue.COMPLEX_UNIT_DIP, 16f, getResources().getDisplayMetrics());
+        updateNavStepThreshold();
 
         contentLayout = new LinearLayout(context);
         contentLayout.setOrientation(LinearLayout.HORIZONTAL);

@@ -182,6 +182,12 @@
     <string name="gboard_patches_thicc_top_bar_invert_swipe_summary">
         <translation locale="en">Swipe up to select the top suggestion, and swipe down for the bottom suggestion.</translation>
         </string>
+    <string name="gboard_patches_thicc_top_bar_swipe_sensitivity_title">
+        <translation locale="en">Horizontal swipe sensitivity</translation>
+        </string>
+    <string name="gboard_patches_thicc_top_bar_swipe_sensitivity_summary">
+        <translation locale="en">Adjust how far to swipe left or right to jump between words. Higher values require shorter swipes.</translation>
+        </string>
     <string name="gboard_patches_section_settings">
         <translation locale="en">Settings</translation>
         </string>

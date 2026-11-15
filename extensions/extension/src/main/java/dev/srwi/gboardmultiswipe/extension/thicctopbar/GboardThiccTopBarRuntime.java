@@ -176,6 +176,7 @@ public final class GboardThiccTopBarRuntime {
             return;
         }
         float activeScale = readActiveTopbarScale(context);
+        float swipeSensitivity = GboardThiccTopBarSettings.readSwipeSensitivity(context);
         boolean invertSwipe = GboardThiccTopBarSettings.readInvertSwipe(context);
         List<View> trackedHeaders;
         synchronized (BASE_HEADER_HEIGHTS) {
@@ -190,6 +191,7 @@ public final class GboardThiccTopBarRuntime {
             if (bar != null) {
                 bar.post(() -> {
                     bar.setScaleFactor(activeScale);
+                    bar.setSwipeSensitivity(swipeSensitivity);
                     bar.setInvertVerticalSwipe(invertSwipe);
                 });
             }
@@ -497,11 +499,13 @@ public final class GboardThiccTopBarRuntime {
 
     private static ThiccTopBarView getOrCreateBarView(ViewGroup holderView) {
         float activeScale = readActiveTopbarScale(holderView.getContext());
+        float swipeSensitivity = GboardThiccTopBarSettings.readSwipeSensitivity(holderView.getContext());
         boolean invertSwipe = GboardThiccTopBarSettings.readInvertSwipe(holderView.getContext());
         syncHeaderHeight(holderView, activeScale);
         ThiccTopBarView bar = resolveOrCreateBarView(holderView);
         if (bar != null) {
             bar.setScaleFactor(activeScale);
+            bar.setSwipeSensitivity(swipeSensitivity);
             bar.setInvertVerticalSwipe(invertSwipe);
         }
         return bar;

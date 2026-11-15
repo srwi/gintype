@@ -15,6 +15,11 @@ public final class GboardThiccTopBarSettings {
     public static final float MAX_TOPBAR_SCALE = 2.0f;
     public static final float DEFAULT_TOPBAR_SCALE = 1.0f;
 
+    public static final String PREF_KEY_SWIPE_SENSITIVITY = "pref_matrix_swipe_sensitivity";
+    public static final float MIN_SWIPE_SENSITIVITY = 0.25f;
+    public static final float MAX_SWIPE_SENSITIVITY = 2.0f;
+    public static final float DEFAULT_SWIPE_SENSITIVITY = 1.0f;
+
     public static final String PREF_KEY_INVERT_SWIPE = "pref_matrix_invert_vertical_swipe";
     public static final boolean DEFAULT_INVERT_SWIPE = false;
 
@@ -50,6 +55,9 @@ public final class GboardThiccTopBarSettings {
                 preferences, PREF_KEY_INVERT_SWIPE, DEFAULT_INVERT_SWIPE);
         if (preferences != null && !preferences.contains(PREF_KEY_TOPBAR_SCALE)) {
             writeTopbarScale(preferences, DEFAULT_TOPBAR_SCALE);
+        }
+        if (preferences != null && !preferences.contains(PREF_KEY_SWIPE_SENSITIVITY)) {
+            writeSwipeSensitivity(preferences, DEFAULT_SWIPE_SENSITIVITY);
         }
     }
 
@@ -89,15 +97,8 @@ public final class GboardThiccTopBarSettings {
     }
 
     public static float readTopbarScale(SharedPreferences preferences) {
-        if (preferences == null) {
-            return DEFAULT_TOPBAR_SCALE;
-        }
-        try {
-            return sanitizeTopbarScale(
-                    preferences.getFloat(PREF_KEY_TOPBAR_SCALE, DEFAULT_TOPBAR_SCALE));
-        } catch (ClassCastException ignored) {
-            return DEFAULT_TOPBAR_SCALE;
-        }
+        return readSanitizedFloat(
+                preferences, PREF_KEY_TOPBAR_SCALE, MIN_TOPBAR_SCALE, MAX_TOPBAR_SCALE, DEFAULT_TOPBAR_SCALE);
     }
 
     public static void writeTopbarScale(Context context, float value) {
@@ -108,19 +109,81 @@ public final class GboardThiccTopBarSettings {
     }
 
     public static void writeTopbarScale(SharedPreferences preferences, float value) {
+        writeSanitizedFloat(
+                preferences, PREF_KEY_TOPBAR_SCALE, value, MIN_TOPBAR_SCALE, MAX_TOPBAR_SCALE, DEFAULT_TOPBAR_SCALE);
+    }
+
+    public static float sanitizeTopbarScale(float value) {
+        return sanitizeFloat(value, MIN_TOPBAR_SCALE, MAX_TOPBAR_SCALE, DEFAULT_TOPBAR_SCALE);
+    }
+
+    public static float readSwipeSensitivity(Context context) {
+        return readSwipeSensitivity(GboardPatchesSettings.preferencesOrNull(context));
+    }
+
+    public static float readSwipeSensitivity(SharedPreferences preferences) {
+        return readSanitizedFloat(
+                preferences,
+                PREF_KEY_SWIPE_SENSITIVITY,
+                MIN_SWIPE_SENSITIVITY,
+                MAX_SWIPE_SENSITIVITY,
+                DEFAULT_SWIPE_SENSITIVITY);
+    }
+
+    public static void writeSwipeSensitivity(Context context, float value) {
+        if (context == null) {
+            return;
+        }
+        writeSwipeSensitivity(GboardPatchesSettings.preferences(context), value);
+    }
+
+    public static void writeSwipeSensitivity(SharedPreferences preferences, float value) {
+        writeSanitizedFloat(
+                preferences,
+                PREF_KEY_SWIPE_SENSITIVITY,
+                value,
+                MIN_SWIPE_SENSITIVITY,
+                MAX_SWIPE_SENSITIVITY,
+                DEFAULT_SWIPE_SENSITIVITY);
+    }
+
+    public static float sanitizeSwipeSensitivity(float value) {
+        return sanitizeFloat(
+                value, MIN_SWIPE_SENSITIVITY, MAX_SWIPE_SENSITIVITY, DEFAULT_SWIPE_SENSITIVITY);
+    }
+
+    private static float readSanitizedFloat(
+            SharedPreferences preferences, String key, float min, float max, float defaultValue) {
+        if (preferences == null) {
+            return defaultValue;
+        }
+        try {
+            return sanitizeFloat(preferences.getFloat(key, defaultValue), min, max, defaultValue);
+        } catch (ClassCastException ignored) {
+            return defaultValue;
+        }
+    }
+
+    private static void writeSanitizedFloat(
+            SharedPreferences preferences,
+            String key,
+            float value,
+            float min,
+            float max,
+            float defaultValue) {
         if (preferences == null) {
             return;
         }
         preferences.edit()
-                .putFloat(PREF_KEY_TOPBAR_SCALE, sanitizeTopbarScale(value))
+                .putFloat(key, sanitizeFloat(value, min, max, defaultValue))
                 .apply();
     }
 
-    public static float sanitizeTopbarScale(float value) {
+    private static float sanitizeFloat(float value, float min, float max, float defaultValue) {
         if (!Float.isFinite(value)) {
-            return DEFAULT_TOPBAR_SCALE;
+            return defaultValue;
         }
-        return Math.max(MIN_TOPBAR_SCALE, Math.min(MAX_TOPBAR_SCALE, value));
+        return Math.max(min, Math.min(max, value));
     }
 
     public static boolean writeEnabled(SharedPreferences preferences, boolean enabled) {

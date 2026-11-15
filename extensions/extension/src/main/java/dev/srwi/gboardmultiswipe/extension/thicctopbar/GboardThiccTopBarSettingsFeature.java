@@ -25,10 +25,17 @@ import java.util.List;
 /** Settings screen and controls for Thicc Top Bar. */
 public final class GboardThiccTopBarSettingsFeature
         implements GboardPatchesSettingsContract.Feature {
-    private static final float TOPBAR_SCALE_STEP = 0.05f;
+    private static final float FACTOR_SLIDER_STEP = 0.05f;
     private static final int TOPBAR_SCALE_TOTAL_STEPS = Math.round(
             (GboardThiccTopBarSettings.MAX_TOPBAR_SCALE
-                    - GboardThiccTopBarSettings.MIN_TOPBAR_SCALE) / TOPBAR_SCALE_STEP);
+                    - GboardThiccTopBarSettings.MIN_TOPBAR_SCALE) / FACTOR_SLIDER_STEP);
+    private static final int SWIPE_SENSITIVITY_TOTAL_STEPS = Math.round(
+            (GboardThiccTopBarSettings.MAX_SWIPE_SENSITIVITY
+                    - GboardThiccTopBarSettings.MIN_SWIPE_SENSITIVITY) / FACTOR_SLIDER_STEP);
+
+    private interface FloatValueWriter {
+        void write(Context context, float value);
+    }
 
     private final String title;
     private final String summary;
@@ -36,6 +43,8 @@ public final class GboardThiccTopBarSettingsFeature
     private final String enableTitle;
     private final String topbarScaleTitle;
     private final String topbarScaleSummary;
+    private final String swipeSensitivityTitle;
+    private final String swipeSensitivitySummary;
     private final String topbarScaleValueTemplate;
     private final String topbarScaleDefaultTemplate;
     private final String sliderDefaultLabel;
@@ -56,6 +65,10 @@ public final class GboardThiccTopBarSettingsFeature
                 context, R.string.gboard_patches_thicc_top_bar_topbar_scale_title);
         topbarScaleSummary = GboardSettingsText.get(
                 context, R.string.gboard_patches_thicc_top_bar_topbar_scale_summary);
+        swipeSensitivityTitle = GboardSettingsText.get(
+                context, R.string.gboard_patches_thicc_top_bar_swipe_sensitivity_title);
+        swipeSensitivitySummary = GboardSettingsText.get(
+                context, R.string.gboard_patches_thicc_top_bar_swipe_sensitivity_summary);
         topbarScaleValueTemplate = GboardSettingsText.get(
                 context, R.string.gboard_patches_thicc_top_bar_topbar_scale_value);
         topbarScaleDefaultTemplate = GboardSettingsText.get(
@@ -107,6 +120,7 @@ public final class GboardThiccTopBarSettingsFeature
             GboardThiccTopBarSettings.ensureDefaults(preferences);
             boolean enabled = GboardThiccTopBarSettings.readEnabled(preferences);
             float topbarScale = GboardThiccTopBarSettings.readTopbarScale(preferences);
+            float swipeSensitivity = GboardThiccTopBarSettings.readSwipeSensitivity(preferences);
             boolean invertSwipe = GboardThiccTopBarSettings.readInvertSwipe(preferences);
 
             List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>();
@@ -123,9 +137,17 @@ public final class GboardThiccTopBarSettingsFeature
             rows.add(new GboardPatchesSettingsContract.SelectorRow(
                     topbarScaleTitle,
                     topbarScaleSummary,
-                    formatTopbarScale(topbarScale),
+                    formatFactor(topbarScale, GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE),
                     enabled,
                     () -> showTopbarScaleDialog(host, topbarScale)));
+            rows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    swipeSensitivityTitle,
+                    swipeSensitivitySummary,
+                    formatFactor(
+                            swipeSensitivity,
+                            GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY),
+                    enabled,
+                    () -> showSwipeSensitivityDialog(host, swipeSensitivity)));
             rows.add(new GboardPatchesSettingsContract.ToggleRow(
                     invertSwipeTitle,
                     invertSwipeSummary,
@@ -155,14 +177,48 @@ public final class GboardThiccTopBarSettingsFeature
     private void showTopbarScaleDialog(
             GboardPatchesSettingsContract.FeatureHost host,
             float currentValue) {
+        showFactorSliderDialog(
+                host,
+                topbarScaleTitle,
+                currentValue,
+                GboardThiccTopBarSettings.MIN_TOPBAR_SCALE,
+                GboardThiccTopBarSettings.MAX_TOPBAR_SCALE,
+                GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE,
+                TOPBAR_SCALE_TOTAL_STEPS,
+                GboardThiccTopBarSettings::writeTopbarScale);
+    }
+
+    private void showSwipeSensitivityDialog(
+            GboardPatchesSettingsContract.FeatureHost host,
+            float currentValue) {
+        showFactorSliderDialog(
+                host,
+                swipeSensitivityTitle,
+                currentValue,
+                GboardThiccTopBarSettings.MIN_SWIPE_SENSITIVITY,
+                GboardThiccTopBarSettings.MAX_SWIPE_SENSITIVITY,
+                GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY,
+                SWIPE_SENSITIVITY_TOTAL_STEPS,
+                GboardThiccTopBarSettings::writeSwipeSensitivity);
+    }
+
+    private void showFactorSliderDialog(
+            GboardPatchesSettingsContract.FeatureHost host,
+            String dialogTitle,
+            float currentValue,
+            float minValue,
+            float maxValue,
+            float defaultValue,
+            int totalSteps,
+            FloatValueWriter writer) {
         GboardPatchesSettingsContract.showManagedDialog(host, onDismiss -> {
             Context context = host.getContext();
             if (context == null) {
                 return false;
             }
 
-            int initialProgress = scaleToStep(currentValue);
-            int defaultProgress = scaleToStep(GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE);
+            int initialProgress = valueToStep(currentValue, minValue, maxValue, defaultValue, totalSteps);
+            int defaultProgress = valueToStep(defaultValue, minValue, maxValue, defaultValue, totalSteps);
 
             LinearLayout content = new LinearLayout(context);
             content.setOrientation(LinearLayout.VERTICAL);
@@ -192,7 +248,7 @@ public final class GboardThiccTopBarSettingsFeature
             sliderRow.addView(minusButton, new LinearLayout.LayoutParams(dp(context, 44), dp(context, 44)));
 
             SeekBar seekBar = new SeekBar(context);
-            seekBar.setMax(TOPBAR_SCALE_TOTAL_STEPS);
+            seekBar.setMax(totalSteps);
             seekBar.setProgress(initialProgress);
             LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
@@ -211,9 +267,10 @@ public final class GboardThiccTopBarSettingsFeature
 
             Runnable syncUi = () -> {
                 int progress = seekBar.getProgress();
-                valueLabel.setText(formatTopbarScale(stepToScale(progress)));
+                valueLabel.setText(formatFactor(
+                        stepToValue(progress, minValue, maxValue, totalSteps), defaultValue));
                 minusButton.setEnabled(progress > 0);
-                plusButton.setEnabled(progress < TOPBAR_SCALE_TOTAL_STEPS);
+                plusButton.setEnabled(progress < totalSteps);
             };
             syncUi.run();
 
@@ -225,7 +282,7 @@ public final class GboardThiccTopBarSettingsFeature
             });
             plusButton.setOnClickListener(v -> {
                 int progress = seekBar.getProgress();
-                if (progress < TOPBAR_SCALE_TOTAL_STEPS) {
+                if (progress < totalSteps) {
                     seekBar.setProgress(progress + 1);
                 }
             });
@@ -243,7 +300,7 @@ public final class GboardThiccTopBarSettingsFeature
             });
 
             AlertDialog dialog = new AlertDialog.Builder(context)
-                    .setTitle(topbarScaleTitle)
+                    .setTitle(dialogTitle)
                     .setView(content)
                     .setNeutralButton(sliderDefaultLabel, null)
                     .setNegativeButton(
@@ -252,8 +309,9 @@ public final class GboardThiccTopBarSettingsFeature
                     .setPositiveButton(
                             GboardSettingsText.get(context, R.string.gboard_patches_dialog_save),
                             (d, which) -> {
-                                GboardThiccTopBarSettings.writeTopbarScale(
-                                        context, stepToScale(seekBar.getProgress()));
+                                writer.write(
+                                        context,
+                                        stepToValue(seekBar.getProgress(), minValue, maxValue, totalSteps));
                                 GboardThiccTopBarRuntime.syncAllHeaderHeights(context);
                                 GboardPatchesSettingsContract.refresh(host);
                             })
@@ -269,26 +327,25 @@ public final class GboardThiccTopBarSettingsFeature
         });
     }
 
-    private String formatTopbarScale(float scale) {
-        float sanitized = GboardThiccTopBarSettings.sanitizeTopbarScale(scale);
-        if (Math.abs(sanitized - GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE) < 0.001f) {
-            return String.format(topbarScaleDefaultTemplate, sanitized);
+    private String formatFactor(float value, float defaultValue) {
+        if (Math.abs(value - defaultValue) < 0.001f) {
+            return String.format(topbarScaleDefaultTemplate, value);
         }
-        return String.format(topbarScaleValueTemplate, sanitized);
+        return String.format(topbarScaleValueTemplate, value);
     }
 
-    private static int scaleToStep(float value) {
-        float sanitized = GboardThiccTopBarSettings.sanitizeTopbarScale(value);
-        int step = Math.round(
-                (sanitized - GboardThiccTopBarSettings.MIN_TOPBAR_SCALE)
-                        / TOPBAR_SCALE_STEP);
-        return Math.max(0, Math.min(TOPBAR_SCALE_TOTAL_STEPS, step));
+    private static int valueToStep(
+            float value, float minValue, float maxValue, float defaultValue, int totalSteps) {
+        float clamped = Float.isFinite(value)
+                ? Math.max(minValue, Math.min(maxValue, value))
+                : defaultValue;
+        int step = Math.round((clamped - minValue) / FACTOR_SLIDER_STEP);
+        return Math.max(0, Math.min(totalSteps, step));
     }
 
-    private static float stepToScale(int step) {
-        int clamped = Math.max(0, Math.min(TOPBAR_SCALE_TOTAL_STEPS, step));
-        return GboardThiccTopBarSettings.sanitizeTopbarScale(
-                GboardThiccTopBarSettings.MIN_TOPBAR_SCALE + clamped * TOPBAR_SCALE_STEP);
+    private static float stepToValue(int step, float minValue, float maxValue, int totalSteps) {
+        int clamped = Math.max(0, Math.min(totalSteps, step));
+        return Math.max(minValue, Math.min(maxValue, minValue + clamped * FACTOR_SLIDER_STEP));
     }
 
     private static int dp(Context context, int dp) {
