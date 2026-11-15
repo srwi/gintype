@@ -66,6 +66,7 @@ public final class GboardMultiSwipeRuntime {
         final MultiSwipeWordSession core = new MultiSwipeWordSession();
         final MultiSwipeGeometry geometry = core.geometry;
         final Handler mainHandler = new Handler(Looper.getMainLooper());
+        final SpacebarTimerOverlay spacebarOverlay = new SpacebarTimerOverlay();
 
         boolean geometryReady = false;
         boolean geometryFromNativeLayout = false;
@@ -798,6 +799,91 @@ public final class GboardMultiSwipeRuntime {
         return chooseMultiSwipeTrailColor(stockRgb, tertiary, secondary, darkMode);
     }
 
+    private static View resolveSpacebarTargetView(Object handler, MultiSwipeGeometry geometry) {
+        View kv = extractKeyboardView(handler);
+        if (!(kv instanceof ViewGroup) || kv.getWidth() <= 0 || kv.getHeight() <= 0) {
+            return null;
+        }
+        float minWidth = Math.max(kv.getWidth() * 0.25f, geometry.keyWidthPx * 2.5f);
+        float minY = kv.getHeight() * 0.55f;
+        View[] best = new View[1];
+        findSpacebarSoftKeyView((ViewGroup) kv, kv, minWidth, minY, best);
+        View spaceKeyView = best[0];
+        if (spaceKeyView == null) return null;
+        if (spaceKeyView.getBackground() != null) return spaceKeyView;
+        if (spaceKeyView instanceof ViewGroup) {
+            View bgChild = findBackgroundChildView(
+                    (ViewGroup) spaceKeyView, spaceKeyView.getWidth() * 0.7f);
+            if (bgChild != null) return bgChild;
+        }
+        return spaceKeyView;
+    }
+
+    private static void findSpacebarSoftKeyView(
+            ViewGroup group,
+            View root,
+            float minWidth,
+            float minY,
+            View[] best
+    ) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child.getVisibility() != View.VISIBLE || child.getWidth() <= 0 || child.getHeight() <= 0) {
+                continue;
+            }
+            if (child.getClass().getSimpleName().contains("SoftKeyView")) {
+                if (child.getWidth() >= minWidth) {
+                    float top = child.getY();
+                    View parent = (child.getParent() instanceof View) ? (View) child.getParent() : null;
+                    while (parent != null && parent != root) {
+                        top += parent.getY();
+                        parent = (parent.getParent() instanceof View) ? (View) parent.getParent() : null;
+                    }
+                    if (top >= minY && (best[0] == null || child.getWidth() > best[0].getWidth())) {
+                        best[0] = child;
+                    }
+                }
+            } else if (child instanceof ViewGroup) {
+                findSpacebarSoftKeyView((ViewGroup) child, root, minWidth, minY, best);
+            }
+        }
+    }
+
+    private static View findBackgroundChildView(ViewGroup group, float minWidth) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child.getVisibility() != View.VISIBLE) continue;
+            if (child.getBackground() != null && child.getWidth() >= minWidth && child.getHeight() > 0) {
+                return child;
+            }
+            if (child instanceof ViewGroup) {
+                View nested = findBackgroundChildView((ViewGroup) child, minWidth);
+                if (nested != null) return nested;
+            }
+        }
+        return null;
+    }
+
+    private static boolean shouldShowSpacebarIndicator(Context context) {
+        return context != null
+                && GboardMultiSwipeSettings.isAutoSpaceEnabled(context)
+                && GboardMultiSwipeSettings.isSpacebarTimerIndicatorEnabled(context);
+    }
+
+    private static int resolveSpacebarIndicatorAccent(Object handler, Context context) {
+        int stockRgb = -1;
+        try {
+            if (handler != null && gestureOverlayViewField != null) {
+                Object overlayObj = gestureOverlayViewField.get(handler);
+                if (overlayObj instanceof View) {
+                    stockRgb = extractStockTrailRgb(STOCK_TRAIL_FILTERS.get(overlayObj));
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return resolveMultiSwipeTrailColor(context, stockRgb);
+    }
+
     static int chooseMultiSwipeTrailColor(
             int stockRgb,
             int dynamicTertiaryRgb,
@@ -1056,11 +1142,32 @@ public final class GboardMultiSwipeRuntime {
                     session.core.finalizeAutospace(autoSpaceEnabled, editor, self);
                 };
                 session.mainHandler.postDelayed(session.autospaceRunnable, delayMs);
+                if (shouldShowSpacebarIndicator(context)) {
+                    session.spacebarOverlay.startTimer(
+                            resolveSpacebarTargetView(handler, session.geometry),
+                            resolveSpacebarIndicatorAccent(handler, context),
+                            delayMs);
+                } else {
+                    session.spacebarOverlay.clearImmediate();
+                }
             }
 
             @Override
             public void onCancelAutospaceTimer() {
                 session.cancelAutospaceTimer();
+                session.spacebarOverlay.cancelTimer();
+            }
+
+            @Override
+            public void onBufferTimerUpdated(long durationMs) {
+                if (durationMs > 0L && shouldShowSpacebarIndicator(context)) {
+                    session.spacebarOverlay.startTimer(
+                            resolveSpacebarTargetView(handler, session.geometry),
+                            resolveSpacebarIndicatorAccent(handler, context),
+                            durationMs);
+                } else {
+                    session.spacebarOverlay.cancelTimer();
+                }
             }
 
             @Override

@@ -15,6 +15,8 @@ public final class GboardMultiSwipeSettings {
     public static final String PREF_KEY_AUTO_SPACE_DELAY_MS = "pref_multiswipe_auto_space_delay_ms";
     public static final String PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS =
             "pref_multiswipe_single_touch_combine_delay_ms";
+    public static final String PREF_KEY_SPACEBAR_TIMER_INDICATOR =
+            "pref_multiswipe_spacebar_timer_indicator";
     public static final String PREF_KEY_BEAM_WIDTH = "pref_multiswipe_beam_width";
     public static final String PREF_KEY_FREQ_WEIGHT_FLOOR = "pref_multiswipe_freq_weight_floor";
     public static final String PREF_KEY_GEO_EXPONENT = "pref_multiswipe_geo_exponent";
@@ -28,6 +30,7 @@ public final class GboardMultiSwipeSettings {
     public static final int MIN_SINGLE_TOUCH_COMBINE_DELAY_MS = 0;
     public static final int MAX_SINGLE_TOUCH_COMBINE_DELAY_MS = 500;
     public static final int DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS = 150;
+    public static final boolean DEFAULT_SPACEBAR_TIMER_INDICATOR = false;
     public static final int MIN_BEAM_WIDTH = 32;
     public static final int MAX_BEAM_WIDTH = 1024;
     public static final int DEFAULT_BEAM_WIDTH = 256;
@@ -91,6 +94,10 @@ public final class GboardMultiSwipeSettings {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS);
         }
+        if (!preferences.contains(PREF_KEY_SPACEBAR_TIMER_INDICATOR)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR);
+        }
         if (!preferences.contains(PREF_KEY_BEAM_WIDTH)) {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_BEAM_WIDTH, DEFAULT_BEAM_WIDTH);
@@ -124,6 +131,7 @@ public final class GboardMultiSwipeSettings {
                     .putBoolean(PREF_KEY_AUTO_SPACE, DEFAULT_AUTO_SPACE)
                     .putInt(PREF_KEY_AUTO_SPACE_DELAY_MS, DEFAULT_AUTO_SPACE_DELAY_MS)
                     .putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS)
+                    .putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR)
                     .putInt(PREF_KEY_BEAM_WIDTH, DEFAULT_BEAM_WIDTH)
                     .putFloat(PREF_KEY_FREQ_WEIGHT_FLOOR, DEFAULT_FREQ_WEIGHT_FLOOR)
                     .putFloat(PREF_KEY_GEO_EXPONENT, DEFAULT_GEO_EXPONENT)
@@ -331,29 +339,52 @@ public final class GboardMultiSwipeSettings {
         return Math.max(min, Math.min(value, max));
     }
 
+    public static boolean isSpacebarTimerIndicatorEnabled(Context context) {
+        try {
+            return readSpacebarTimerIndicatorEnabled(resolvePreferences(context));
+        } catch (Throwable ignored) {
+            return DEFAULT_SPACEBAR_TIMER_INDICATOR;
+        }
+    }
+
+    public static boolean readSpacebarTimerIndicatorEnabled(SharedPreferences preferences) {
+        return readBoolean(preferences, PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR);
+    }
+
+    public static boolean writeSpacebarTimerIndicatorEnabled(SharedPreferences preferences, boolean enabled) {
+        return writeBoolean(preferences, PREF_KEY_SPACEBAR_TIMER_INDICATOR, enabled);
+    }
+
     public static boolean isTraceLoggingEnabled(Context context) {
         try {
-            SharedPreferences preferences = resolvePreferences(context);
-            return readTraceLoggingEnabled(preferences);
+            return readTraceLoggingEnabled(resolvePreferences(context));
         } catch (Throwable ignored) {
             return DEFAULT_TRACE_LOGGING;
         }
     }
 
     public static boolean readTraceLoggingEnabled(SharedPreferences preferences) {
-        if (preferences == null) return DEFAULT_TRACE_LOGGING;
-        try {
-            return preferences.getBoolean(PREF_KEY_TRACE_LOGGING, DEFAULT_TRACE_LOGGING);
-        } catch (ClassCastException ignored) {
-            return DEFAULT_TRACE_LOGGING;
-        }
+        return readBoolean(preferences, PREF_KEY_TRACE_LOGGING, DEFAULT_TRACE_LOGGING);
     }
 
     public static boolean writeTraceLoggingEnabled(SharedPreferences preferences, boolean enabled) {
+        return writeBoolean(preferences, PREF_KEY_TRACE_LOGGING, enabled);
+    }
+
+    private static boolean readBoolean(SharedPreferences preferences, String key, boolean fallback) {
+        if (preferences == null) return fallback;
+        try {
+            return preferences.getBoolean(key, fallback);
+        } catch (ClassCastException ignored) {
+            return fallback;
+        }
+    }
+
+    private static boolean writeBoolean(SharedPreferences preferences, String key, boolean value) {
         if (preferences == null) return false;
         try {
             return preferences.edit()
-                    .putBoolean(PREF_KEY_TRACE_LOGGING, enabled)
+                    .putBoolean(key, value)
                     .commit();
         } catch (Throwable ignored) {
             return false;

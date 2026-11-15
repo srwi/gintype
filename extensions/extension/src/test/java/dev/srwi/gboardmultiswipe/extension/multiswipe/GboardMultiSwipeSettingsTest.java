@@ -50,6 +50,8 @@ public class GboardMultiSwipeSettingsTest {
 
         assertEquals(GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
                 GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR,
+                GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
         assertTrue(prefs.contains(GboardMultiSwipeSettings.PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS));
         assertTrue(GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(prefs, 0));
         assertEquals(0, GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
@@ -169,15 +171,19 @@ public class GboardMultiSwipeSettingsTest {
     @Test
     public void defaultsTraceLoggingOffAndResetsAllSettingsToDefaults() {
         assertFalse(GboardMultiSwipeSettings.DEFAULT_TRACE_LOGGING);
+        assertFalse(GboardMultiSwipeSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR);
 
         InMemorySharedPreferences prefs = new InMemorySharedPreferences();
         GboardMultiSwipeSettings.ensureDefaults(prefs);
         assertFalse(GboardMultiSwipeSettings.readTraceLoggingEnabled(prefs));
+        assertFalse(GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
 
         assertTrue(GboardMultiSwipeSettings.writeEnabled(prefs, false));
         assertTrue(GboardMultiSwipeSettings.writeAutoSpaceEnabled(prefs, false));
         assertTrue(GboardMultiSwipeSettings.writeAutoSpaceDelayMs(prefs, 725));
         assertTrue(GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(prefs, 260));
+        assertTrue(GboardMultiSwipeSettings.writeSpacebarTimerIndicatorEnabled(prefs, true));
+        assertTrue(GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
         assertTrue(GboardMultiSwipeSettings.writeBeamWidth(prefs, 512));
         assertTrue(GboardMultiSwipeSettings.writeFreqWeightFloor(prefs, 0.72f));
         assertTrue(GboardMultiSwipeSettings.writeGeoExponent(prefs, 6.25f));
@@ -194,6 +200,8 @@ public class GboardMultiSwipeSettingsTest {
                 GboardMultiSwipeSettings.readAutoSpaceDelayMs(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS,
                 GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR,
+                GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_BEAM_WIDTH,
                 GboardMultiSwipeSettings.readBeamWidth(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_FREQ_WEIGHT_FLOOR,
@@ -285,15 +293,17 @@ public class GboardMultiSwipeSettingsTest {
                         "Enable MultiSwipe", "", true, v -> {},
                         "Auto-Space", "", true, v -> {},
                         "Auto-space delay", "", "300 ms", () -> {},
-                        "Single-finger combine timeout", "", "150 ms", () -> {});
-        assertEquals(4, withAutoSpace.size());
+                        "Single-finger combine timeout", "", "150 ms", () -> {},
+                        "Spacebar timer indicator", "", false, v -> {});
+        assertEquals(5, withAutoSpace.size());
 
         List<dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row> withoutAutoSpace =
                 GboardMultiSwipeSettingsFeature.buildBehaviorRows(
                         "Enable MultiSwipe", "", true, v -> {},
                         "Auto-Space", "", false, v -> {},
                         "Auto-space delay", "", "300 ms", () -> {},
-                        "Single-finger combine timeout", "", "150 ms", () -> {});
+                        "Single-finger combine timeout", "", "150 ms", () -> {},
+                        "Spacebar timer indicator", "", false, v -> {});
         assertEquals(2, withoutAutoSpace.size());
         assertEquals("Enable MultiSwipe", withoutAutoSpace.get(0).getTitle());
         assertEquals("Auto-Space", withoutAutoSpace.get(1).getTitle());

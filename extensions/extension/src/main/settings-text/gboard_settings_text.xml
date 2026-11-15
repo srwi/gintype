@@ -254,6 +254,12 @@
     <string name="gboard_patches_multiswipe_combine_delay_summary">
         <translation locale="en">If a second swipe or tap follows a stock Gboard swipe/tap within this window, retroactively combine both in MultiSwipe (0 = off).</translation>
         </string>
+    <string name="gboard_patches_multiswipe_spacebar_timer_indicator_title">
+        <translation locale="en">Spacebar timer indicator</translation>
+        </string>
+    <string name="gboard_patches_multiswipe_spacebar_timer_indicator_summary">
+        <translation locale="en">Fills the spacebar from center to edges while a MultiSwipe timer is active and flashes when auto-space triggers.</translation>
+        </string>
     <string name="gboard_patches_multiswipe_combine_delay_off">
         <translation locale="en">0 ms (Off)</translation>
         </string>

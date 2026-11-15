@@ -536,6 +536,48 @@ public class MultiSwipeIntegrationTest {
         assertTrue(callbacks.lastCommitAutoSpace);
     }
 
+    @Test
+    public void spacebarTimerIndicatorNotifiesBufferAndAutospaceTimers() {
+        SettingsSnapshot passiveOnlySettings = new SettingsSnapshot(true, true, 300, 0);
+        SettingsSnapshot onSettings = new SettingsSnapshot(true, true, 300, 150);
+        SettingsSnapshot offSettings = new SettingsSnapshot(true, false, 300, 150);
+        DecodePort decoder = (tokens, prevWord) -> Collections.singletonList(cand("Hallo", 10.0f));
+
+        // 1. Single-touch tap (with combineDelay=0) starts passive tap prefix window (750 ms)
+        session.onActionDown(0, letterAX, letterAY, 1000L, passiveOnlySettings, editor, callbacks);
+        assertEquals(0L, callbacks.lastBufferTimerMs);
+        session.onPointerUp(0, letterAX, letterAY, 1020L, false, callbacks);
+        session.onActionUp(1020L, passiveOnlySettings, editor, decoder, callbacks);
+        assertEquals(750L, callbacks.lastBufferTimerMs);
+
+        // 2. Next ACTION_DOWN cancels active buffer timer; single-touch swipe starts combine window (150 ms)
+        session.onActionDown(0, letterAX, letterAY, 1100L, onSettings, editor, callbacks);
+        assertEquals(0L, callbacks.lastBufferTimerMs);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1130L, session.geometry);
+        session.onPointerUp(0, letterSX, letterSY, 1150L, true, callbacks);
+        session.onActionUp(1150L, onSettings, editor, decoder, callbacks);
+        assertEquals(150L, callbacks.lastBufferTimerMs);
+
+        // 3. MultiSwipe word schedules autospace timer and commits with autospaceInserted = true
+        session.onActionCancel(callbacks);
+        assertEquals(0L, callbacks.lastBufferTimerMs);
+        performTwoFingerSwipe(2000L, onSettings, decoder);
+        assertTrue(callbacks.autospaceScheduled);
+        assertEquals(300L, callbacks.lastAutospaceDelayMs);
+        session.finalizeAutospace(true, editor, callbacks);
+        assertTrue(callbacks.lastCommitAutoSpace);
+
+        // 4. With Auto-Space disabled, no buffer timer or autospace timer is started
+        callbacks.autospaceScheduled = false;
+        session.onActionCancel(callbacks);
+        session.onActionDown(0, letterAX, letterAY, 3000L, offSettings, editor, callbacks);
+        session.onPointerUp(0, letterAX, letterAY, 3020L, false, callbacks);
+        session.onActionUp(3020L, offSettings, editor, decoder, callbacks);
+        assertEquals(0L, callbacks.lastBufferTimerMs);
+        performTwoFingerSwipe(3200L, offSettings, decoder);
+        assertFalse(callbacks.autospaceScheduled);
+    }
+
     private static WordCandidate cand(String word, float score) {
         return new WordCandidate(word, score, 0f, 0f, 0f);
     }
@@ -649,6 +691,8 @@ public class MultiSwipeIntegrationTest {
         Boolean lastTrailAccent;
         String lastSkippedReason;
         boolean autospaceScheduled;
+        long lastAutospaceDelayMs;
+        long lastBufferTimerMs;
         final List<String> decodedWords = new ArrayList<>();
         List<String> lastAlternatives = Collections.emptyList();
         final List<String> committedWords = new ArrayList<>();
@@ -658,8 +702,12 @@ public class MultiSwipeIntegrationTest {
         @Override public void onTakeoverActivatedOnFinish() {}
         @Override public void onPointerFinished(int pointerId, boolean isSwipe, boolean inMultiSwipeGesture) {}
         @Override public void onClearTrailManagerActive() {}
-        @Override public void onScheduleAutospaceTimer(long delayMs) { autospaceScheduled = true; }
+        @Override public void onScheduleAutospaceTimer(long delayMs) {
+            autospaceScheduled = true;
+            lastAutospaceDelayMs = delayMs;
+        }
         @Override public void onCancelAutospaceTimer() { autospaceScheduled = false; }
+        @Override public void onBufferTimerUpdated(long durationMs) { lastBufferTimerMs = durationMs; }
 
         @Override
         public void onWordDecoded(

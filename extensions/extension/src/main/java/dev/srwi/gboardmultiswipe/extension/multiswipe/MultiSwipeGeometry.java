@@ -325,6 +325,23 @@ public final class MultiSwipeGeometry {
         return nearest.contains(px, py, gapX, gapY);
     }
 
+    private boolean isSpaceKey(KeySpec k) {
+        return k.character == ' ' || (k.character == '\0' && k.width >= keyWidthPx * 2.5f);
+    }
+
+    /**
+     * Returns the extracted spacebar {@link KeySpec} when available, or {@code null}.
+     */
+    public KeySpec getSpaceKey() {
+        for (int i = 0; i < nonLetterKeys.size(); i++) {
+            KeySpec k = nonLetterKeys.get(i);
+            if (isSpaceKey(k)) {
+                return k;
+            }
+        }
+        return null;
+    }
+
     /**
      * Returns true when {@code (px, py)} hits a non-letter key identifiable as Space
      * (explicit space char or wide bottom-row key with width >= 2.5x nominal key width).
@@ -332,8 +349,7 @@ public final class MultiSwipeGeometry {
     public boolean isSpaceKeyAt(float px, float py) {
         for (int i = 0; i < nonLetterKeys.size(); i++) {
             KeySpec k = nonLetterKeys.get(i);
-            if ((k.character == ' ' || (k.character == '\0' && k.width >= keyWidthPx * 2.5f))
-                    && k.contains(px, py, 0f, 0f)) {
+            if (isSpaceKey(k) && k.contains(px, py, 0f, 0f)) {
                 return true;
             }
         }

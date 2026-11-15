@@ -64,6 +64,7 @@ final class MultiSwipeWordSession {
         void onClearTrailManagerActive();
         void onScheduleAutospaceTimer(long delayMs);
         void onCancelAutospaceTimer();
+        default void onBufferTimerUpdated(long durationMs) {}
         void onWordDecoded(
                 String word,
                 List<String> alternatives,
@@ -663,8 +664,11 @@ final class MultiSwipeWordSession {
                 ? (eventTimeMs - lastTouchUpTimeMs)
                 : Long.MAX_VALUE;
         boolean wasAutospacing = autospaceTimerPending;
-        if (callbacks != null && autospaceTimerPending) {
-            callbacks.onCancelAutospaceTimer();
+        if (callbacks != null) {
+            callbacks.onBufferTimerUpdated(0L);
+            if (autospaceTimerPending) {
+                callbacks.onCancelAutospaceTimer();
+            }
         }
         autospaceTimerPending = false;
 
@@ -993,6 +997,18 @@ final class MultiSwipeWordSession {
                 settings.singleTouchCombineDelayMs,
                 settings.autoSpaceEnabled);
 
+        if (callbacks != null) {
+            long bufferTimerMs = 0L;
+            if (settings.autoSpaceEnabled) {
+                if (!singleTouchCombineBuffer.tokens.isEmpty() && settings.singleTouchCombineDelayMs > 0) {
+                    bufferTimerMs = settings.singleTouchCombineDelayMs;
+                } else if (!passiveTapBuffer.tokens.isEmpty()) {
+                    bufferTimerMs = MAX_PASSIVE_TAP_GAP_MS;
+                }
+            }
+            callbacks.onBufferTimerUpdated(bufferTimerMs);
+        }
+
         if (callbacks != null && (hasSwipe || strokeHadMultiTouch || restingDropped > 0
                 || !passiveTapBuffer.tokens.isEmpty())) {
             String reason = !hasSwipe
@@ -1124,6 +1140,9 @@ final class MultiSwipeWordSession {
         }
         resetGestureState();
         clearWordBuffer(callbacks);
+        if (callbacks != null) {
+            callbacks.onBufferTimerUpdated(0L);
+        }
         passiveTapBuffer.clear();
         singleTouchCombineBuffer.clear();
         pendingBackspaceCheck = false;

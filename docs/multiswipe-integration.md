@@ -236,10 +236,17 @@ flowchart TD
 
 #### `MS-19` — Settings Persistence, UI Visibility, Clamping & Trace Diagnostics
 - **Rule:** All MultiSwipe settings persist in Gboard shared preferences with strict range sanitization, defaults reset, conditional timeout UI visibility, and opt-in JSONL telemetry:
-  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineDelayMs=150` `[0..500]`, `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
-  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space delay` and `Single-finger combine timeout` rows are hidden from the MultiSwipe settings screen because timeouts do not apply when Auto-Space is off.
+  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineDelayMs=150` `[0..500]`, `spacebarTimerIndicator=false`, `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
+  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space delay`, `Single-finger combine timeout`, and `Spacebar timer indicator` rows are hidden from the MultiSwipe settings screen because timeouts and auto-space timers do not apply when Auto-Space is off.
   - **Trace Logging:** Disabled by default. When enabled, emits `geom` (once per unique geometry hash), `word`, `pass` (skipped stock gestures), and `commit` JSONL records to logcat (`GboardMultiSwipeTrace`) and rolling `multiswipe_trace.jsonl` files, exportable by trailing minute window (`1..1440`, or `0` for all) while retaining referenced `geom` headers.
 - **Implementation:** `GboardMultiSwipeSettings`, `GboardMultiSwipeSettingsFeature`, `GboardMultiSwipeTraceLogger`.
+
+#### `MS-20` — Optional Spacebar Timer Indicator & Elapse Flash
+- **Rule:** When both `autoSpaceEnabled == true` and `pref_multiswipe_spacebar_timer_indicator == true`, MultiSwipe renders an animated visual indicator directly on the spacebar `SoftKeyView` (or its pill background child `View`) via `ViewOverlay`, using `Drawable.getOutline` to match the spacebar's exact pill geometry and corner radius:
+  1. **Center-Out Fill:** Whenever any MultiSwipe word/buffer timer is active (`MS-12` autospace timer, `MS-09` single-touch combine window, or `MS-08` passive tap prefix window), a translucent pill-shaped shading expands smoothly from the center of the spacebar outward toward both edges over the active timer's duration. All timer types share the same visual style.
+  2. **Timer-Elapse Flash:** Whenever any active timer completes without being cancelled, the spacebar indicator briefly flashes and fades out smoothly.
+  3. **Cancellation & Reset:** Any touch down (`ACTION_DOWN`), buffer clear, or gesture reset smoothly fades out an active fill without flashing.
+- **Implementation:** `SpacebarTimerOverlay`, `GboardMultiSwipeRuntime.resolveSpacebarTargetView`, `MultiSwipeWordSession` (`onScheduleAutospaceTimer`, `onCancelAutospaceTimer`, `onBufferTimerUpdated`).
 
 ---
 
@@ -266,11 +273,13 @@ flowchart TD
 | `MS-17` | `GboardMultiSwipeDictionaryManager`, `GboardLmReader` | `GboardLmReaderTest#parsesUnigramsBigramsAndFiltersInternalTokens`, `capsBigramsByStrengthAndSupportsNestedMarisaTailTrie`, `normalizesLanguageTagsConsistently`, `filtersInternalVocabularyTokensAsExpected` | **Partial** (LM parsing/filtering covered; Android `UserDictionary` ContentResolver query runtime-only) |
 | `MS-18` | `MultiSwipeWordSession` -> `LifecycleCallbacks.onWordDecoded` / `onWordCommitted` | `MultiSwipeIntegrationTest#notifiesThiccTopBarListenerOnPreviewAndCommit` | **Covered** |
 | `MS-19` | `GboardMultiSwipeSettings`, `GboardMultiSwipeSettingsFeature`, `GboardMultiSwipeTraceLogger` | `GboardMultiSwipeSettingsTest` (all tests, incl. hiding timeout rows when Auto-Space is off), `MultiSwipeDecoderTest#traceLoggerEmitsGeometryOnceAndSerializesRawTouchPointsAndCandidates` | **Covered** |
+| `MS-20` | `SpacebarTimerOverlay`, `MultiSwipeGeometry.getSpaceKey`, `MultiSwipeWordSession`, `GboardMultiSwipeRuntime` | `GboardMultiSwipeSettingsTest`, `MultiSwipeIntegrationTest#spacebarTimerIndicatorNotifiesBufferAndAutospaceTimers` | **Partial** (timer callbacks & settings covered; Android `ViewOverlay`/`ValueAnimator` rendering runtime-only) |
 
 ---
 
 ## 5. Notes & Residual Runtime-Only Boundaries
 
-All pure-JVM integration rules (`MS-01`–`MS-19`) are aligned and covered by automated tests. Only two Android-framework interactions remain runtime-verified on device rather than pure JVM:
+All pure-JVM integration rules (`MS-01`–`MS-20`) are aligned and covered by automated tests. Only three Android-framework interactions remain runtime-verified on device rather than pure JVM:
 - Android `GestureOverlayView` / `TrailManager` (`SparseArray`) visual drawing (`MS-07` index sanitization).
 - Android `UserDictionary.Words` `ContentResolver` IPC query (`MS-17`).
+- Android `ViewOverlay` / `ValueAnimator` spacebar timer indicator drawing (`MS-20`).
