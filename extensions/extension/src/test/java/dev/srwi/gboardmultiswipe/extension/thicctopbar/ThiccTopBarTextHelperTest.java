@@ -103,11 +103,19 @@ public final class ThiccTopBarTextHelperTest {
         Assert.assertEquals("toggles", ThiccTopBarTextHelper.getActiveWord("toggles ", glideItems));
 
         // 5b. Live single-candidate glide preview for the NEXT word while InputConnection still ends
-        // with "<prevWord> " must return null so <prevWord> is not paired with the next word.
+        // with "<prevWord> " (or "<prevWord>" without trailing space) must return null so <prevWord>
+        // is not paired with the next word, while prefix completions while typing still resolve.
         GboardThiccTopBarRuntime.CandidateItem nextWordPreview = new GboardThiccTopBarRuntime.CandidateItem(
                 "sollten", 0, false, false, false, "RECOMMENDATION", null, null);
         Assert.assertNull(ThiccTopBarTextHelper.getActiveWord("dann ", Collections.singletonList(nextWordPreview)));
         Assert.assertEquals("sollten", ThiccTopBarTextHelper.getActiveWord("sollten ", Collections.singletonList(nextWordPreview)));
+
+        GboardThiccTopBarRuntime.CandidateItem nextWordZu = new GboardThiccTopBarRuntime.CandidateItem(
+                "zu", 0, false, false, false, "RECOMMENDATION", null, null);
+        Assert.assertNull(ThiccTopBarTextHelper.getActiveWord("manchmal", Collections.singletonList(nextWordZu)));
+        GboardThiccTopBarRuntime.CandidateItem prefixCompletion = new GboardThiccTopBarRuntime.CandidateItem(
+                "manchmal", 0, false, false, false, "RECOMMENDATION", null, null);
+        Assert.assertEquals("manchma", ThiccTopBarTextHelper.getActiveWord("manchma", Collections.singletonList(prefixCompletion)));
 
         // 6. When candidates are cleared (allowTrailingSpace = false, e.g. after swipe-delete or manual space):
         // Trailing space means word was committed, not currently composing

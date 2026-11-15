@@ -351,13 +351,19 @@ public final class ThiccTopBarTextHelper {
             String word = s.substring(start + 1, end).trim();
             if (!word.isEmpty()) {
                 // During a live glide gesture for the next word (while the previously committed
-                // word + auto-space still remains in the InputConnection), Gboard emits a single
-                // non-prediction live preview recommendation (e.g. "sollten" after "dann ").
-                // Reject it so "dann" isn't paired with "sollten" and its alternatives overwritten.
-                if (hasTrailingSpace && items != null && items.size() == 1) {
+                // word + optional auto-space still remains in the InputConnection), Gboard emits a single
+                // non-prediction live preview recommendation (e.g. "sollten" after "dann ", or "zu"
+                // after "manchmal" when committed without trailing space). Reject it so the previous
+                // word isn't paired with the next word's preview and its alternatives overwritten.
+                if (items != null && items.size() == 1) {
                     GboardThiccTopBarRuntime.CandidateItem only = items.get(0);
-                    if (only != null && only.text != null && !only.text.trim().equalsIgnoreCase(word)) {
-                        return null;
+                    if (only != null && only.text != null && !only.isRaw && !only.isPrediction) {
+                        String onlyText = only.text.trim();
+                        if (!onlyText.equalsIgnoreCase(word)) {
+                            if (hasTrailingSpace || !onlyText.regionMatches(true, 0, word, 0, word.length())) {
+                                return null;
+                            }
+                        }
                     }
                 }
                 return word;
