@@ -1036,6 +1036,47 @@ public final class ThiccTopBarTextHelperTest {
         Assert.assertEquals(Arrays.asList("Das", "Dass", "Daß"), bufFallback.getEntries().get(0).alternatives);
     }
 
+    @Test
+    public void syncSentenceBufferFromText_slidingWindowWithHysteresisTracksCursorInLongParagraph() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 40; i++) {
+            if (i > 0) sb.append(' ');
+            sb.append("w").append(i);
+        }
+        String text = sb.toString();
+        ThiccTopBarSentenceBuffer buf = new ThiccTopBarSentenceBuffer();
+
+        // 1. Cursor at end -> shows last 25 words (w15..w39)
+        TestInputConnection icEnd = new TestInputConnection(text, text.length(), text.length());
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(icEnd, null, buf, Collections.emptyMap());
+        Assert.assertEquals(25, buf.getEntries().size());
+        Assert.assertEquals(15, buf.getWindowStartWordIndex());
+        Assert.assertEquals("w15", buf.getEntries().get(0).committedWord);
+        Assert.assertEquals("w39", buf.getEntries().get(24).committedWord);
+
+        // 2. Cursor moves left to w25 (inside 8-word margin from left edge 15) -> window stays at 15..39
+        int w25Start = text.indexOf("w25");
+        TestInputConnection icW25 = new TestInputConnection(text, w25Start, w25Start + 3);
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(icW25, null, buf, Collections.emptyMap());
+        Assert.assertEquals(15, buf.getWindowStartWordIndex());
+        Assert.assertEquals(10, ThiccTopBarTextHelper.getWordIndexAtCursor(icW25, buf));
+
+        // 3. Cursor moves left to w20 (within 8 words of left edge 15) -> window re-centers around w20
+        int w20Start = text.indexOf("w20");
+        TestInputConnection icW20 = new TestInputConnection(text, w20Start, w20Start + 3);
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(icW20, null, buf, Collections.emptyMap());
+        Assert.assertEquals(8, buf.getWindowStartWordIndex());
+        Assert.assertEquals("w8", buf.getEntries().get(0).committedWord);
+        Assert.assertEquals(12, ThiccTopBarTextHelper.getWordIndexAtCursor(icW20, buf));
+
+        // 4. Cursor moves all the way to w0 -> window starts at 0 and getWordIndexAtCursor == 0
+        TestInputConnection icW0 = new TestInputConnection(text, 0, 2);
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(icW0, null, buf, Collections.emptyMap());
+        Assert.assertEquals(0, buf.getWindowStartWordIndex());
+        Assert.assertEquals("w0", buf.getEntries().get(0).committedWord);
+        Assert.assertEquals(0, ThiccTopBarTextHelper.getWordIndexAtCursor(icW0, buf));
+    }
+
     private static ThiccTopBarSentenceBuffer createSentenceBuffer(String... words) {
         ThiccTopBarSentenceBuffer buf = new ThiccTopBarSentenceBuffer();
         for (String w : words) {

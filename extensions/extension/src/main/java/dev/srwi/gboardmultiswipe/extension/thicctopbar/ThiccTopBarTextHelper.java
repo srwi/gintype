@@ -432,9 +432,9 @@ public final class ThiccTopBarTextHelper {
     ) {
         if (ic == null || buffer == null) return;
         try {
-            CharSequence csBefore = ic.getTextBeforeCursor(1000, 0);
+            CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
             CharSequence csSel = ic.getSelectedText(0);
-            CharSequence csAfter = ic.getTextAfterCursor(1000, 0);
+            CharSequence csAfter = ic.getTextAfterCursor(2000, 0);
 
             String before = csBefore != null ? csBefore.toString() : "";
             String sel = csSel != null ? csSel.toString() : "";
@@ -508,9 +508,47 @@ public final class ThiccTopBarTextHelper {
             }
 
             int historyWordCount = hasActiveWord ? validTokens.size() - 1 : validTokens.size();
+            int windowStart = 0;
+            int windowEnd = historyWordCount;
+
+            if (historyWordCount > ThiccTopBarSentenceBuffer.MAX_WINDOW_SIZE) {
+                int cursorWordIdx = historyWordCount - 1;
+                if (!hasActiveWord) {
+                    int paraStartInBefore = 0;
+                    for (int i = before.length() - 1; i >= 0; i--) {
+                        char c = before.charAt(i);
+                        if (c == '\n' || c == '\r') {
+                            paraStartInBefore = i + 1;
+                            break;
+                        }
+                    }
+                    String paraBeforeCursor = before.substring(paraStartInBefore);
+                    int wordsBefore = collectWordSpans(paraBeforeCursor).size();
+                    cursorWordIdx = Math.max(0, Math.min(historyWordCount - 1, wordsBefore - (sel.isEmpty() && wordsBefore > 0 ? 1 : 0)));
+                    if (!sel.isEmpty()) {
+                        cursorWordIdx = Math.max(0, Math.min(historyWordCount - 1, wordsBefore));
+                    }
+                }
+
+                int maxWindowStart = historyWordCount - ThiccTopBarSentenceBuffer.MAX_WINDOW_SIZE;
+                int prevStart = Math.max(0, Math.min(maxWindowStart, buffer.getWindowStartWordIndex()));
+                int prevSize = buffer.getEntries().size();
+                int margin = ThiccTopBarSentenceBuffer.EDGE_HYSTERESIS;
+                boolean leftOk = (prevStart == 0) || (cursorWordIdx >= prevStart + margin);
+                boolean rightOk = (prevStart + ThiccTopBarSentenceBuffer.MAX_WINDOW_SIZE >= historyWordCount)
+                        || (cursorWordIdx <= prevStart + ThiccTopBarSentenceBuffer.MAX_WINDOW_SIZE - 1 - margin);
+
+                if (prevSize == ThiccTopBarSentenceBuffer.MAX_WINDOW_SIZE && leftOk && rightOk) {
+                    windowStart = prevStart;
+                } else {
+                    windowStart = Math.max(0, Math.min(maxWindowStart, cursorWordIdx - ThiccTopBarSentenceBuffer.MAX_WINDOW_SIZE / 2));
+                }
+                windowEnd = Math.min(historyWordCount, windowStart + ThiccTopBarSentenceBuffer.MAX_WINDOW_SIZE);
+            }
 
             buffer.clear();
-            for (int i = 0; i < historyWordCount; i++) {
+            buffer.setWindowStartWordIndex(windowStart);
+            for (int i = windowStart; i < windowEnd; i++) {
                 TokenParts parts = validTokens.get(i);
                 String baseWord = parts.word;
                 String prefix = parts.prefix;

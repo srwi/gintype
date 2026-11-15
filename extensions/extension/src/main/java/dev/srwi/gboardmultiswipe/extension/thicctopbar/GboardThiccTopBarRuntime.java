@@ -772,9 +772,12 @@ public final class GboardThiccTopBarRuntime {
             ThiccTopBarTextHelper.moveCursorByWord(holderView, direction);
             boolean hadActiveWheel = barView.getCurrentWheelView().getParent() != null;
             int prevHistoryCount = barView.getHistoryWheelCount();
+            int prevWindowStart = SENTENCE_BUFFER.getWindowStartWordIndex();
             ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
             if (!ThiccTopBarTextHelper.isCursorAtEnd(holderView)) {
-                if (!SENTENCE_BUFFER.isEmpty() && (hadActiveWheel || prevHistoryCount != SENTENCE_BUFFER.getEntries().size())) {
+                if (!SENTENCE_BUFFER.isEmpty() && (hadActiveWheel
+                        || prevHistoryCount != SENTENCE_BUFFER.getEntries().size()
+                        || prevWindowStart != SENTENCE_BUFFER.getWindowStartWordIndex())) {
                     showHistoryOnlyBar(holderView, barView);
                 }
                 if (!ThiccTopBarTextHelper.hasSelection(holderView)) {

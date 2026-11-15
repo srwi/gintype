@@ -30,7 +30,11 @@ public final class ThiccTopBarSentenceBuffer {
         }
     }
 
+    public static final int MAX_WINDOW_SIZE = 25;
+    public static final int EDGE_HYSTERESIS = 8;
+
     private final List<WordEntry> entries = new ArrayList<>();
+    private int windowStartWordIndex = 0;
 
     public synchronized void addWord(String word, List<String> alternatives, int selectedIndex) {
         if (word == null || word.trim().isEmpty()) {
@@ -38,10 +42,18 @@ public final class ThiccTopBarSentenceBuffer {
         }
 
         entries.add(new WordEntry(word, alternatives, selectedIndex));
-        // Keep at most last 15 words to avoid memory and layout bloat
-        if (entries.size() > 15) {
+        if (entries.size() > MAX_WINDOW_SIZE) {
             entries.remove(0);
+            windowStartWordIndex++;
         }
+    }
+
+    public synchronized int getWindowStartWordIndex() {
+        return windowStartWordIndex;
+    }
+
+    public synchronized void setWindowStartWordIndex(int windowStartWordIndex) {
+        this.windowStartWordIndex = Math.max(0, windowStartWordIndex);
     }
 
     public synchronized List<WordEntry> getEntries() {
@@ -57,6 +69,7 @@ public final class ThiccTopBarSentenceBuffer {
 
     public synchronized void clear() {
         entries.clear();
+        windowStartWordIndex = 0;
     }
 
     public synchronized boolean isEmpty() {
