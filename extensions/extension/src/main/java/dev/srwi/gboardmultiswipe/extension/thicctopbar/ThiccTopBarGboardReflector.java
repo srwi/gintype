@@ -8,6 +8,7 @@ import android.graphics.Canvas;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
+import android.media.AudioManager;
 import android.os.Build;
 import android.util.Log;
 import android.util.TypedValue;
@@ -15,6 +16,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputConnection;
 import android.widget.LinearLayout;
+import android.widget.TextView;
+import java.util.Locale;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -508,6 +511,148 @@ public final class ThiccTopBarGboardReflector {
     }
 
     /**
+     * Returns true when Gboard's dictation / voice-typing UI is actively running so
+     * Thicc Top Bar steps aside and leaves Gboard's native top bar untouched.
+     */
+    public static boolean isDictationActive(View root) {
+        if (root == null) return false;
+        try {
+            if (isAppAudioRecordingActive(root.getContext())) {
+                return true;
+            }
+            if (findDictationViewInHierarchy(root)) {
+                return true;
+            }
+            if (root instanceof ViewGroup vg) {
+                ViewGroup softKeyboard = findSoftKeyboardView(vg);
+                if (softKeyboard != null && softKeyboard != root && findDictationViewInHierarchy(softKeyboard)) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    static boolean isDictationHintText(CharSequence rawText) {
+        if (rawText == null) return false;
+        String s = rawText.toString().trim().toLowerCase(Locale.ROOT);
+        if (s.isEmpty()) return false;
+        return s.contains("speak now")
+                || s.contains("sprich jetzt")
+                || s.contains("listening")
+                || s.contains("zuhören")
+                || s.contains("hört zu")
+                || s.contains("dictating")
+                || s.contains("diktieren")
+                || s.contains("diktat")
+                || s.contains("stop voice")
+                || s.contains("spracheingabe beenden")
+                || s.contains("spracheingabe stoppen")
+                || s.contains("tap to stop")
+                || s.contains("tap to pause")
+                || s.contains("zum beenden tippen")
+                || s.contains("zum pausieren tippen");
+    }
+
+    static boolean isDictationViewName(String rawName) {
+        if (rawName == null || rawName.isEmpty()) return false;
+        String s = rawName.toLowerCase(Locale.ROOT);
+        if (s.contains("key_pos_header_voice") || s.contains("setting")
+                || s.contains("thicctopbar") || s.contains("jumptoend")) {
+            return false;
+        }
+        return s.contains("dictat")
+                || s.contains("listening")
+                || s.contains("voice_ime")
+                || s.contains("voiceime")
+                || s.contains("voice_chip")
+                || s.contains("voice_header")
+                || s.contains("speech")
+                || s.contains("waveform")
+                || s.contains("audio_level");
+    }
+
+    static boolean isHeaderActionOverlayName(String resName) {
+        if (resName == null || resName.isEmpty()) return false;
+        String s = resName.toLowerCase(Locale.ROOT);
+        return "key_pos_header_notice".equals(s)
+                || "key_pos_header_action_overlay".equals(s);
+    }
+
+    private static boolean isAppAudioRecordingActive(Context context) {
+        if (context == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            return false;
+        }
+        try {
+            Object service = context.getSystemService(Context.AUDIO_SERVICE);
+            if (service instanceof AudioManager audioManager) {
+                List<?> configs = audioManager.getActiveRecordingConfigurations();
+                return configs != null && !configs.isEmpty();
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static boolean findDictationViewInHierarchy(View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        if (view instanceof ThiccTopBarView || view instanceof JumpToEndArrowView) {
+            return false;
+        }
+        if (isDictationViewName(view.getClass().getName())) {
+            return true;
+        }
+        Object tag = view.getTag();
+        if (tag instanceof CharSequence && isDictationViewName(tag.toString())) {
+            return true;
+        }
+        String resName = getResourceEntryNameOrNull(view);
+        if (isDictationViewName(resName)) {
+            return true;
+        }
+        if (isHeaderActionOverlayName(resName)
+                && view.getWidth() > 0
+                && view.getHeight() > 0
+                && hasVisibleChildWithSize(view)) {
+            return true;
+        }
+        if (isVoiceButton(view) && (view.isSelected() || view.isActivated())) {
+            return true;
+        }
+        if (isDictationHintText(view.getContentDescription())) {
+            return true;
+        }
+        if (view instanceof TextView tv && isDictationHintText(tv.getText())) {
+            return true;
+        }
+        if (view instanceof ViewGroup vg) {
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                if (findDictationViewInHierarchy(vg.getChildAt(i))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasVisibleChildWithSize(View view) {
+        if (!(view instanceof ViewGroup vg)) {
+            return false;
+        }
+        for (int i = 0; i < vg.getChildCount(); i++) {
+            View child = vg.getChildAt(i);
+            if (child != null && child.getVisibility() == View.VISIBLE
+                    && child.getWidth() > 0 && child.getHeight() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Applies an opaque background to ThiccTopBarView matching the keyboard surface.
      * Prevents any underlying views or text from bleeding or showing through.
      */
@@ -758,11 +903,12 @@ public final class ThiccTopBarGboardReflector {
                 }
             } else {
                 boolean undoActive = isUndoViewActive(attachTarget);
+                boolean dictationActive = isDictationActive(attachTarget);
                 if (holderView != null) {
                     if (undoActive) {
                         holderView.setAlpha(0.0f);
                         holderView.setVisibility(View.GONE);
-                    } else {
+                    } else if (!(dictationActive && holderView.getVisibility() == View.GONE)) {
                         if (getHolderCandidateCount(holderView) == 0) {
                             hideStaleCandidateSlots(holderView);
                         }

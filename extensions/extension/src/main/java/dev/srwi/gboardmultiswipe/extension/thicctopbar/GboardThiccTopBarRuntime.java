@@ -209,6 +209,16 @@ public final class GboardThiccTopBarRuntime {
         }
     }
 
+    private static void hideBarForDictation(
+            ViewGroup attachTarget, ViewGroup holderView, ThiccTopBarView barView) {
+        activeOriginalSuggestions = null;
+        hideJumpToEndArrow();
+        if (barView != null && barView.getVisibility() != View.GONE) {
+            barView.setVisibility(View.GONE);
+        }
+        ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+    }
+
     private GboardThiccTopBarRuntime() {
     }
 
@@ -261,6 +271,11 @@ public final class GboardThiccTopBarRuntime {
 
                 // Extract slot candidates directly from holderView slots
                 List<CandidateItem> items = ThiccTopBarGboardReflector.extractSlotCandidatesFromHolder(holderView, candidateListObj);
+
+                if (ThiccTopBarGboardReflector.isDictationActive(holderView)) {
+                    hideBarForDictation(attachTarget, holderView, barView);
+                    return;
+                }
 
                 // Ignore Gboard's native Undo/restore candidate when Thicc Top Bar is active:
                 // sync the bar with the remaining text instead of dismissing Thicc Top Bar.
@@ -420,6 +435,11 @@ public final class GboardThiccTopBarRuntime {
                     return;
                 }
 
+                if (ThiccTopBarGboardReflector.isDictationActive(holderView)) {
+                    hideBarForDictation(attachTarget, holderView, barView);
+                    return;
+                }
+
                 if (isHistorySelectionSessionActive(holderView, barView)) {
                     barView.setVisibility(View.VISIBLE);
                     ThiccTopBarGboardReflector.applyKeyboardBackground(barView, holderView);
@@ -553,6 +573,10 @@ public final class GboardThiccTopBarRuntime {
         // Keep quick toggles suppressed and MatrixBar at front whenever MatrixBar is visible.
         attachTarget.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
             if (finalBar.getVisibility() == View.VISIBLE) {
+                if (ThiccTopBarGboardReflector.isDictationActive(holderView)) {
+                    hideBarForDictation(attachTarget, holderView, finalBar);
+                    return;
+                }
                 ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                 if (attachTarget.getChildCount() > 0 && attachTarget.getChildAt(attachTarget.getChildCount() - 1) != finalBar) {
                     finalBar.bringToFront();
