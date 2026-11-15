@@ -1,5 +1,8 @@
 package dev.srwi.gboardmultiswipe.extension.thicctopbar;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -13,6 +16,7 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -92,11 +96,14 @@ public class VerticalWordWheelView extends LinearLayout {
                 TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
+    private static final long SWAP_ANIM_DURATION_MS = 140L;
+
     private float downX = 0f;
     private float downY = 0f;
     private float touchSlop = 12f;
     private boolean hasFlicked = false;
     private boolean isFlickGesture = false;
+    private ValueAnimator activeSwapAnimator;
 
     private OnWordCommitListener commitListener;
     private OnWordChangeListener changeListener;
@@ -177,18 +184,21 @@ public class VerticalWordWheelView extends LinearLayout {
 
     public void setAlternatives(List<String> words, int preferredSelected) {
         if (words == null || words.isEmpty()) {
+            cancelSwapAnimation();
             this.alternatives = Collections.emptyList();
             this.selectedIndex = 0;
             setVisibility(View.GONE);
             return;
         }
 
-        this.alternatives = new ArrayList<>(words);
-        if (preferredSelected >= 0 && preferredSelected < words.size()) {
-            this.selectedIndex = preferredSelected;
-        } else {
-            this.selectedIndex = 0;
+        int resolvedSelected = (preferredSelected >= 0 && preferredSelected < words.size()) ? preferredSelected : 0;
+        if (resolvedSelected == this.selectedIndex && this.alternatives.equals(words) && getVisibility() == View.VISIBLE) {
+            return;
         }
+
+        cancelSwapAnimation();
+        this.alternatives = new ArrayList<>(words);
+        this.selectedIndex = resolvedSelected;
 
         setVisibility(View.VISIBLE);
         updateDisplay();
@@ -333,6 +343,74 @@ public class VerticalWordWheelView extends LinearLayout {
         bottomView.setVisibility(View.VISIBLE);
     }
 
+    private void cancelSwapAnimation() {
+        if (activeSwapAnimator != null) {
+            activeSwapAnimator.cancel();
+            activeSwapAnimator = null;
+        }
+        resetRowTransforms();
+    }
+
+    private void resetRowTransforms() {
+        float sideAlpha = isActiveWord ? 0.88f : 0.85f;
+        topView.setTranslationY(0f);
+        topView.setAlpha(sideAlpha);
+        centerView.setTranslationY(0f);
+        centerView.setScaleX(1f);
+        centerView.setScaleY(1f);
+        centerView.setAlpha(1f);
+        bottomView.setTranslationY(0f);
+        bottomView.setAlpha(sideAlpha);
+    }
+
+    private void animateVerticalSwap(boolean flickUp) {
+        cancelSwapAnimation();
+        int rowHeight = centerView.getHeight();
+        int maxStepPx = dpToPx(18f * scaleFactor);
+        float stepPx = rowHeight > 0 ? Math.min(rowHeight, maxStepPx) : dpToPx(14f * scaleFactor);
+        float startY = flickUp ? stepPx : -stepPx;
+        float sideAlphaTarget = isActiveWord ? 0.88f : 0.85f;
+
+        ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+        animator.setDuration(SWAP_ANIM_DURATION_MS);
+        animator.setInterpolator(new DecelerateInterpolator(1.5f));
+        animator.addUpdateListener(anim -> {
+            float t = (Float) anim.getAnimatedValue();
+            float y = startY * (1f - t);
+            float scale = 0.94f + 0.06f * t;
+            float centerAlpha = 0.80f + 0.20f * t;
+            float sideAlpha = sideAlphaTarget * (0.60f + 0.40f * t);
+
+            topView.setTranslationY(y);
+            topView.setAlpha(sideAlpha);
+            centerView.setTranslationY(y);
+            centerView.setScaleX(scale);
+            centerView.setScaleY(scale);
+            centerView.setAlpha(centerAlpha);
+            bottomView.setTranslationY(y);
+            bottomView.setAlpha(sideAlpha);
+        });
+        animator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (activeSwapAnimator == animation) {
+                    activeSwapAnimator = null;
+                }
+                resetRowTransforms();
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                if (activeSwapAnimator == animation) {
+                    activeSwapAnimator = null;
+                }
+                resetRowTransforms();
+            }
+        });
+        activeSwapAnimator = animator;
+        animator.start();
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (alternatives.isEmpty()) {
@@ -362,7 +440,8 @@ public class VerticalWordWheelView extends LinearLayout {
                     hasFlicked = true;
                     isFlickGesture = true;
 
-                    if (dY < -touchSlop) {
+                    boolean flickUp = dY < -touchSlop;
+                    if (flickUp) {
                         selectedIndex = computeSwappedIndex(selectedIndex, size, true, invertVerticalSwipe);
                     } else if (dY > touchSlop) {
                         selectedIndex = computeSwappedIndex(selectedIndex, size, false, invertVerticalSwipe);
@@ -370,6 +449,9 @@ public class VerticalWordWheelView extends LinearLayout {
 
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                     updateDisplay();
+                    if (size >= 2) {
+                        animateVerticalSwap(flickUp);
+                    }
 
                     String newWord = getSelectedWord();
                     if (wordActionListener != null && newWord != null) {
