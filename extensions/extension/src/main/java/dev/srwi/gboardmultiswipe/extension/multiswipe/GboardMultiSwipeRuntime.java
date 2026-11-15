@@ -870,18 +870,8 @@ public final class GboardMultiSwipeRuntime {
                 && GboardMultiSwipeSettings.isSpacebarTimerIndicatorEnabled(context);
     }
 
-    private static int resolveSpacebarIndicatorAccent(Object handler, Context context) {
-        int stockRgb = -1;
-        try {
-            if (handler != null && gestureOverlayViewField != null) {
-                Object overlayObj = gestureOverlayViewField.get(handler);
-                if (overlayObj instanceof View) {
-                    stockRgb = extractStockTrailRgb(STOCK_TRAIL_FILTERS.get(overlayObj));
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return resolveMultiSwipeTrailColor(context, stockRgb);
+    private static int resolveSpacebarIndicatorAccent(View spacebarView, Context context) {
+        return ThiccTopBarGboardReflector.resolveSpacebarShadingColor(spacebarView, context);
     }
 
     static int chooseMultiSwipeTrailColor(
@@ -1143,9 +1133,10 @@ public final class GboardMultiSwipeRuntime {
                 };
                 session.mainHandler.postDelayed(session.autospaceRunnable, delayMs);
                 if (shouldShowSpacebarIndicator(context)) {
+                    View spacebarView = resolveSpacebarTargetView(handler, session.geometry);
                     session.spacebarOverlay.startTimer(
-                            resolveSpacebarTargetView(handler, session.geometry),
-                            resolveSpacebarIndicatorAccent(handler, context),
+                            spacebarView,
+                            resolveSpacebarIndicatorAccent(spacebarView, context),
                             delayMs);
                 } else {
                     session.spacebarOverlay.clearImmediate();
@@ -1161,9 +1152,10 @@ public final class GboardMultiSwipeRuntime {
             @Override
             public void onBufferTimerUpdated(long durationMs) {
                 if (durationMs > 0L && shouldShowSpacebarIndicator(context)) {
+                    View spacebarView = resolveSpacebarTargetView(handler, session.geometry);
                     session.spacebarOverlay.startTimer(
-                            resolveSpacebarTargetView(handler, session.geometry),
-                            resolveSpacebarIndicatorAccent(handler, context),
+                            spacebarView,
+                            resolveSpacebarIndicatorAccent(spacebarView, context),
                             durationMs);
                 } else {
                     session.spacebarOverlay.cancelTimer();

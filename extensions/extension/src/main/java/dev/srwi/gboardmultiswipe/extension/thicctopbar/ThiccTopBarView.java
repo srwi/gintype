@@ -258,8 +258,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
         int divWidth = dpToPx(1f);
         int divMargin = dpToPx(2f * scaleFactor);
         int divMarginV = dpToPx(4f * scaleFactor);
-        boolean dark = (getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        boolean dark = ThiccTopBarGboardReflector.isKeyboardDark(this);
         int dividerColor = dark ? Color.argb(45, 255, 255, 255) : Color.argb(35, 0, 0, 0);
 
         for (int i = 0; i < history.size(); i++) {

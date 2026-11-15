@@ -28,8 +28,8 @@ import java.lang.ref.WeakReference;
  */
 final class SpacebarTimerOverlay {
 
-    private static final int FILL_MAX_ALPHA = 76;   // ~30% opacity light shading
-    private static final int FLASH_MAX_ALPHA = 220; // ~86% peak flash opacity
+    private static final int FILL_MAX_ALPHA = 56;   // ~22% opacity light shading
+    private static final int FLASH_MAX_ALPHA = 165; // ~65% peak flash opacity
     private static final long FADE_OUT_DURATION_MS = 115L;
     private static final long FLASH_DURATION_MS = 240L;
 
@@ -316,16 +316,19 @@ final class SpacebarTimerOverlay {
             int g = (accentRgb >> 8) & 0xFF;
             int b = accentRgb & 0xFF;
 
+            int fillMaxAlpha = (accentRgb == 0xFFFFFF) ? FILL_MAX_ALPHA : 44;
+            int flashMaxAlpha = (accentRgb == 0xFFFFFF) ? FLASH_MAX_ALPHA : 130;
+
             int save = canvas.save();
             canvas.clipPath(pillPath);
             if (drawFill) {
                 float halfW = (pillRect.width() * 0.5f) * Math.max(0f, Math.min(1f, fillProgress));
                 float cx = pillRect.centerX();
-                paint.setColor(Color.argb(Math.round(FILL_MAX_ALPHA * fillAlpha), r, g, b));
+                paint.setColor(Color.argb(Math.round(fillMaxAlpha * fillAlpha), r, g, b));
                 canvas.drawRect(cx - halfW, pillRect.top, cx + halfW, pillRect.bottom, paint);
             }
             if (drawFlash) {
-                paint.setColor(Color.argb(Math.round(FLASH_MAX_ALPHA * flashAlpha), r, g, b));
+                paint.setColor(Color.argb(Math.round(flashMaxAlpha * flashAlpha), r, g, b));
                 canvas.drawRect(pillRect, paint);
             }
             canvas.restoreToCount(save);

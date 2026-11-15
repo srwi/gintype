@@ -235,8 +235,7 @@ public class VerticalWordWheelView extends LinearLayout {
     }
 
     public void updateColors() {
-        boolean dark = (getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        boolean dark = ThiccTopBarGboardReflector.isKeyboardDark(this);
         int primaryColor = dark ? Color.WHITE : 0xff202124;
         int accentColor = ThiccTopBarGboardReflector.resolveNormalAccentColor(getContext(), dark);
 

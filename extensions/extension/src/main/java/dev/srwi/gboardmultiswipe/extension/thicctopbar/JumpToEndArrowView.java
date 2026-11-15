@@ -80,8 +80,7 @@ public class JumpToEndArrowView extends FrameLayout {
     }
 
     public void updateIconColor() {
-        boolean dark = (getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        boolean dark = ThiccTopBarGboardReflector.isKeyboardDark(this);
         int accentColor = ThiccTopBarGboardReflector.resolveNormalAccentColor(getContext(), dark);
         iconView.setImageDrawable(new ArrowForwardDrawable(accentColor));
     }

@@ -3,6 +3,8 @@ package dev.srwi.gboardmultiswipe.extension.thicctopbar;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
@@ -95,6 +97,7 @@ public final class ThiccTopBarGboardReflector {
 
     private static volatile int stockTrailAccentRgb = -1;
     private static volatile int stockTrailNightMask = -1;
+    private static volatile Boolean lastDetectedKeyboardDark = null;
 
     private ThiccTopBarGboardReflector() {}
 
@@ -110,13 +113,90 @@ public final class ThiccTopBarGboardReflector {
         stockTrailAccentRgb = rgb & 0x00ffffff;
     }
 
+    /**
+     * Determines whether the active Gboard keyboard theme is dark by sampling the actual
+     * keyboard surface drawable when available, falling back to cached surface state or
+     * system night mode.
+     */
+    public static boolean isKeyboardDark(View view) {
+        View cur = view;
+        while (cur != null) {
+            Drawable bg = cur.getBackground();
+            if (bg != null) {
+                int rgb = sampleDrawableCenterRgb(bg);
+                if (rgb >= 0) {
+                    boolean dark = perceivedLuminance(rgb) < 140f;
+                    lastDetectedKeyboardDark = dark;
+                    return dark;
+                }
+            }
+            cur = (cur.getParent() instanceof View) ? (View) cur.getParent() : null;
+        }
+        Boolean cachedDark = lastDetectedKeyboardDark;
+        if (cachedDark != null) return cachedDark;
+        if (view != null && view.getContext() != null) {
+            return (view.getContext().getResources().getConfiguration().uiMode
+                    & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        }
+        return false;
+    }
+
+    /**
+     * Returns an appropriate shading RGB (0xRRGGBB) for the spacebar timer indicator:
+     * pure white on dark/colored spacebars (to lighten them in their own hue), or the
+     * active theme accent color on bright/light-theme spacebars.
+     */
+    public static int resolveSpacebarShadingColor(View spacebarView, Context context) {
+        if (spacebarView != null && spacebarView.getBackground() != null) {
+            int bgRgb = sampleDrawableCenterRgb(spacebarView.getBackground());
+            if (bgRgb >= 0) {
+                boolean lightSpacebar = perceivedLuminance(bgRgb) >= 150f;
+                return lightSpacebar
+                        ? (resolveNormalAccentColor(context, false) & 0x00ffffff)
+                        : 0xFFFFFF;
+            }
+        }
+        boolean dark = isKeyboardDark(spacebarView);
+        return dark ? 0xFFFFFF : (resolveNormalAccentColor(context, false) & 0x00ffffff);
+    }
+
+    static int sampleDrawableCenterRgb(Drawable d) {
+        if (d == null) return -1;
+        try {
+            if (d instanceof ColorDrawable cd) {
+                int color = cd.getColor();
+                if (((color >>> 24) & 0xff) >= 128) {
+                    return color & 0x00ffffff;
+                }
+                return -1;
+            }
+            int w = Math.max(1, Math.min(8, d.getBounds().width() > 0 ? d.getBounds().width() : d.getIntrinsicWidth()));
+            int h = Math.max(1, Math.min(8, d.getBounds().height() > 0 ? d.getBounds().height() : d.getIntrinsicHeight()));
+            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bmp);
+            int origL = d.getBounds().left;
+            int origT = d.getBounds().top;
+            int origR = d.getBounds().right;
+            int origB = d.getBounds().bottom;
+            d.setBounds(0, 0, w, h);
+            d.draw(canvas);
+            d.setBounds(origL, origT, origR, origB);
+            int pixel = bmp.getPixel(w / 2, h / 2);
+            bmp.recycle();
+            if (((pixel >>> 24) & 0xff) >= 128) {
+                return pixel & 0x00ffffff;
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
     public static int resolveNormalAccentColor(Context context, boolean dark) {
         int usableStockRgb = -1;
         int cachedRgb = stockTrailAccentRgb;
         if (cachedRgb >= 0) {
-            int expectedMask = dark ? Configuration.UI_MODE_NIGHT_YES : Configuration.UI_MODE_NIGHT_NO;
-            int cachedMask = stockTrailNightMask;
-            if (cachedMask < 0 || cachedMask == expectedMask) {
+            boolean brightTrail = perceivedLuminance(cachedRgb) >= 140f;
+            if (brightTrail == dark) {
                 usableStockRgb = cachedRgb;
             }
         }
@@ -475,6 +555,8 @@ public final class ThiccTopBarGboardReflector {
         } catch (Throwable t) {
             Log.w(TAG, "applyKeyboardBackground error: " + t.getMessage());
             barView.setBackgroundColor(0xFF202124);
+        } finally {
+            isKeyboardDark(barView);
         }
     }
 
