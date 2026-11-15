@@ -449,7 +449,7 @@ public class VerticalWordWheelView extends LinearLayout {
 
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                     updateDisplay();
-                    if (size >= 2) {
+                    if (size >= 2 && !invertVerticalSwipe) {
                         animateVerticalSwap(flickUp);
                     }
 
