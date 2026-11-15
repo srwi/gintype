@@ -578,6 +578,110 @@ public class MultiSwipeIntegrationTest {
         assertFalse(callbacks.autospaceScheduled);
     }
 
+    @Test
+    public void singleFingerStockSwipeAppendsAutospaceOnlyWhenAutoSpaceEnabled() {
+        SettingsSnapshot onSettings = new SettingsSnapshot(true, true, 300, 150);
+        SettingsSnapshot offSettings = new SettingsSnapshot(true, false, 300, 150);
+        DecodePort decoder = (tokens, prevWord) -> Collections.emptyList();
+
+        // 1. Pure tap does NOT schedule stock-swipe autospace
+        editor.reset();
+        session.onActionDown(0, letterAX, letterAY, 1000L, onSettings, editor, callbacks);
+        editor.stockType("a");
+        session.onPointerUp(0, letterAX, letterAY, 1020L, false, callbacks);
+        session.onActionUp(1020L, onSettings, editor, decoder, callbacks);
+        assertFalse(callbacks.stockSwipeAutospaceScheduled);
+        session.finalizeStockSwipeAutospace(true, editor);
+        assertEquals("a", editor.text());
+
+        // 2. Single-finger swipe schedules stock-swipe autospace and appends " " + supports eatBefore
+        editor.reset();
+        session.onActionCancel(callbacks);
+        session.onActionDown(0, letterAX, letterAY, 2000L, onSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 2030L, session.geometry);
+        editor.stockType("Hallo");
+        session.onPointerUp(0, letterSX, letterSY, 2050L, true, callbacks);
+        session.onActionUp(2050L, onSettings, editor, decoder, callbacks);
+        assertTrue(callbacks.stockSwipeAutospaceScheduled);
+        assertEquals(150L, callbacks.lastStockSwipeAutospaceDelayMs);
+        session.finalizeStockSwipeAutospace(true, editor);
+        assertEquals("Hallo ", editor.text());
+        assertTrue(session.autospaceInserted);
+
+        // Punctuation eatBefore retracts the appended space
+        session.onActionDown(0, periodX, periodY, 2250L, onSettings, editor, callbacks);
+        assertEquals("Hallo", editor.text());
+
+        // Spacebar after autospace preserves the trailing space (allowing multiple spaces)
+        // and converts a fast double-tap into ". " only when Gboard's double-space period is enabled
+        editor.reset();
+        session.onActionCancel(callbacks);
+        session.onActionDown(0, letterAX, letterAY, 2500L, onSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 2530L, session.geometry);
+        editor.stockType("Hallo");
+        session.onPointerUp(0, letterSX, letterSY, 2550L, true, callbacks);
+        session.onActionUp(2550L, onSettings, editor, decoder, callbacks);
+        session.finalizeStockSwipeAutospace(true, editor);
+        assertEquals("Hallo ", editor.text());
+        assertTrue(session.autospaceInserted);
+        // 1st Space tap (simulating BasicMotionEventHandler claiming tap -> onActionCancel)
+        // keeps existing space and adds another -> "Hallo  "
+        session.onActionDown(0, spaceX, spaceY, 2750L, onSettings, editor, callbacks);
+        session.onActionCancel(callbacks);
+        editor.finishComposingAndCommitSpace();
+        assertEquals("Hallo  ", editor.text());
+        assertFalse(session.autospaceInserted);
+        // Fast 2nd Space tap within 500ms replaces "  " with "." on ACTION_DOWN before Gboard commits " " -> "Hallo. "
+        session.onActionDown(0, spaceX, spaceY, 2900L, onSettings, editor, callbacks);
+        session.onActionCancel(callbacks);
+        editor.finishComposingAndCommitSpace();
+        assertEquals("Hallo. ", editor.text());
+
+        // When Gboard's double-space-period setting is disabled, fast double-tap stays spaces
+        SettingsSnapshot noDoublePeriodSettings = new SettingsSnapshot(true, true, 300, 150, false);
+        editor.reset();
+        session.onActionCancel(callbacks);
+        session.onActionDown(0, letterAX, letterAY, 5000L, noDoublePeriodSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 5030L, session.geometry);
+        editor.stockType("Hallo");
+        session.onPointerUp(0, letterSX, letterSY, 5050L, true, callbacks);
+        session.onActionUp(5050L, noDoublePeriodSettings, editor, decoder, callbacks);
+        session.finalizeStockSwipeAutospace(true, editor);
+        session.onActionDown(0, spaceX, spaceY, 5200L, noDoublePeriodSettings, editor, callbacks);
+        session.onPointerUp(0, spaceX, spaceY, 5230L, true, callbacks);
+        session.onActionUp(5230L, noDoublePeriodSettings, editor, decoder, callbacks);
+        editor.finishComposingAndCommitSpace();
+        session.onActionDown(0, spaceX, spaceY, 5350L, noDoublePeriodSettings, editor, callbacks);
+        session.onPointerUp(0, spaceX, spaceY, 5380L, true, callbacks);
+        session.onActionUp(5380L, noDoublePeriodSettings, editor, decoder, callbacks);
+        editor.finishComposingAndCommitSpace();
+        assertEquals("Hallo   ", editor.text());
+
+        // 3. Guard: if stock Gboard already ended with space, do not append a second space
+        editor.reset();
+        session.onActionCancel(callbacks);
+        session.onActionDown(0, letterAX, letterAY, 3000L, onSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 3030L, session.geometry);
+        editor.stockType("Hallo ");
+        session.onPointerUp(0, letterSX, letterSY, 3050L, true, callbacks);
+        session.onActionUp(3050L, onSettings, editor, decoder, callbacks);
+        session.finalizeStockSwipeAutospace(true, editor);
+        assertEquals("Hallo ", editor.text());
+
+        // 4. With Auto-Space disabled, single-finger swipe does NOT schedule or append space
+        editor.reset();
+        callbacks.stockSwipeAutospaceScheduled = false;
+        session.onActionCancel(callbacks);
+        session.onActionDown(0, letterAX, letterAY, 4000L, offSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 4030L, session.geometry);
+        editor.stockType("Hallo");
+        session.onPointerUp(0, letterSX, letterSY, 4050L, true, callbacks);
+        session.onActionUp(4050L, offSettings, editor, decoder, callbacks);
+        assertFalse(callbacks.stockSwipeAutospaceScheduled);
+        session.finalizeStockSwipeAutospace(false, editor);
+        assertEquals("Hallo", editor.text());
+    }
+
     private static WordCandidate cand(String word, float score) {
         return new WordCandidate(word, score, 0f, 0f, 0f);
     }
@@ -685,6 +789,13 @@ public class MultiSwipeIntegrationTest {
                 buf.append(' ');
             }
         }
+
+        @Override
+        public void commitText(String text) {
+            if (text != null && !text.isEmpty()) {
+                buf.append(text);
+            }
+        }
     }
 
     private static final class RecordingCallbacks implements LifecycleCallbacks {
@@ -692,6 +803,8 @@ public class MultiSwipeIntegrationTest {
         String lastSkippedReason;
         boolean autospaceScheduled;
         long lastAutospaceDelayMs;
+        boolean stockSwipeAutospaceScheduled;
+        long lastStockSwipeAutospaceDelayMs;
         long lastBufferTimerMs;
         final List<String> decodedWords = new ArrayList<>();
         List<String> lastAlternatives = Collections.emptyList();
@@ -707,6 +820,11 @@ public class MultiSwipeIntegrationTest {
             lastAutospaceDelayMs = delayMs;
         }
         @Override public void onCancelAutospaceTimer() { autospaceScheduled = false; }
+        @Override public void onScheduleStockSwipeAutospaceTimer(long delayMs) {
+            stockSwipeAutospaceScheduled = true;
+            lastStockSwipeAutospaceDelayMs = delayMs;
+        }
+        @Override public void onCancelStockSwipeAutospaceTimer() { stockSwipeAutospaceScheduled = false; }
         @Override public void onBufferTimerUpdated(long durationMs) { lastBufferTimerMs = durationMs; }
 
         @Override

@@ -74,6 +74,7 @@ public final class GboardMultiSwipeRuntime {
         int lastKeyboardWidth = 0;
         int lastKeyboardHeight = 0;
         Runnable autospaceRunnable = null;
+        Runnable stockSwipeAutospaceRunnable = null;
 
         void cancelAutospaceTimer() {
             if (autospaceRunnable != null) {
@@ -81,6 +82,14 @@ public final class GboardMultiSwipeRuntime {
                 autospaceRunnable = null;
             }
             core.autospaceTimerPending = false;
+        }
+
+        void cancelStockSwipeAutospaceTimer() {
+            if (stockSwipeAutospaceRunnable != null) {
+                mainHandler.removeCallbacks(stockSwipeAutospaceRunnable);
+                stockSwipeAutospaceRunnable = null;
+            }
+            core.stockSwipeAutospacePending = false;
         }
     }
 
@@ -997,8 +1006,34 @@ public final class GboardMultiSwipeRuntime {
         int combineDelayMs = (context != null)
                 ? GboardMultiSwipeSettings.readSingleTouchCombineDelayMs(context)
                 : GboardMultiSwipeSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS;
+        boolean doubleSpacePeriodEnabled = readDoubleSpacePeriodEnabled(context);
         return new MultiSwipeWordSession.SettingsSnapshot(
-                enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs);
+                enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs, doubleSpacePeriodEnabled);
+    }
+
+    private static boolean readDoubleSpacePeriodEnabled(Context context) {
+        if (context == null) return true;
+        final String prefKey = "enable_double_space_period";
+        final String prefsName = context.getPackageName() + "_preferences";
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !context.isDeviceProtectedStorage()) {
+                Context dpContext = context.createDeviceProtectedStorageContext();
+                if (dpContext != null) {
+                    android.content.SharedPreferences dpPrefs =
+                            dpContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
+                    if (dpPrefs != null && dpPrefs.contains(prefKey)) {
+                        return dpPrefs.getBoolean(prefKey, true);
+                    }
+                }
+            }
+            android.content.SharedPreferences prefs =
+                    context.getSharedPreferences(prefsName, Context.MODE_PRIVATE);
+            if (prefs != null && prefs.contains(prefKey)) {
+                return prefs.getBoolean(prefKey, true);
+            }
+        } catch (Throwable ignored) {
+        }
+        return true;
     }
 
     private static MultiSwipeWordSession.EditorAdapter createEditorAdapter(
@@ -1058,6 +1093,18 @@ public final class GboardMultiSwipeRuntime {
                     }
                 } catch (Throwable t) {
                     Log.w(TAG, "commitFinishedWord failed", t);
+                }
+            }
+
+            @Override
+            public void commitText(String text) {
+                if (text == null || text.isEmpty()) return;
+                InputConnection ic = resolveActiveInputConnection(handler, context);
+                if (ic == null) return;
+                try {
+                    ic.commitText(text, 1);
+                } catch (Throwable t) {
+                    Log.w(TAG, "commitText failed", t);
                 }
             }
         };
@@ -1146,6 +1193,24 @@ public final class GboardMultiSwipeRuntime {
             @Override
             public void onCancelAutospaceTimer() {
                 session.cancelAutospaceTimer();
+                session.spacebarOverlay.cancelTimer();
+            }
+
+            @Override
+            public void onScheduleStockSwipeAutospaceTimer(long delayMs) {
+                session.cancelStockSwipeAutospaceTimer();
+                session.core.stockSwipeAutospacePending = true;
+                session.stockSwipeAutospaceRunnable = () -> {
+                    boolean autoSpaceEnabled = (context == null)
+                            || GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
+                    session.core.finalizeStockSwipeAutospace(autoSpaceEnabled, editor);
+                };
+                session.mainHandler.postDelayed(session.stockSwipeAutospaceRunnable, delayMs);
+            }
+
+            @Override
+            public void onCancelStockSwipeAutospaceTimer() {
+                session.cancelStockSwipeAutospaceTimer();
                 session.spacebarOverlay.cancelTimer();
             }
 

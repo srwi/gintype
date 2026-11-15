@@ -69,7 +69,7 @@ flowchart TD
 - **Implementation:** `GboardMultiSwipeRuntime`, `MultiSwipeWordSession`, `GboardMultiSwipeSettings.readEnabled`.
 
 #### `MS-02` — Single-Finger Stock Gboard Preservation
-- **Rule:** Normal single-finger taps and single-finger swipes stay on stock Gboard's native pipeline (stock recognition, stock commit/spacing, stock gesture trail color), except when explicitly promoted or continued under `MS-03`, `MS-08`, `MS-09`, or `MS-10`.
+- **Rule:** Normal single-finger taps and single-finger swipes stay on stock Gboard's native pipeline (stock recognition, stock commit, stock gesture trail color), except when explicitly promoted or continued under `MS-03`, `MS-08`, `MS-09`, or `MS-10`, or when post-swipe autospace (`MS-12`) appends a trailing space after the combine window expires.
 - **Details:**
   - A standalone single-finger stroke does not activate `multiswipeTakeoverActive` and does not intercept `Lqit;->n(...)V` dispatch (`shouldInterceptGestureDispatch` returns `false`).
   - Pressing Space (or Enter, punctuation, or navigating in the text field) clears open buffers so the next single-finger stroke again executes purely on stock Gboard (e.g., swipe `"ha"` → Space → swipe `"lo"` produces `"ha lo"` via stock Gboard).
@@ -174,12 +174,15 @@ flowchart TD
 - **Implementation:** `MultiSwipeWordSession.shouldPrependLeadingSpace`, `GboardMultiSwipeRuntime.shouldPrependLeadingSpace`.
 
 #### `MS-12` — Post-Word Autospace & Punctuation Retraction (`eatBefore`)
-- **Rule:** When `autoSpaceEnabled == true`, after all fingers lift from a MultiSwipe word, a timer runs for `pref_multiswipe_auto_space_delay_ms` (default `300ms`, range `0..2000ms`). On expiry (if no fingers are down):
-  1. `ic.finishComposingText()` commits the active word.
-  2. A trailing `" "` is committed and `autospaceInserted` is set to `true`.
-  3. **Punctuation `eatBefore`:** If the very next `ACTION_DOWN` lands on a hugging punctuation key (`.,!?;:)]}»…`, `MultiSwipeGeometry.NO_SPACE_BEFORE`) while `autospaceInserted == true` and the character before the cursor is `' '`, MultiSwipe immediately deletes that trailing space (`ic.deleteSurroundingText(1, 0)`) before the punctuation is handled. `autospaceInserted` is cleared on any subsequent `ACTION_DOWN`.
-- **When `autoSpaceEnabled == false`:** No autospace timer is started, no trailing space is appended, and `autospaceInserted` remains `false`.
-- **Implementation:** `MultiSwipeWordSession.finalizeAutospace`, `GboardMultiSwipeRuntime.finalizeComposingAndAutospace`, `MultiSwipeGeometry.NO_SPACE_BEFORE`.
+- **Rule:** When `autoSpaceEnabled == true`:
+  - **MultiSwipe words:** After all fingers lift from a MultiSwipe word, a timer runs for `pref_multiswipe_auto_space_delay_ms` (default `300ms`, range `0..2000ms`). On expiry (if no fingers are down), `ic.finishComposingText()` commits the active word, a trailing `" "` is committed, and `autospaceInserted` is set to `true`.
+  - **Single-finger stock swipes:** After a single-finger letter swipe (`hasSwipe == true`, `!sawNonLetterThisSession`, `!strokeHadMultiTouch`), a timer runs for `pref_multiswipe_single_touch_combine_delay_ms` (when `> 0`) or `pref_multiswipe_auto_space_delay_ms` (when `0`). On expiry (if no fingers are down and the text immediately before the cursor ends with a letter or digit), `ic.finishComposingText()` + `ic.commitText(" ", 1)` appends a trailing `" "` and sets `autospaceInserted = true`. Pure taps (`hasSwipe == false`) never trigger post-stroke autospace.
+  - **Punctuation `eatBefore` & Post-Autospace Double-Space Period:**
+    - If the very next `ACTION_DOWN` lands on a hugging punctuation key (`.,!?;:)]}»…`, `MultiSwipeGeometry.NO_SPACE_BEFORE`) while `autospaceInserted == true` and the character before the cursor is `' '`, MultiSwipe immediately deletes that trailing space (`ic.deleteSurroundingText(1, 0)`) before the punctuation is handled.
+    - If the user taps Spacebar once after an autospace (`autospaceInserted == true`), the auto-inserted space is **kept** so multiple spaces can still be typed normally (`"word  "`, `"word   "`). However, if the user performs a quick second Spacebar tap within `500ms` (`DOUBLE_SPACE_PERIOD_TIMEOUT_MS`) and Gboard's own `enable_double_space_period` preference is enabled (default `true`), MultiSwipe replaces the two trailing spaces before the second tap (`"  "`) with `"."` on `ACTION_DOWN` right before Gboard inserts its space, yielding `". "` just like native double-space-period. When `enable_double_space_period` is disabled, double-tapping Spacebar inserts spaces normally without inserting a period.
+    - `autospaceInserted` is cleared on any subsequent `ACTION_DOWN`.
+- **When `autoSpaceEnabled == false`:** No autospace timer is started (for either MultiSwipe or single-finger stock swipes), no trailing space is appended, and `autospaceInserted` remains `false`.
+- **Implementation:** `MultiSwipeWordSession.finalizeAutospace`, `MultiSwipeWordSession.finalizeStockSwipeAutospace`, `GboardMultiSwipeRuntime.finalizeComposingAndAutospace`, `MultiSwipeGeometry.NO_SPACE_BEFORE`.
 
 #### `MS-13` — Compound Word Attachment & Lowercasing Strictly After Backspace
 - **Rule:** If and only if the user deletes characters via **Backspace** back onto an existing letter/digit stem and immediately MultiSwipes a second word, MultiSwipe attaches directly to the remaining stem with **no** leading space and **lowercases** the attached word's initial letter.
