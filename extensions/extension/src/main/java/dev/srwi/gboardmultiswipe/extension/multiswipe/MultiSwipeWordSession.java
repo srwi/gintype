@@ -1773,8 +1773,10 @@ final class MultiSwipeWordSession {
         if (gestureAlreadyActive) {
             return false;
         }
-        if (multiswipeControlled && hasAnySwipingPointer(multiSwipeThresholdPx())) {
-            multiswipeTakeoverActive = true;
+        if (hasAnySwipingPointer(multiSwipeThresholdPx())) {
+            if (multiswipeControlled) {
+                multiswipeTakeoverActive = true;
+            }
             return true;
         }
         return false;
