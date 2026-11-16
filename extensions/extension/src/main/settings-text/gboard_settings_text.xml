@@ -188,6 +188,12 @@
     <string name="gboard_patches_thicc_top_bar_swipe_sensitivity_summary">
         <translation locale="en">Higher values require shorter horizontal swipes to switch words</translation>
         </string>
+    <string name="gboard_patches_thicc_top_bar_multi_word_select_title">
+        <translation locale="en">Double-tap &amp; swipe to select words</translation>
+        </string>
+    <string name="gboard_patches_thicc_top_bar_multi_word_select_summary">
+        <translation locale="en">Double-tap and drag left or right on the suggestion bar to select multiple words</translation>
+        </string>
     <string name="gboard_patches_section_settings">
         <translation locale="en">Settings</translation>
         </string>

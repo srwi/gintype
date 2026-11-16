@@ -197,6 +197,8 @@ public final class GboardThiccTopBarRuntime {
                 bar.post(() -> {
                     bar.setScaleFactor(activeScale);
                     bar.setSwipeSensitivity(swipeSensitivity);
+                    bar.setMultiWordSelectEnabled(
+                            GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(context));
                     bar.setInvertVerticalSwipe(invertSwipe);
                 });
             }
@@ -554,6 +556,8 @@ public final class GboardThiccTopBarRuntime {
         if (bar != null) {
             bar.setScaleFactor(activeScale);
             bar.setSwipeSensitivity(swipeSensitivity);
+            bar.setMultiWordSelectEnabled(
+                    GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(holderView.getContext()));
             bar.setInvertVerticalSwipe(invertSwipe);
         }
         return bar;
@@ -808,46 +812,75 @@ public final class GboardThiccTopBarRuntime {
     }
 
     private static void attachWordCursorNavigator(ViewGroup holderView, ThiccTopBarView barView) {
-        barView.setOnWordCursorNavigateCallback(direction -> {
-            GboardMultiSwipeRuntime.onTopBarUserInteraction();
-            lastWordNavTimestamp = SystemClock.uptimeMillis();
-            activeOriginalSuggestions = null;
-            ThiccTopBarTextHelper.moveCursorByWord(holderView, direction);
-            boolean hadActiveWheel = barView.getCurrentWheelView().getParent() != null;
-            int prevHistoryCount = barView.getHistoryWheelCount();
-            int prevWindowStart = SENTENCE_BUFFER.getWindowStartWordIndex();
-            ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
-            if (!ThiccTopBarTextHelper.isCursorAtEnd(holderView)) {
-                if (!SENTENCE_BUFFER.isEmpty() && (hadActiveWheel
-                        || prevHistoryCount != SENTENCE_BUFFER.getEntries().size()
-                        || prevWindowStart != SENTENCE_BUFFER.getWindowStartWordIndex())) {
-                    showHistoryOnlyBar(holderView, barView);
+        barView.setMultiWordSelectEnabled(
+                GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(holderView.getContext()));
+        barView.setOnWordCursorNavigateCallback(new ThiccTopBarView.OnWordCursorNavigateCallback() {
+            private ThiccTopBarTextHelper.MultiWordSelectAnchor multiWordAnchor = null;
+
+            @Override
+            public void onNavigateWord(int direction) {
+                GboardMultiSwipeRuntime.onTopBarUserInteraction();
+                lastWordNavTimestamp = SystemClock.uptimeMillis();
+                activeOriginalSuggestions = null;
+                ThiccTopBarTextHelper.moveCursorByWord(holderView, direction);
+                refreshBarAfterCursorNavigation(holderView, barView);
+            }
+
+            @Override
+            public void onMultiWordSelectStart() {
+                GboardMultiSwipeRuntime.onTopBarUserInteraction();
+                multiWordAnchor = ThiccTopBarTextHelper.captureMultiWordSelectAnchor(holderView);
+            }
+
+            @Override
+            public void onMultiWordSelectStep(int direction) {
+                GboardMultiSwipeRuntime.onTopBarUserInteraction();
+                lastWordNavTimestamp = SystemClock.uptimeMillis();
+                activeOriginalSuggestions = null;
+                if (multiWordAnchor == null) {
+                    multiWordAnchor = ThiccTopBarTextHelper.captureMultiWordSelectAnchor(holderView);
                 }
-                if (!ThiccTopBarTextHelper.hasSelection(holderView)) {
-                    barView.clearHistorySelection();
-                    barView.centerOnColumn(0);
-                } else {
-                    int colIdx = ThiccTopBarTextHelper.getWordIndexAtCursor(holderView, SENTENCE_BUFFER);
-                    if (colIdx >= 0 && colIdx < barView.getHistoryWheelCount()) {
-                        barView.selectHistoryWord(colIdx);
-                    } else {
-                        barView.clearHistorySelection();
-                        if (colIdx >= 0) {
-                            barView.centerOnColumn(colIdx);
-                        }
-                    }
-                }
-                showJumpToEndArrow(holderView, () -> handleJumpToEnd(holderView, barView));
-            } else {
-                lastWordNavTimestamp = 0;
-                barView.clearHistorySelection();
-                hideJumpToEndArrow();
-                if (!SENTENCE_BUFFER.isEmpty()) {
-                    showHistoryOnlyBar(holderView, barView);
-                }
-                barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
+                ThiccTopBarTextHelper.stepMultiWordSelection(holderView, multiWordAnchor, direction);
+                refreshBarAfterCursorNavigation(holderView, barView);
             }
         });
+    }
+
+    private static void refreshBarAfterCursorNavigation(ViewGroup holderView, ThiccTopBarView barView) {
+        boolean hadActiveWheel = barView.getCurrentWheelView().getParent() != null;
+        int prevHistoryCount = barView.getHistoryWheelCount();
+        int prevWindowStart = SENTENCE_BUFFER.getWindowStartWordIndex();
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+        if (!ThiccTopBarTextHelper.isCursorAtEnd(holderView)) {
+            if (!SENTENCE_BUFFER.isEmpty() && (hadActiveWheel
+                    || prevHistoryCount != SENTENCE_BUFFER.getEntries().size()
+                    || prevWindowStart != SENTENCE_BUFFER.getWindowStartWordIndex())) {
+                showHistoryOnlyBar(holderView, barView);
+            }
+            if (!ThiccTopBarTextHelper.hasSelection(holderView)) {
+                barView.clearHistorySelection();
+                barView.centerOnColumn(0);
+            } else {
+                int colIdx = ThiccTopBarTextHelper.getWordIndexAtCursor(holderView, SENTENCE_BUFFER);
+                if (colIdx >= 0 && colIdx < barView.getHistoryWheelCount()) {
+                    barView.selectHistoryWord(colIdx);
+                } else {
+                    barView.clearHistorySelection();
+                    if (colIdx >= 0) {
+                        barView.centerOnColumn(colIdx);
+                    }
+                }
+            }
+            showJumpToEndArrow(holderView, () -> handleJumpToEnd(holderView, barView));
+        } else {
+            lastWordNavTimestamp = 0;
+            barView.clearHistorySelection();
+            hideJumpToEndArrow();
+            if (!SENTENCE_BUFFER.isEmpty()) {
+                showHistoryOnlyBar(holderView, barView);
+            }
+            barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
+        }
     }
 
     private static boolean isHistorySelectionSessionActive(ViewGroup holderView, ThiccTopBarView barView) {

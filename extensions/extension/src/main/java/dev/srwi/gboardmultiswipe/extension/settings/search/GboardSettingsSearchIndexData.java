@@ -42,6 +42,7 @@ final class GboardSettingsSearchIndexData {
             {3, R.string.gboard_patches_thicc_top_bar_enable_title, R.string.gboard_patches_thicc_top_bar_summary, 0},
             {3, R.string.gboard_patches_thicc_top_bar_topbar_scale_title, R.string.gboard_patches_thicc_top_bar_topbar_scale_summary, 0},
             {3, R.string.gboard_patches_thicc_top_bar_swipe_sensitivity_title, R.string.gboard_patches_thicc_top_bar_swipe_sensitivity_summary, 0},
-            {3, R.string.gboard_patches_thicc_top_bar_invert_swipe_title, R.string.gboard_patches_thicc_top_bar_invert_swipe_summary, 0}
+            {3, R.string.gboard_patches_thicc_top_bar_invert_swipe_title, R.string.gboard_patches_thicc_top_bar_invert_swipe_summary, 0},
+            {3, R.string.gboard_patches_thicc_top_bar_multi_word_select_title, R.string.gboard_patches_thicc_top_bar_multi_word_select_summary, 0}
     };
 }

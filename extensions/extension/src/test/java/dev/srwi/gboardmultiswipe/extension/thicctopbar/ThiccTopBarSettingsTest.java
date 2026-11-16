@@ -91,6 +91,22 @@ public final class ThiccTopBarSettingsTest {
     }
 
     @Test
+    public void doubleTapMultiWordSelectDefaultsTrueAndPersistsToggle() {
+        TestSharedPreferences prefs = new TestSharedPreferences();
+        Assert.assertTrue(GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(prefs));
+
+        GboardThiccTopBarSettings.ensureDefaults(prefs);
+        Assert.assertTrue(GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(prefs));
+
+        GboardThiccTopBarSettings.writeDoubleTapMultiWordSelect(prefs, false);
+        Assert.assertFalse(GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(prefs));
+
+        // Re-running ensureDefaults must preserve explicit user values.
+        GboardThiccTopBarSettings.ensureDefaults(prefs);
+        Assert.assertFalse(GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(prefs));
+    }
+
+    @Test
     public void topbarScaleSanitizesAndClampsOutOfRangeValues() {
         TestSharedPreferences prefs = new TestSharedPreferences();
 

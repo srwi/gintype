@@ -23,6 +23,10 @@ public final class GboardThiccTopBarSettings {
     public static final String PREF_KEY_INVERT_SWIPE = "pref_matrix_invert_vertical_swipe";
     public static final boolean DEFAULT_INVERT_SWIPE = false;
 
+    public static final String PREF_KEY_DOUBLE_TAP_MULTI_WORD_SELECT =
+            "pref_matrix_double_tap_multi_word_select";
+    public static final boolean DEFAULT_DOUBLE_TAP_MULTI_WORD_SELECT = true;
+
     private GboardThiccTopBarSettings() {
     }
 
@@ -53,6 +57,10 @@ public final class GboardThiccTopBarSettings {
                 preferences, PREF_KEY_ENABLED, DEFAULT_ENABLED);
         GboardBooleanFlagSettings.ensureDefault(
                 preferences, PREF_KEY_INVERT_SWIPE, DEFAULT_INVERT_SWIPE);
+        GboardBooleanFlagSettings.ensureDefault(
+                preferences,
+                PREF_KEY_DOUBLE_TAP_MULTI_WORD_SELECT,
+                DEFAULT_DOUBLE_TAP_MULTI_WORD_SELECT);
         if (preferences != null && !preferences.contains(PREF_KEY_TOPBAR_SCALE)) {
             writeTopbarScale(preferences, DEFAULT_TOPBAR_SCALE);
         }
@@ -87,6 +95,42 @@ public final class GboardThiccTopBarSettings {
         if (context == null) return false;
         try {
             return writeInvertSwipe(GboardPatchesSettings.preferences(context), invert);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static boolean readDoubleTapMultiWordSelect(Context context) {
+        if (context == null) return DEFAULT_DOUBLE_TAP_MULTI_WORD_SELECT;
+        try {
+            SharedPreferences preferences = GboardPatchesSettings.preferencesOrNull(context);
+            if (preferences == null) {
+                preferences = context.getSharedPreferences(
+                        context.getPackageName() + "_preferences", Context.MODE_PRIVATE);
+            }
+            return readDoubleTapMultiWordSelect(preferences);
+        } catch (Throwable ignored) {
+            return DEFAULT_DOUBLE_TAP_MULTI_WORD_SELECT;
+        }
+    }
+
+    public static boolean readDoubleTapMultiWordSelect(SharedPreferences preferences) {
+        return GboardBooleanFlagSettings.readEnabled(
+                preferences,
+                PREF_KEY_DOUBLE_TAP_MULTI_WORD_SELECT,
+                DEFAULT_DOUBLE_TAP_MULTI_WORD_SELECT);
+    }
+
+    public static boolean writeDoubleTapMultiWordSelect(
+            SharedPreferences preferences, boolean enabled) {
+        return GboardBooleanFlagSettings.writeEnabled(
+                preferences, PREF_KEY_DOUBLE_TAP_MULTI_WORD_SELECT, enabled);
+    }
+
+    public static boolean writeDoubleTapMultiWordSelect(Context context, boolean enabled) {
+        if (context == null) return false;
+        try {
+            return writeDoubleTapMultiWordSelect(GboardPatchesSettings.preferences(context), enabled);
         } catch (Throwable ignored) {
             return false;
         }

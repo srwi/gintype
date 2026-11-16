@@ -828,6 +828,137 @@ public final class ThiccTopBarTextHelper {
         }
     }
 
+    /** Tracks the initial cursor/selection anchor during a double-tap-and-drag multi-word selection. */
+    public static final class MultiWordSelectAnchor {
+        public int anchorStart;
+        public int anchorEnd;
+        public int activeEnd;
+        public boolean initialized;
+    }
+
+    public static MultiWordSelectAnchor captureMultiWordSelectAnchor(View view) {
+        return captureMultiWordSelectAnchor(getInputConnection(view));
+    }
+
+    public static MultiWordSelectAnchor captureMultiWordSelectAnchor(InputConnection ic) {
+        MultiWordSelectAnchor anchor = new MultiWordSelectAnchor();
+        if (ic == null) return anchor;
+        try {
+            ic.finishComposingText();
+            CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
+            CharSequence csSel = ic.getSelectedText(0);
+            String before = csBefore != null ? csBefore.toString() : "";
+            String sel = csSel != null ? csSel.toString() : "";
+            int docOffset = computeDocOffset(ic, before);
+            anchor.anchorStart = Math.max(0, docOffset + before.length());
+            anchor.anchorEnd = anchor.anchorStart + sel.length();
+            anchor.activeEnd = anchor.anchorStart;
+            anchor.initialized = true;
+        } catch (Throwable t) {
+            logE(TAG, "captureMultiWordSelectAnchor error", t);
+        }
+        return anchor;
+    }
+
+    public static boolean stepMultiWordSelection(
+            View view, MultiWordSelectAnchor anchor, int direction) {
+        return stepMultiWordSelection(getInputConnection(view), anchor, direction);
+    }
+
+    public static boolean stepMultiWordSelection(
+            InputConnection ic, MultiWordSelectAnchor anchor, int direction) {
+        if (ic == null || anchor == null || direction == 0) return false;
+        try {
+            ic.finishComposingText();
+            CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
+            CharSequence csSel = ic.getSelectedText(0);
+            CharSequence csAfter = ic.getTextAfterCursor(2000, 0);
+
+            String before = csBefore != null ? csBefore.toString() : "";
+            String sel = csSel != null ? csSel.toString() : "";
+            String after = csAfter != null ? csAfter.toString() : "";
+
+            String fullText = before + sel + after;
+            if (fullText.isEmpty()) return false;
+
+            int docOffset = computeDocOffset(ic, before);
+            int len = fullText.length();
+
+            if (!anchor.initialized) {
+                anchor.anchorStart = Math.max(0, docOffset + before.length());
+                anchor.anchorEnd = anchor.anchorStart + sel.length();
+                anchor.activeEnd = (direction < 0) ? anchor.anchorStart : anchor.anchorEnd;
+                anchor.initialized = true;
+            }
+
+            int relAnchorStart = Math.max(0, Math.min(len, anchor.anchorStart - docOffset));
+            int relAnchorEnd = Math.max(relAnchorStart, Math.min(len, anchor.anchorEnd - docOffset));
+            int relActive = Math.max(0, Math.min(len, anchor.activeEnd - docOffset));
+
+            int nextRelActive;
+            if (direction < 0) {
+                if (relActive > relAnchorEnd) {
+                    int pos = relActive;
+                    while (pos > relAnchorEnd && isBoundaryChar(fullText, pos - 1)) {
+                        pos--;
+                    }
+                    while (pos > relAnchorEnd && !isBoundaryChar(fullText, pos - 1)) {
+                        pos--;
+                    }
+                    while (pos > relAnchorEnd && isBoundaryChar(fullText, pos - 1)) {
+                        pos--;
+                    }
+                    nextRelActive = pos;
+                } else {
+                    int pos = (relActive == relAnchorEnd && relAnchorStart < relAnchorEnd)
+                            ? relAnchorStart
+                            : relActive;
+                    while (pos > 0 && isBoundaryChar(fullText, pos - 1)) {
+                        pos--;
+                    }
+                    while (pos > 0 && !isBoundaryChar(fullText, pos - 1)) {
+                        pos--;
+                    }
+                    nextRelActive = pos;
+                }
+            } else {
+                if (relActive < relAnchorStart) {
+                    int pos = relActive;
+                    while (pos < relAnchorStart && isBoundaryChar(fullText, pos)) {
+                        pos++;
+                    }
+                    while (pos < relAnchorStart && !isBoundaryChar(fullText, pos)) {
+                        pos++;
+                    }
+                    while (pos < relAnchorStart && isBoundaryChar(fullText, pos)) {
+                        pos++;
+                    }
+                    nextRelActive = pos;
+                } else {
+                    int pos = (relActive == relAnchorStart && relAnchorStart < relAnchorEnd)
+                            ? relAnchorEnd
+                            : relActive;
+                    while (pos < len && isBoundaryChar(fullText, pos)) {
+                        pos++;
+                    }
+                    while (pos < len && !isBoundaryChar(fullText, pos)) {
+                        pos++;
+                    }
+                    nextRelActive = pos;
+                }
+            }
+
+            anchor.activeEnd = Math.max(0, docOffset + nextRelActive);
+            int selStart = Math.max(0, Math.min(anchor.anchorStart, anchor.activeEnd));
+            int selEnd = Math.max(0, Math.max(anchor.anchorEnd, anchor.activeEnd));
+            ic.setSelection(selStart, selEnd);
+            return true;
+        } catch (Throwable t) {
+            logE(TAG, "stepMultiWordSelection error", t);
+            return false;
+        }
+    }
+
     public static int getWordIndexAtCursor(View view, ThiccTopBarSentenceBuffer buffer) {
         InputConnection ic = getInputConnection(view);
         return getWordIndexAtCursor(ic, buffer);

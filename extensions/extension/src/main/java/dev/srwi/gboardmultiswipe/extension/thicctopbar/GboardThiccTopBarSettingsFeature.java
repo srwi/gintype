@@ -39,6 +39,8 @@ public final class GboardThiccTopBarSettingsFeature
     private final String topbarScaleDefaultTemplate;
     private final String invertSwipeTitle;
     private final String invertSwipeSummary;
+    private final String multiWordSelectTitle;
+    private final String multiWordSelectSummary;
     private final String errorTitle;
     private final String errorSummary;
 
@@ -66,6 +68,10 @@ public final class GboardThiccTopBarSettingsFeature
                 context, R.string.gboard_patches_thicc_top_bar_invert_swipe_title);
         invertSwipeSummary = GboardSettingsText.get(
                 context, R.string.gboard_patches_thicc_top_bar_invert_swipe_summary);
+        multiWordSelectTitle = GboardSettingsText.get(
+                context, R.string.gboard_patches_thicc_top_bar_multi_word_select_title);
+        multiWordSelectSummary = GboardSettingsText.get(
+                context, R.string.gboard_patches_thicc_top_bar_multi_word_select_summary);
         errorTitle = GboardSettingsText.get(
                 context, R.string.gboard_patches_error_header_title);
         errorSummary = GboardSettingsText.get(
@@ -109,6 +115,8 @@ public final class GboardThiccTopBarSettingsFeature
             float topbarScale = GboardThiccTopBarSettings.readTopbarScale(preferences);
             float swipeSensitivity = GboardThiccTopBarSettings.readSwipeSensitivity(preferences);
             boolean invertSwipe = GboardThiccTopBarSettings.readInvertSwipe(preferences);
+            boolean multiWordSelect =
+                    GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(preferences);
 
             List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>();
             rows.add(new GboardPatchesSettingsContract.ToggleRow(
@@ -142,6 +150,16 @@ public final class GboardThiccTopBarSettingsFeature
                     invertSwipe,
                     newValue -> {
                         GboardThiccTopBarSettings.writeInvertSwipe(context, newValue);
+                        GboardThiccTopBarRuntime.syncAllHeaderHeights(context);
+                        GboardPatchesSettingsContract.refresh(host);
+                    }));
+            rows.add(new GboardPatchesSettingsContract.ToggleRow(
+                    multiWordSelectTitle,
+                    multiWordSelectSummary,
+                    enabled,
+                    multiWordSelect,
+                    newValue -> {
+                        GboardThiccTopBarSettings.writeDoubleTapMultiWordSelect(context, newValue);
                         GboardThiccTopBarRuntime.syncAllHeaderHeights(context);
                         GboardPatchesSettingsContract.refresh(host);
                     }));

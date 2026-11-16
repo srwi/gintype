@@ -1135,6 +1135,38 @@ public final class ThiccTopBarTextHelperTest {
         Assert.assertEquals(fullText.length(), ic.getSelectionEnd());
     }
 
+    @Test
+    public void stepMultiWordSelection_extendsFromCursorAndExistingSelection() {
+        // 1. Collapsed cursor at end of "Hallo Welt heute"
+        String text = "Hallo Welt heute";
+        TestInputConnection icCursor = new TestInputConnection(text, text.length(), text.length());
+        ThiccTopBarTextHelper.MultiWordSelectAnchor cursorAnchor =
+                ThiccTopBarTextHelper.captureMultiWordSelectAnchor(icCursor);
+
+        Assert.assertTrue(ThiccTopBarTextHelper.stepMultiWordSelection(icCursor, cursorAnchor, -1));
+        Assert.assertEquals("heute", icCursor.getSelectedText(0).toString());
+
+        Assert.assertTrue(ThiccTopBarTextHelper.stepMultiWordSelection(icCursor, cursorAnchor, -1));
+        Assert.assertEquals("Welt heute", icCursor.getSelectedText(0).toString());
+
+        Assert.assertTrue(ThiccTopBarTextHelper.stepMultiWordSelection(icCursor, cursorAnchor, 1));
+        Assert.assertEquals("heute", icCursor.getSelectedText(0).toString());
+
+        // 2. Existing word selection ("Welt") is preserved and included when extending left or right
+        TestInputConnection icSel = new TestInputConnection(text, 6, 10);
+        ThiccTopBarTextHelper.MultiWordSelectAnchor selAnchor =
+                ThiccTopBarTextHelper.captureMultiWordSelectAnchor(icSel);
+
+        Assert.assertTrue(ThiccTopBarTextHelper.stepMultiWordSelection(icSel, selAnchor, -1));
+        Assert.assertEquals("Hallo Welt", icSel.getSelectedText(0).toString());
+
+        Assert.assertTrue(ThiccTopBarTextHelper.stepMultiWordSelection(icSel, selAnchor, 1));
+        Assert.assertEquals("Welt", icSel.getSelectedText(0).toString());
+
+        Assert.assertTrue(ThiccTopBarTextHelper.stepMultiWordSelection(icSel, selAnchor, 1));
+        Assert.assertEquals("Welt heute", icSel.getSelectedText(0).toString());
+    }
+
     private static ThiccTopBarSentenceBuffer createSentenceBuffer(String... words) {
         ThiccTopBarSentenceBuffer buf = new ThiccTopBarSentenceBuffer();
         for (String w : words) {
