@@ -154,6 +154,14 @@ public final class ThiccTopBarTextHelperTest {
         Assert.assertFalse(ThiccTopBarView.shouldAnimateNewWordEntrance(3, 3));
         Assert.assertFalse(ThiccTopBarView.shouldAnimateNewWordEntrance(3, 2));
 
+        // First word enters by its full width; subsequent words enter by delta width
+        Assert.assertEquals(180f, ThiccTopBarView.computeEntranceTranslationX(0, 0f, 180, 1080), 0.01f);
+        Assert.assertEquals(160f, ThiccTopBarView.computeEntranceTranslationX(180, 0f, 340, 1080), 0.01f);
+        // Active in-flight translation accumulates seamlessly if another word arrives mid-animation
+        Assert.assertEquals(210f, ThiccTopBarView.computeEntranceTranslationX(340, 50f, 500, 1080), 0.01f);
+        // Clamped to barWidth
+        Assert.assertEquals(1080f, ThiccTopBarView.computeEntranceTranslationX(200, 0f, 1500, 1080), 0.01f);
+
         // Sliding-window cap at 15+ words: count stays 16 -> 16, but window shifted left by 1 word
         List<String> prev16 = Arrays.asList(
                 "ab", "einer", "gewissen", "Satzlaenge", "faengt", "die", "Animation", "an",
