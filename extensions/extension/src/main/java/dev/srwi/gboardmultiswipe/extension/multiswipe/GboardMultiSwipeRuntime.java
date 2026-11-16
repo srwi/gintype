@@ -205,6 +205,40 @@ public final class GboardMultiSwipeRuntime {
     private GboardMultiSwipeRuntime() {}
 
     /**
+     * Cancels any pending MultiSwipe autospace timer and clears the active word buffer when the
+     * user interacts directly with the Thicc Top Bar (selecting, swapping, or navigating words).
+     */
+    public static void onTopBarUserInteraction() {
+        try {
+            Object handler = lastGestureHandler;
+            if (handler == null) return;
+            HandlerSession session = SESSIONS.get(handler);
+            if (session == null) return;
+            session.cancelAutospaceTimer();
+            session.cancelStockSwipeAutospaceTimer();
+            session.spacebarOverlay.cancelTimer();
+            session.core.clearWordBuffer(null);
+            session.core.passiveTapBuffer.clear();
+            session.core.singleTouchCombineBuffer.clear();
+            session.core.multiswipeTakeoverActive = false;
+            setMultiSwipeTrailAccentActive(handler, false, cachedContext);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Returns true while a MultiSwipe word is actively being composed. */
+    public static boolean isMultiSwipeWordActive() {
+        try {
+            Object handler = lastGestureHandler;
+            if (handler == null) return false;
+            HandlerSession session = SESSIONS.get(handler);
+            return session != null && session.core.multiswipeWordActive;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
      * Injected at the start of AbstractGestureMotionEventHandler.g(MotionEvent).
      */
     public static void onGestureEventEntry(Object handler, MotionEvent event) {

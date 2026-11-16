@@ -1077,6 +1077,64 @@ public final class ThiccTopBarTextHelperTest {
         Assert.assertEquals(0, ThiccTopBarTextHelper.getWordIndexAtCursor(icW0, buf));
     }
 
+    @Test
+    public void testMultiSwipeKineticaSuggestionsTrimmingAndCacheIsolation() {
+        Map<String, List<String>> cache = GboardThiccTopBarRuntime.getWordAlternativesCacheForTesting();
+        cache.clear();
+
+        // 1. Kinetica returns up to 10 candidates; buildMultiSwipeSuggestions trims to 3 starting with committedWord
+        List<String> tenCandidates = Arrays.asList(
+                "heute", "hatte", "hätte", "harte", "hüte", "heiße", "helfe", "hebe", "hege", "hexe"
+        );
+        List<String> trimmed = GboardThiccTopBarRuntime.buildMultiSwipeSuggestions("heute", tenCandidates);
+        Assert.assertEquals(Arrays.asList("heute", "hatte", "hätte"), trimmed);
+
+        // 2. Caching Kinetica alternatives for word 1 ("heute") caches 3 alternatives
+        GboardThiccTopBarRuntime.cacheAlternativeGroup(trimmed, "heute");
+        Assert.assertEquals(Arrays.asList("heute", "hatte", "hätte"), cache.get("heute"));
+
+        // 3. Caching a later word whose runner-up happens to include "heute" must NOT overwrite "heute"'s primary cache
+        GboardThiccTopBarRuntime.cacheAlternativeGroup(Arrays.asList("Leute", "heute", "Beute"), "Leute");
+        Assert.assertEquals(Arrays.asList("heute", "hatte", "hätte"), cache.get("heute"));
+        Assert.assertEquals(Arrays.asList("Leute", "heute", "Beute"), cache.get("Leute"));
+    }
+
+    @Test
+    public void testMultiSwipeRepeatedDecodeAndCommitDoesNotShiftLastWordSelection() {
+        ThiccTopBarSentenceBuffer buf = GboardThiccTopBarRuntime.getSentenceBuffer();
+        buf.clear();
+        Map<String, List<String>> cache = GboardThiccTopBarRuntime.getWordAlternativesCacheForTesting();
+        cache.clear();
+
+        // Simulate 30 words typed via two-finger Kinetica where each word fires both
+        // onWordDecoded and onWordCommitted (calling recordMultiSwipeDecodedWord twice per word).
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 30; i++) {
+            if (i > 0) sb.append(' ');
+            String word = "wort" + i;
+            sb.append(word);
+            List<String> alts = Arrays.asList(word, word + "a", word + "b", word + "c", word + "d");
+            GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(word, alts);
+            GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(word, alts);
+        }
+
+        // Sync sentence buffer as done when displaying the bar or selecting the last word
+        String fullText = sb.toString();
+        TestInputConnection ic = new TestInputConnection(fullText, fullText.length(), fullText.length());
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(ic, null, buf, cache);
+
+        int lastColIdx = buf.getEntries().size() - 1;
+        Assert.assertEquals("wort29", buf.getEntries().get(lastColIdx).getSelectedWord());
+        Assert.assertEquals(Arrays.asList("wort29", "wort29a", "wort29b"), buf.getEntries().get(lastColIdx).alternatives);
+
+        // Tapping the last word in the Thicc Top Bar must select "wort29" at the end of the line, never an earlier word
+        boolean selected = ThiccTopBarTextHelper.selectHistoryWordInTextField(ic, buf, lastColIdx, "wort29");
+        Assert.assertTrue(selected);
+        Assert.assertEquals("wort29", ic.getSelectedText(0).toString());
+        Assert.assertEquals(fullText.length() - "wort29".length(), ic.getSelectionStart());
+        Assert.assertEquals(fullText.length(), ic.getSelectionEnd());
+    }
+
     private static ThiccTopBarSentenceBuffer createSentenceBuffer(String... words) {
         ThiccTopBarSentenceBuffer buf = new ThiccTopBarSentenceBuffer();
         for (String w : words) {
