@@ -65,6 +65,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     private final String tapToMultiSwipeDelaySummary;
     private final String spacebarTimerIndicatorTitle;
     private final String spacebarTimerIndicatorSummary;
+    private final String wordReadyVibrationTitle;
+    private final String wordReadyVibrationSummary;
     private final String backspaceModeTitle;
     private final String backspaceModeSummary;
     private final String backspaceModeWholeWordLabel;
@@ -117,6 +119,10 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                 text(context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_title);
         spacebarTimerIndicatorSummary =
                 text(context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_summary);
+        wordReadyVibrationTitle =
+                text(context, R.string.gboard_patches_multiswipe_word_ready_vibration_title);
+        wordReadyVibrationSummary =
+                text(context, R.string.gboard_patches_multiswipe_word_ready_vibration_summary);
         backspaceModeTitle = text(context, R.string.gboard_patches_multiswipe_backspace_mode_title);
         backspaceModeSummary =
                 text(context, R.string.gboard_patches_multiswipe_backspace_mode_summary);
@@ -184,6 +190,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                     GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(preferences);
             boolean spacebarTimerIndicatorEnabled =
                     GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(preferences);
+            boolean wordReadyVibrationEnabled =
+                    GboardMultiSwipeSettings.readWordReadyVibrationEnabled(preferences);
             String backspaceMode = GboardMultiSwipeSettings.readBackspaceMode(preferences);
 
             List<GboardPatchesSettingsContract.Row> gestureRows = buildGestureRows(
@@ -274,6 +282,11 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                     spacebarTimerIndicatorSummary,
                     spacebarTimerIndicatorEnabled,
                     value -> GboardMultiSwipeSettings.writeSpacebarTimerIndicatorEnabled(
+                            preferences, value),
+                    wordReadyVibrationTitle,
+                    wordReadyVibrationSummary,
+                    wordReadyVibrationEnabled,
+                    value -> GboardMultiSwipeSettings.writeWordReadyVibrationEnabled(
                             preferences, value));
 
             List<GboardPatchesSettingsContract.Row> advancedRows = Arrays.asList(
@@ -578,9 +591,13 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             String spacebarTimerTitle,
             String spacebarTimerSummary,
             boolean spacebarTimerEnabled,
-            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer) {
+            GboardPatchesSettingsContract.ToggleAction onToggleSpacebarTimer,
+            String wordReadyVibrationTitle,
+            String wordReadyVibrationSummary,
+            boolean wordReadyVibrationEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleWordReadyVibration) {
         boolean autoSpaceControlsEnabled = multiSwipeEnabled && autoSpaceEnabled;
-        List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>(4);
+        List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>(5);
         rows.add(new GboardPatchesSettingsContract.ToggleRow(
                 autoSpaceTitle,
                 autoSpaceSummary,
@@ -605,6 +622,12 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                 autoSpaceControlsEnabled,
                 spacebarTimerEnabled,
                 onToggleSpacebarTimer));
+        rows.add(new GboardPatchesSettingsContract.ToggleRow(
+                wordReadyVibrationTitle,
+                wordReadyVibrationSummary,
+                autoSpaceControlsEnabled,
+                wordReadyVibrationEnabled,
+                onToggleWordReadyVibration));
         return rows;
     }
 

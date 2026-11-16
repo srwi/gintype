@@ -11,9 +11,13 @@ import android.inputmethodservice.InputMethodService;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.util.Log;
 import android.util.SparseArray;
 import android.util.SparseIntArray;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -999,6 +1003,48 @@ public final class GboardMultiSwipeRuntime {
                 && GboardMultiSwipeSettings.isSpacebarTimerIndicatorEnabled(context);
     }
 
+    private static boolean shouldVibrateOnTimerElapse(Context context) {
+        return context != null
+                && GboardMultiSwipeSettings.isAutoSpaceEnabled(context)
+                && GboardMultiSwipeSettings.isWordReadyVibrationEnabled(context);
+    }
+
+    private static void triggerWordReadyVibration(
+            Context context,
+            Object handler,
+            HandlerSession session
+    ) {
+        if (!shouldVibrateOnTimerElapse(context)) return;
+        try {
+            Vibrator vibrator = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                VibratorManager vm = context.getSystemService(VibratorManager.class);
+                if (vm != null) {
+                    vibrator = vm.getDefaultVibrator();
+                }
+            }
+            if (vibrator == null) {
+                vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+            }
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK));
+                } else {
+                    vibrator.vibrate(VibrationEffect.createOneShot(12L, 80));
+                }
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            View spacebarView = resolveSpacebarTargetView(handler, session.geometry);
+            if (spacebarView != null) {
+                spacebarView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static int resolveSpacebarIndicatorAccent(View spacebarView, Context context) {
         return ThiccTopBarGboardReflector.resolveSpacebarShadingColor(spacebarView, context);
     }
@@ -1372,12 +1418,14 @@ public final class GboardMultiSwipeRuntime {
             public void onScheduleStockSwipeAutospaceTimer(long delayMs) {
                 session.cancelStockSwipeAutospaceTimer();
                 session.core.stockSwipeAutospacePending = true;
+                final MultiSwipeWordSession.LifecycleCallbacks self = this;
                 session.stockSwipeAutospaceRunnable = () -> {
                     boolean autoSpaceEnabled = (context == null)
                             || GboardMultiSwipeSettings.isAutoSpaceEnabled(context);
                     boolean autoSpaceBeforeWord = (context != null)
                             && GboardMultiSwipeSettings.isAutoSpaceBeforeWord(context);
-                    session.core.finalizeStockSwipeAutospace(autoSpaceEnabled, autoSpaceBeforeWord, editor);
+                    session.core.finalizeStockSwipeAutospace(
+                            autoSpaceEnabled, autoSpaceBeforeWord, editor, self);
                 };
                 session.mainHandler.postDelayed(session.stockSwipeAutospaceRunnable, delayMs);
             }
@@ -1399,6 +1447,11 @@ public final class GboardMultiSwipeRuntime {
                 } else {
                     session.spacebarOverlay.cancelTimer();
                 }
+            }
+
+            @Override
+            public void onWordReadyTimerElapsed() {
+                triggerWordReadyVibration(context, handler, session);
             }
 
             @Override

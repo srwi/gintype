@@ -600,12 +600,13 @@ public class MultiSwipeIntegrationTest {
         SettingsSnapshot offSettings = new SettingsSnapshot(true, false, 300, 150);
         DecodePort decoder = (tokens, prevWord) -> Collections.singletonList(cand("Hallo", 10.0f));
 
-        // 1. Single-touch tap (with combineDelay=0) starts passive tap prefix window (750 ms)
+        // 1. Pure single-touch tap does NOT start a spacebar / word-ready timer
         session.onActionDown(0, letterAX, letterAY, 1000L, passiveOnlySettings, editor, callbacks);
         assertEquals(0L, callbacks.lastBufferTimerMs);
         session.onPointerUp(0, letterAX, letterAY, 1020L, false, callbacks);
         session.onActionUp(1020L, passiveOnlySettings, editor, decoder, callbacks);
-        assertEquals(750L, callbacks.lastBufferTimerMs);
+        assertEquals(0L, callbacks.lastBufferTimerMs);
+        assertEquals(0, callbacks.wordReadyTimerElapsedCount);
 
         // 2. Next ACTION_DOWN cancels active buffer timer; single-touch swipe starts combine window (150 ms)
         session.onActionDown(0, letterAX, letterAY, 1100L, onSettings, editor, callbacks);
@@ -623,6 +624,7 @@ public class MultiSwipeIntegrationTest {
         assertEquals(300L, callbacks.lastAutospaceDelayMs);
         session.finalizeAutospace(true, editor, callbacks);
         assertTrue(callbacks.lastCommitAutoSpace);
+        assertEquals(1, callbacks.wordReadyTimerElapsedCount);
 
         // 4. With Auto-Space disabled, no buffer timer or autospace timer is started
         callbacks.autospaceScheduled = false;
@@ -633,6 +635,51 @@ public class MultiSwipeIntegrationTest {
         assertEquals(0L, callbacks.lastBufferTimerMs);
         performTwoFingerSwipe(3200L, offSettings, decoder);
         assertFalse(callbacks.autospaceScheduled);
+    }
+
+    @Test
+    public void wordReadyTimerAndSpacebarIndicatorAlignAcrossAllTimers() {
+        SettingsSnapshot onSettings = new SettingsSnapshot(true, true, 300, 150);
+        SettingsSnapshot beforeWordSettings = new SettingsSnapshot(
+                true, true, 300, 150, true, true, 750, "last_input");
+        DecodePort decoder = (tokens, prevWord) -> Collections.singletonList(cand("Hallo", 10.0f));
+
+        // 1. Single tap (even with combineDelay=150 and tapToMultiSwipeDelay=750) does NOT start spacebar or word-ready timer
+        session.onActionDown(0, letterAX, letterAY, 1000L, onSettings, editor, callbacks);
+        editor.stockType("a");
+        session.onPointerUp(0, letterAX, letterAY, 1020L, false, callbacks);
+        session.onActionUp(1020L, onSettings, editor, decoder, callbacks);
+        assertEquals(0L, callbacks.lastBufferTimerMs);
+        assertEquals(0, callbacks.wordReadyTimerElapsedCount);
+
+        // 2. Stock single-finger swipe notifies word-ready elapsed on finalize (both before-word and after-word)
+        session.onActionCancel(callbacks);
+        editor.reset();
+        callbacks.wordReadyTimerElapsedCount = 0;
+        session.onActionDown(0, letterAX, letterAY, 2000L, beforeWordSettings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 2030L, session.geometry);
+        editor.stockType("Hallo");
+        session.onPointerUp(0, letterSX, letterSY, 2050L, true, callbacks);
+        session.onActionUp(2050L, beforeWordSettings, editor, decoder, callbacks);
+        assertTrue(callbacks.stockSwipeAutospaceScheduled);
+        assertEquals(150L, callbacks.lastBufferTimerMs);
+        session.finalizeStockSwipeAutospace(true, true, editor, callbacks);
+        assertEquals(1, callbacks.wordReadyTimerElapsedCount);
+
+        // 3. last_input Backspace falling back to PassiveTapBuffer (only taps left) clears timers
+        session.onActionCancel(callbacks);
+        editor.reset();
+        session.onActionDown(0, letterAX, letterAY, 3000L, beforeWordSettings, editor, callbacks);
+        editor.stockType("f");
+        session.onPointerUp(0, letterAX, letterAY, 3020L, false, callbacks);
+        session.onActionUp(3020L, beforeWordSettings, editor, decoder, callbacks);
+        performTwoFingerSwipe(3200L, beforeWordSettings, decoder);
+        assertTrue(callbacks.autospaceScheduled);
+        // First Backspace removes the latest token (tap 'l' at 3220ms); second removes the swipe (3200ms),
+        // restoring tap prefix "f" to PassiveTapBuffer without starting a word-finalizing timer.
+        assertTrue(performBackspaceTap(3400L, beforeWordSettings, decoder));
+        assertTrue(performBackspaceTap(3500L, beforeWordSettings, decoder));
+        assertEquals(0L, callbacks.lastBufferTimerMs);
     }
 
     @Test
@@ -1146,6 +1193,7 @@ public class MultiSwipeIntegrationTest {
         boolean stockSwipeAutospaceScheduled;
         long lastStockSwipeAutospaceDelayMs;
         long lastBufferTimerMs;
+        int wordReadyTimerElapsedCount;
         final List<String> decodedWords = new ArrayList<>();
         List<String> lastAlternatives = Collections.emptyList();
         final List<String> committedWords = new ArrayList<>();
@@ -1166,6 +1214,7 @@ public class MultiSwipeIntegrationTest {
         }
         @Override public void onCancelStockSwipeAutospaceTimer() { stockSwipeAutospaceScheduled = false; }
         @Override public void onBufferTimerUpdated(long durationMs) { lastBufferTimerMs = durationMs; }
+        @Override public void onWordReadyTimerElapsed() { wordReadyTimerElapsedCount++; }
 
         @Override
         public void onWordDecoded(

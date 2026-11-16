@@ -27,6 +27,7 @@ final class GboardSettingsSearchIndexData {
             {0, R.string.gboard_patches_multiswipe_space_placement_title, R.string.gboard_patches_multiswipe_space_placement_summary, 0},
             {0, R.string.gboard_patches_multiswipe_auto_space_delay_title, R.string.gboard_patches_multiswipe_auto_space_delay_summary, 0},
             {0, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_title, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_summary, 0},
+            {0, R.string.gboard_patches_multiswipe_word_ready_vibration_title, R.string.gboard_patches_multiswipe_word_ready_vibration_summary, 0},
             {1, R.string.gboard_patches_kinetica_title, R.string.gboard_patches_kinetica_summary, 1},
             {1, R.string.gboard_patches_multiswipe_beam_width_title, R.string.gboard_patches_multiswipe_beam_width_summary, 0},
             {1, R.string.gboard_patches_multiswipe_freq_weight_floor_title, R.string.gboard_patches_multiswipe_freq_weight_floor_summary, 0},

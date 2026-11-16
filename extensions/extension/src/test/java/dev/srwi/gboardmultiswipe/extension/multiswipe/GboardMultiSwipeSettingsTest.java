@@ -55,6 +55,8 @@ public class GboardMultiSwipeSettingsTest {
                 GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR,
                 GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_WORD_READY_VIBRATION,
+                GboardMultiSwipeSettings.readWordReadyVibrationEnabled(prefs));
         assertTrue(prefs.contains(GboardMultiSwipeSettings.PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS));
         assertTrue(GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(prefs, 0));
         assertEquals(GboardMultiSwipeSettings.MIN_SINGLE_TOUCH_COMBINE_DELAY_MS,
@@ -232,6 +234,7 @@ public class GboardMultiSwipeSettingsTest {
         GboardMultiSwipeSettings.ensureDefaults(prefs);
         assertFalse(GboardMultiSwipeSettings.readTraceLoggingEnabled(prefs));
         assertFalse(GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
+        assertFalse(GboardMultiSwipeSettings.readWordReadyVibrationEnabled(prefs));
 
         assertTrue(GboardMultiSwipeSettings.writeEnabled(prefs, false));
         assertTrue(GboardMultiSwipeSettings.writeAutoSpaceEnabled(prefs, false));
@@ -239,6 +242,8 @@ public class GboardMultiSwipeSettingsTest {
         assertTrue(GboardMultiSwipeSettings.writeSingleTouchCombineDelayMs(prefs, 260));
         assertTrue(GboardMultiSwipeSettings.writeSpacebarTimerIndicatorEnabled(prefs, true));
         assertTrue(GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
+        assertTrue(GboardMultiSwipeSettings.writeWordReadyVibrationEnabled(prefs, true));
+        assertTrue(GboardMultiSwipeSettings.readWordReadyVibrationEnabled(prefs));
         assertTrue(GboardMultiSwipeSettings.writeBeamWidth(prefs, 512));
         assertTrue(GboardMultiSwipeSettings.writeFreqWeightFloor(prefs, 0.72f));
         assertTrue(GboardMultiSwipeSettings.writeGeoExponent(prefs, 6.25f));
@@ -259,6 +264,8 @@ public class GboardMultiSwipeSettingsTest {
                 GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR,
                 GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(prefs));
+        assertEquals(GboardMultiSwipeSettings.DEFAULT_WORD_READY_VIBRATION,
+                GboardMultiSwipeSettings.readWordReadyVibrationEnabled(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_BEAM_WIDTH,
                 GboardMultiSwipeSettings.readBeamWidth(prefs));
         assertEquals(GboardMultiSwipeSettings.DEFAULT_FREQ_WEIGHT_FLOOR,
@@ -351,8 +358,9 @@ public class GboardMultiSwipeSettingsTest {
                         "Auto-space", "", true, v -> {},
                         "Space placement", "", "Before next word (Gboard style)", () -> {},
                         "Auto-space delay", "", "300 ms", () -> {},
-                        "Spacebar timer indicator", "", false, v -> {});
-        assertEquals(4, withAutoSpace.size());
+                        "Spacebar timer indicator", "", false, v -> {},
+                        "Word-ready vibration", "", false, v -> {});
+        assertEquals(5, withAutoSpace.size());
         for (dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract.Row row : withAutoSpace) {
             assertTrue(row.isEnabled());
         }
@@ -363,12 +371,14 @@ public class GboardMultiSwipeSettingsTest {
                         "Auto-space", "", false, v -> {},
                         "Space placement", "", "Before next word (Gboard style)", () -> {},
                         "Auto-space delay", "", "300 ms", () -> {},
-                        "Spacebar timer indicator", "", false, v -> {});
-        assertEquals(4, withoutAutoSpace.size());
+                        "Spacebar timer indicator", "", false, v -> {},
+                        "Word-ready vibration", "", false, v -> {});
+        assertEquals(5, withoutAutoSpace.size());
         assertTrue(withoutAutoSpace.get(0).isEnabled());
         assertFalse(withoutAutoSpace.get(1).isEnabled());
         assertFalse(withoutAutoSpace.get(2).isEnabled());
         assertFalse(withoutAutoSpace.get(3).isEnabled());
+        assertFalse(withoutAutoSpace.get(4).isEnabled());
     }
 
     @Test

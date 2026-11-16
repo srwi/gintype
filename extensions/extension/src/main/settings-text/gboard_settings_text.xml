@@ -302,6 +302,12 @@
     <string name="gboard_patches_multiswipe_spacebar_timer_indicator_summary">
         <translation locale="en">Display a visual bar on the spacebar while waiting to finish the word</translation>
         </string>
+    <string name="gboard_patches_multiswipe_word_ready_vibration_title">
+        <translation locale="en">Vibrate when ready for new word</translation>
+        </string>
+    <string name="gboard_patches_multiswipe_word_ready_vibration_summary">
+        <translation locale="en">Give a subtle vibration when the word timer expires and a new word can begin</translation>
+        </string>
     <string name="gboard_patches_multiswipe_backspace_mode_title">
         <translation locale="en">Backspace behavior</translation>
         </string>

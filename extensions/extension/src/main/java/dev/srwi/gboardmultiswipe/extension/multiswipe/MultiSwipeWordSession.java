@@ -143,6 +143,7 @@ final class MultiSwipeWordSession {
         default void onScheduleStockSwipeAutospaceTimer(long delayMs) {}
         default void onCancelStockSwipeAutospaceTimer() {}
         default void onBufferTimerUpdated(long durationMs) {}
+        default void onWordReadyTimerElapsed() {}
         void onWordDecoded(
                 String word,
                 List<String> alternatives,
@@ -1281,15 +1282,7 @@ final class MultiSwipeWordSession {
             callbacks.onScheduleStockSwipeAutospaceTimer(stockDelayMs);
             callbacks.onBufferTimerUpdated(stockDelayMs);
         } else if (callbacks != null) {
-            long bufferTimerMs = 0L;
-            if (settings.autoSpaceEnabled) {
-                if (!singleTouchCombineBuffer.tokens.isEmpty() && settings.singleTouchCombineDelayMs > 0) {
-                    bufferTimerMs = settings.singleTouchCombineDelayMs;
-                } else if (!passiveTapBuffer.tokens.isEmpty() && settings.tapToMultiSwipeDelayMs > 0) {
-                    bufferTimerMs = settings.tapToMultiSwipeDelayMs;
-                }
-            }
-            callbacks.onBufferTimerUpdated(bufferTimerMs);
+            callbacks.onBufferTimerUpdated(0L);
         }
 
         if (callbacks != null && (hasSwipe || strokeHadMultiTouch || restingDropped > 0
@@ -1485,6 +1478,7 @@ final class MultiSwipeWordSession {
         resetGestureState();
         if (callbacks != null) {
             callbacks.onTrailAccentChanged(false);
+            callbacks.onWordReadyTimerElapsed();
         }
     }
 
@@ -1492,13 +1486,22 @@ final class MultiSwipeWordSession {
             boolean autoSpaceEnabled,
             EditorAdapter editor
     ) {
-        finalizeStockSwipeAutospace(autoSpaceEnabled, false, editor);
+        finalizeStockSwipeAutospace(autoSpaceEnabled, false, editor, null);
     }
 
     void finalizeStockSwipeAutospace(
             boolean autoSpaceEnabled,
             boolean autoSpaceBeforeWord,
             EditorAdapter editor
+    ) {
+        finalizeStockSwipeAutospace(autoSpaceEnabled, autoSpaceBeforeWord, editor, null);
+    }
+
+    void finalizeStockSwipeAutospace(
+            boolean autoSpaceEnabled,
+            boolean autoSpaceBeforeWord,
+            EditorAdapter editor,
+            LifecycleCallbacks callbacks
     ) {
         if (!stockSwipeAutospacePending) return;
         stockSwipeAutospacePending = false;
@@ -1511,6 +1514,9 @@ final class MultiSwipeWordSession {
 
         if (autoSpaceBeforeWord) {
             pendingLeadingSpaceBeforeNextWord = true;
+            if (callbacks != null) {
+                callbacks.onWordReadyTimerElapsed();
+            }
             return;
         }
 
@@ -1524,6 +1530,9 @@ final class MultiSwipeWordSession {
         }
         passiveTapBuffer.clear();
         singleTouchCombineBuffer.clear();
+        if (callbacks != null) {
+            callbacks.onWordReadyTimerElapsed();
+        }
     }
 
     /**

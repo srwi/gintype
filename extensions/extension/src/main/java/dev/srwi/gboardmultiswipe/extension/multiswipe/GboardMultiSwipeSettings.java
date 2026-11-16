@@ -25,6 +25,8 @@ public final class GboardMultiSwipeSettings {
             "pref_multiswipe_tap_to_multiswipe_delay_ms";
     public static final String PREF_KEY_SPACEBAR_TIMER_INDICATOR =
             "pref_multiswipe_spacebar_timer_indicator";
+    public static final String PREF_KEY_WORD_READY_VIBRATION =
+            "pref_multiswipe_word_ready_vibration";
     public static final String PREF_KEY_BACKSPACE_MODE =
             "pref_multiswipe_backspace_mode";
     public static final String BACKSPACE_MODE_WHOLE_WORD = "whole_word";
@@ -50,6 +52,7 @@ public final class GboardMultiSwipeSettings {
     public static final int MAX_TAP_TO_MULTISWIPE_DELAY_MS = 2000;
     public static final int DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS = 750;
     public static final boolean DEFAULT_SPACEBAR_TIMER_INDICATOR = false;
+    public static final boolean DEFAULT_WORD_READY_VIBRATION = false;
     public static final int MIN_BEAM_WIDTH = 32;
     public static final int MAX_BEAM_WIDTH = 1024;
     public static final int DEFAULT_BEAM_WIDTH = 256;
@@ -149,6 +152,10 @@ public final class GboardMultiSwipeSettings {
             if (editor == null) editor = preferences.edit();
             editor.putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR);
         }
+        if (!preferences.contains(PREF_KEY_WORD_READY_VIBRATION)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putBoolean(PREF_KEY_WORD_READY_VIBRATION, DEFAULT_WORD_READY_VIBRATION);
+        }
         if (!preferences.contains(PREF_KEY_BACKSPACE_MODE)) {
             if (editor == null) editor = preferences.edit();
             editor.putString(PREF_KEY_BACKSPACE_MODE, DEFAULT_BACKSPACE_MODE);
@@ -191,6 +198,7 @@ public final class GboardMultiSwipeSettings {
                     .putBoolean(PREF_KEY_TAP_TO_MULTISWIPE_ENABLED, DEFAULT_TAP_TO_MULTISWIPE_ENABLED)
                     .putInt(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS, DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS)
                     .putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR)
+                    .putBoolean(PREF_KEY_WORD_READY_VIBRATION, DEFAULT_WORD_READY_VIBRATION)
                     .putString(PREF_KEY_BACKSPACE_MODE, DEFAULT_BACKSPACE_MODE)
                     .putInt(PREF_KEY_BEAM_WIDTH, DEFAULT_BEAM_WIDTH)
                     .putFloat(PREF_KEY_FREQ_WEIGHT_FLOOR, DEFAULT_FREQ_WEIGHT_FLOOR)
@@ -584,6 +592,22 @@ public final class GboardMultiSwipeSettings {
 
     public static boolean writeSpacebarTimerIndicatorEnabled(SharedPreferences preferences, boolean enabled) {
         return writeBoolean(preferences, PREF_KEY_SPACEBAR_TIMER_INDICATOR, enabled);
+    }
+
+    public static boolean isWordReadyVibrationEnabled(Context context) {
+        try {
+            return readWordReadyVibrationEnabled(resolvePreferences(context));
+        } catch (Throwable ignored) {
+            return DEFAULT_WORD_READY_VIBRATION;
+        }
+    }
+
+    public static boolean readWordReadyVibrationEnabled(SharedPreferences preferences) {
+        return readBoolean(preferences, PREF_KEY_WORD_READY_VIBRATION, DEFAULT_WORD_READY_VIBRATION);
+    }
+
+    public static boolean writeWordReadyVibrationEnabled(SharedPreferences preferences, boolean enabled) {
+        return writeBoolean(preferences, PREF_KEY_WORD_READY_VIBRATION, enabled);
     }
 
     public static boolean isTraceLoggingEnabled(Context context) {
