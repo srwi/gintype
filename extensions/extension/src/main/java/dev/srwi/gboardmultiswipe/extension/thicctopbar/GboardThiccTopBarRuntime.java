@@ -837,12 +837,7 @@ public final class GboardThiccTopBarRuntime {
                         }
                     }
                 }
-                showJumpToEndArrow(holderView, () -> {
-                    ThiccTopBarTextHelper.jumpToEndOfTextField(holderView);
-                    barView.clearHistorySelection();
-                    hideJumpToEndArrow();
-                    barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
-                });
+                showJumpToEndArrow(holderView, () -> handleJumpToEnd(holderView, barView));
             } else {
                 lastWordNavTimestamp = 0;
                 barView.clearHistorySelection();
@@ -1113,14 +1108,30 @@ public final class GboardThiccTopBarRuntime {
             lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
             boolean selected = ThiccTopBarTextHelper.selectHistoryWordInTextField(holderView, SENTENCE_BUFFER, histColIdx, word);
             if (selected) {
-                showJumpToEndArrow(holderView, () -> {
-                    ThiccTopBarTextHelper.jumpToEndOfTextField(holderView);
-                    barView.clearHistorySelection();
-                    hideJumpToEndArrow();
-                    barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
-                });
+                showJumpToEndArrow(holderView, () -> handleJumpToEnd(holderView, barView));
             }
         };
+    }
+
+    private static void handleJumpToEnd(ViewGroup holderView, ThiccTopBarView barView) {
+        lastWordNavTimestamp = 0;
+        lastHistoryInteractionTimestamp = 0;
+        activeOriginalSuggestions = null;
+        ThiccTopBarTextHelper.jumpToEndOfTextField(holderView);
+        barView.clearHistorySelection();
+        hideJumpToEndArrow();
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+        if (!SENTENCE_BUFFER.isEmpty()
+                && !ThiccTopBarTextHelper.isSentenceEnded(holderView)
+                && !ThiccTopBarTextHelper.isInputEmpty(holderView)) {
+            showHistoryOnlyBar(holderView, barView);
+        } else {
+            ViewGroup parent = (ViewGroup) holderView.getParent();
+            ViewGroup attachTarget = parent != null ? parent : holderView;
+            barView.setVisibility(View.GONE);
+            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+        }
+        barView.post(() -> barView.fullScroll(View.FOCUS_RIGHT));
     }
 
     private static ViewGroup.LayoutParams copyLayoutParams(View sourceView) {
