@@ -56,7 +56,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
         void onNavigateWord(int direction);
     }
 
-    private static final long ENTRANCE_ANIM_DURATION_MS = 250L;
+    private static final long ENTRANCE_ANIM_DURATION_MS = 140L;
 
     private final LinearLayout contentLayout;
     private final VerticalWordWheelView currentWheelView;
@@ -122,11 +122,10 @@ public class ThiccTopBarView extends HorizontalScrollView {
     private static final long SCROLL_ANIM_DURATION_MS = 180L;
 
     private ValueAnimator activeEntranceAnimator;
+    private View entranceAnimatedView;
     private ValueAnimator activeScrollAnimator;
     private ViewTreeObserver.OnPreDrawListener pendingPreDrawListener;
     private boolean pendingEntranceAnimation = false;
-    private int pendingEntrancePrevWidth = 0;
-    private boolean pendingEntranceUseNewestColOnly = false;
 
     private OnWordCursorNavigateCallback wordCursorNavigateCallback;
     private float navDownX = 0f;
@@ -363,20 +362,23 @@ public class ThiccTopBarView extends HorizontalScrollView {
         return total;
     }
 
-    private int getNewestColumnSpanWidth() {
-        int count = contentLayout.getChildCount();
-        if (count == 0) {
-            return 0;
+    private View getNewestColumnView() {
+        if (currentWheelView != null && currentWheelView.getParent() == contentLayout) {
+            return currentWheelView;
         }
-        View last = contentLayout.getChildAt(count - 1);
-        if (count >= 3) {
-            View prevCol = contentLayout.getChildAt(count - 3);
-            int span = last.getRight() - prevCol.getRight();
-            if (span > 0) {
-                return span;
-            }
+        if (!historyWheels.isEmpty()) {
+            return historyWheels.get(historyWheels.size() - 1);
         }
-        return last.getWidth();
+        return null;
+    }
+
+    private void resetEntranceAnimatedView() {
+        if (entranceAnimatedView != null) {
+            entranceAnimatedView.setAlpha(1f);
+            entranceAnimatedView.setScaleX(1f);
+            entranceAnimatedView.setScaleY(1f);
+            entranceAnimatedView = null;
+        }
     }
 
     private static List<String> collectColumnWords(
@@ -440,31 +442,14 @@ public class ThiccTopBarView extends HorizontalScrollView {
         return newColCount > prevVisibleColCount && (prevVisibleColCount > 0 || newColCount == 1);
     }
 
-    static float computeEntranceTranslationX(
-            int prevVisibleContentWidth,
-            float prevTranslationX,
-            int newContentWidth,
-            int barWidth
-    ) {
-        if (barWidth <= 0 || newContentWidth <= 0) {
-            return 0f;
-        }
-        float addedWidth = (prevVisibleContentWidth > 0 && newContentWidth > prevVisibleContentWidth)
-                ? (newContentWidth - prevVisibleContentWidth)
-                : newContentWidth;
-        float totalShift = addedWidth + Math.max(0f, prevTranslationX);
-        return Math.min((float) barWidth, Math.max(0f, totalShift));
-    }
-
     private void cancelEntranceAnimation() {
         clearPendingPreDrawListener();
         pendingEntranceAnimation = false;
-        pendingEntrancePrevWidth = 0;
-        pendingEntranceUseNewestColOnly = false;
         if (activeEntranceAnimator != null) {
             activeEntranceAnimator.cancel();
             activeEntranceAnimator = null;
         }
+        resetEntranceAnimatedView();
         contentLayout.setTranslationX(0f);
     }
 
@@ -482,15 +467,8 @@ public class ThiccTopBarView extends HorizontalScrollView {
         clearPendingPreDrawListener();
         int prevColCount = prevWords != null ? prevWords.size() : 0;
         int newColCount = newWords != null ? newWords.size() : 0;
-        boolean windowShift = isSlidingWindowShift(prevWords, newWords);
 
         if (shouldAnimateNewWordEntrance(prevWords, newWords)) {
-            if (!pendingEntranceAnimation) {
-                pendingEntrancePrevWidth = prevContentWidth;
-                pendingEntranceUseNewestColOnly = windowShift;
-            } else if (windowShift) {
-                pendingEntranceUseNewestColOnly = true;
-            }
             pendingEntranceAnimation = true;
         } else if (newColCount < prevColCount || newColCount == 0) {
             cancelEntranceAnimation();
@@ -506,7 +484,6 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 if (selectedHistoryIndex >= 0 || getVisibility() != View.VISIBLE) {
                     clearPendingPreDrawListener();
                     pendingEntranceAnimation = false;
-                    pendingEntranceUseNewestColOnly = false;
                     return true;
                 }
                 int barWidth = getWidth();
@@ -518,49 +495,51 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 clearPendingPreDrawListener();
 
                 cancelScrollAnimation();
+                contentLayout.setTranslationX(0f);
                 int targetScrollX = Math.max(0, containerWidth - barWidth);
                 scrollTo(targetScrollX, 0);
 
                 if (pendingEntranceAnimation) {
-                    int prevWidth = pendingEntrancePrevWidth;
-                    boolean useNewestOnly = pendingEntranceUseNewestColOnly;
                     pendingEntranceAnimation = false;
-                    pendingEntrancePrevWidth = 0;
-                    pendingEntranceUseNewestColOnly = false;
 
-                    float currentTranslation = contentLayout.getTranslationX();
                     if (activeEntranceAnimator != null) {
                         activeEntranceAnimator.cancel();
                         activeEntranceAnimator = null;
                     }
-                    float startTranslation = useNewestOnly
-                            ? Math.min((float) barWidth, Math.max(0f, getNewestColumnSpanWidth() + Math.max(0f, currentTranslation)))
-                            : computeEntranceTranslationX(prevWidth, currentTranslation, newChildrenWidth, barWidth);
-                    if (startTranslation > 1f) {
-                        contentLayout.setTranslationX(startTranslation);
-                        activeEntranceAnimator = ValueAnimator.ofFloat(startTranslation, 0f);
+                    resetEntranceAnimatedView();
+
+                    // Animate newest column in place without shifting hit targets off-screen.
+                    View newestCol = getNewestColumnView();
+                    if (newestCol != null) {
+                        entranceAnimatedView = newestCol;
+                        newestCol.setAlpha(0.35f);
+                        newestCol.setScaleX(0.94f);
+                        newestCol.setScaleY(0.94f);
+                        activeEntranceAnimator = ValueAnimator.ofFloat(0f, 1f);
                         activeEntranceAnimator.setDuration(ENTRANCE_ANIM_DURATION_MS);
                         activeEntranceAnimator.setInterpolator(new DecelerateInterpolator(1.5f));
-                        activeEntranceAnimator.addUpdateListener(anim ->
-                                contentLayout.setTranslationX((Float) anim.getAnimatedValue()));
+                        activeEntranceAnimator.addUpdateListener(anim -> {
+                            float t = (Float) anim.getAnimatedValue();
+                            newestCol.setAlpha(0.35f + 0.65f * t);
+                            float scale = 0.94f + 0.06f * t;
+                            newestCol.setScaleX(scale);
+                            newestCol.setScaleY(scale);
+                        });
                         activeEntranceAnimator.addListener(new AnimatorListenerAdapter() {
                             @Override
                             public void onAnimationEnd(Animator animation) {
-                                contentLayout.setTranslationX(0f);
+                                resetEntranceAnimatedView();
                                 activeEntranceAnimator = null;
                             }
 
                             @Override
                             public void onAnimationCancel(Animator animation) {
+                                resetEntranceAnimatedView();
                                 activeEntranceAnimator = null;
                             }
                         });
                         activeEntranceAnimator.start();
-                    } else {
-                        contentLayout.setTranslationX(0f);
                     }
-                } else if (activeEntranceAnimator == null) {
-                    contentLayout.setTranslationX(0f);
                 }
                 return true;
             }
