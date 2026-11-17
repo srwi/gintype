@@ -1084,6 +1084,55 @@ public class MultiSwipeIntegrationTest {
         assertEquals(Boolean.FALSE, callbacks.lastNativeTopBarBlank);
     }
 
+    @Test
+    public void buildLiveSnapshotTokensCopiesPointsWithoutFinalizingActiveTracks() {
+        SettingsSnapshot settings = new SettingsSnapshot(true, true, 300, 150, true, true);
+        session.onActionDown(0, letterAX, letterAY, 1000L, settings, editor, callbacks);
+        session.onPointerDown(1, letterLX, letterLY, 1020L);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1040L, session.geometry);
+
+        List<MultiSwipeInputToken> snapshot1 = session.buildLiveSnapshotTokens();
+        assertTrue(snapshot1 != null);
+        assertTrue(snapshot1.stream().anyMatch(t -> t.kind == MultiSwipeInputToken.Kind.SWIPE));
+        assertFalse(session.activePointers.get(0).contactsFinalized);
+
+        // Track remains mutable for subsequent ACTION_MOVE points before ACTION_UP, and an
+        // overlapped swiping finger held >= RESTING_FINGER_MIN_MS (400ms) is NOT dropped.
+        session.activePointers.get(0).addPoint(letterLX, letterLY, 1500L, session.geometry);
+        List<MultiSwipeInputToken> snapshot2 = session.buildLiveSnapshotTokens();
+        assertTrue(snapshot2 != null);
+        int pts1 = snapshot1.stream()
+                .filter(t -> t.kind == MultiSwipeInputToken.Kind.SWIPE)
+                .mapToInt(t -> t.points.size()).sum();
+        int pts2 = snapshot2.stream()
+                .filter(t -> t.kind == MultiSwipeInputToken.Kind.SWIPE)
+                .mapToInt(t -> t.points.size()).sum();
+        assertTrue(pts2 > pts1);
+    }
+
+    @Test
+    public void buildLiveSnapshotTokensIncludesSingleTouchCombineBufferForQuickSecondSwipe() {
+        SettingsSnapshot settings = new SettingsSnapshot(true, true, 300, 150, true, true);
+        DecodePort unusedDecoder = (tokens, prev) -> Collections.emptyList();
+
+        // First 1-finger swipe stays on stock Gboard and records into SingleTouchCombineBuffer.
+        session.onActionDown(0, letterAX, letterAY, 1000L, settings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1020L, session.geometry);
+        session.onActionUp(1040L, settings, editor, unusedDecoder, callbacks);
+        editor.stockType("as");
+
+        // Second quick 1-finger swipe within 150ms must include the first swipe in live snapshot.
+        session.onActionDown(0, letterLX, letterLY, 1100L, settings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1130L, session.geometry);
+        assertTrue(session.isLivePreviewEligible(session.multiSwipeThresholdPx()));
+
+        List<MultiSwipeInputToken> combinedSnapshot = session.buildLiveSnapshotTokens();
+        assertTrue(combinedSnapshot != null);
+        long swipeCount = combinedSnapshot.stream()
+                .filter(t -> t.kind == MultiSwipeInputToken.Kind.SWIPE).count();
+        assertEquals(2L, swipeCount);
+    }
+
     private boolean performBackspaceTap(
             long downMs,
             SettingsSnapshot settings,

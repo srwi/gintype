@@ -378,6 +378,43 @@ final class MultiSwipeWordSession {
             }
             return null;
         }
+
+        /**
+         * Non-mutating snapshot for live intermediate decoding during ACTION_MOVE.
+         */
+        MultiSwipeInputToken toSnapshotToken(float swipeThresholdPx) {
+            List<MultiSwipeInputToken.KeyContact> snapshotContacts = new ArrayList<>(contacts);
+            if (!contactsFinalized && currentCode != -1) {
+                snapshotContacts.add(new MultiSwipeInputToken.KeyContact(
+                        currentCode, currentEnterTimeMs, lastTimeMs));
+            }
+            if (isSwipe(swipeThresholdPx)) {
+                return MultiSwipeInputToken.swipe(
+                        pointerId,
+                        slot,
+                        new ArrayList<>(points),
+                        pathLengthPx,
+                        startTimeMs,
+                        lastTimeMs,
+                        snapshotContacts,
+                        new ArrayList<>(dwells),
+                        false,
+                        false
+                );
+            }
+            if (startedOnLetter && startKeyChar != '\0') {
+                return MultiSwipeInputToken.tap(
+                        pointerId,
+                        slot,
+                        startKeyChar,
+                        startX,
+                        startY,
+                        startTimeMs,
+                        lastTimeMs
+                );
+            }
+            return null;
+        }
     }
 
     /**
@@ -774,6 +811,62 @@ final class MultiSwipeWordSession {
             }
         }
         return false;
+    }
+
+    boolean isLivePreviewEligible(float swipeThresholdPx) {
+        if (multiswipeTakeoverActive) {
+            return true;
+        }
+        if (sawNonLetterThisSession) {
+            return false;
+        }
+        if (multiswipeWordActive) {
+            return hasAnySwipingPointer(swipeThresholdPx) || containsSwipeToken(wordTokens);
+        }
+        return !singleTouchCombineBuffer.tokens.isEmpty()
+                && (singleTouchCombineBuffer.hasSwipeToken || hasAnySwipingPointer(swipeThresholdPx));
+    }
+
+    /**
+     * Builds an immutable token snapshot of the current in-progress MultiSwipe word for throttled
+     * live-preview decoding during ACTION_MOVE, or null if no SWIPE token is present yet.
+     */
+    List<MultiSwipeInputToken> buildLiveSnapshotTokens() {
+        float swipeThreshold = multiSwipeThresholdPx();
+        List<MultiSwipeInputToken> out = new ArrayList<>(
+                wordTokens.size() + completedTokens.size() + activePointers.size() + 4);
+        if (!multiswipeWordActive && !sawNonLetterThisSession) {
+            if (!singleTouchCombineBuffer.tokens.isEmpty()) {
+                out.addAll(singleTouchCombineBuffer.tokens);
+            } else if (!passiveTapBuffer.tokens.isEmpty()) {
+                out.addAll(passiveTapBuffer.tokens);
+            }
+        }
+        out.addAll(wordTokens);
+        out.addAll(completedTokens);
+        for (PointerTrack track : activePointers.values()) {
+            if (track.isRestingFinger(swipeThreshold)) {
+                continue;
+            }
+            MultiSwipeInputToken tok = track.toSnapshotToken(swipeThreshold);
+            if (tok != null) {
+                out.add(tok);
+            }
+        }
+        return containsSwipeToken(out) ? out : null;
+    }
+
+    String formatWordForCurrentContext(String word) {
+        if (word == null || word.isEmpty()) {
+            return word;
+        }
+        if (isAttachingAfterDeletion(textSnapshotAtActionDown, false, suppressNextLeadingSpace)) {
+            return lowercaseFirstChar(word);
+        }
+        if (shouldCapitalizeFirstLetter(textSnapshotAtActionDown)) {
+            return capitalizeFirstChar(word);
+        }
+        return word;
     }
 
     boolean onActionDown(

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -12,6 +13,7 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeRuntime;
 
 import java.lang.reflect.Constructor;
@@ -31,6 +33,7 @@ import java.util.WeakHashMap;
 public final class GboardThiccTopBarRuntime {
     private static final String TAG = "GboardThiccTopBar";
     private static final String MATRIX_BAR_TAG = "gboardpatches:matrix_bar_view";
+    private static final String LIVE_GUESS_VIEW_TAG = "gboardpatches:multiswipe_live_guess_view";
 
     public static final class CandidateItem {
         public final String text;
@@ -92,6 +95,7 @@ public final class GboardThiccTopBarRuntime {
     private static Runnable nativeTopBarBlankTimeoutRunnable = null;
     private static ViewTreeObserver.OnPreDrawListener nativeTopBarPreDrawGuard = null;
     private static ViewGroup nativeTopBarPreDrawTarget = null;
+    private static final Map<View, Boolean> SUPPRESSED_HEADER_SIBLINGS = new WeakHashMap<>();
 
     /**
      * Hook called after SoftKeyboardView finishes inflating to apply the configured
@@ -248,8 +252,7 @@ public final class GboardThiccTopBarRuntime {
             nativeTopBarBlankForMultiSwipe = true;
             ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
             ViewGroup attachTarget = parent != null ? parent : holderView;
-            ThiccTopBarGboardReflector.hideStaleCandidateSlots(holderView);
-            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
+            suppressNativeHeaderForBlank(attachTarget, holderView);
             attachNativeTopBarPreDrawGuard(attachTarget, holderView);
             nativeTopBarBlankTimeoutRunnable = () -> setNativeTopBarBlankForMultiSwipe(false);
             handler.postDelayed(nativeTopBarBlankTimeoutRunnable, NATIVE_TOP_BAR_BLANK_TIMEOUT_MS);
@@ -259,10 +262,168 @@ public final class GboardThiccTopBarRuntime {
         boolean wasBlank = nativeTopBarBlankForMultiSwipe;
         nativeTopBarBlankForMultiSwipe = false;
         detachNativeTopBarPreDrawGuard();
+        hideNativeTopBarLiveGuess(holderView);
+        boolean hasCandidates = holderView != null
+                && ThiccTopBarGboardReflector.getHolderCandidateCount(holderView) > 0;
+        if (!hasCandidates) {
+            restoreSuppressedHeaderSiblings();
+        }
         if (wasBlank && holderView != null && !GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
-            ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
-            ViewGroup attachTarget = parent != null ? parent : holderView;
-            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+            holderView.setAlpha(1.0f);
+            if (!ThiccTopBarGboardReflector.isUndoViewActive(
+                    (holderView.getParent() instanceof ViewGroup p) ? p : holderView)) {
+                holderView.setVisibility(View.VISIBLE);
+            }
+        }
+    }
+
+    private static void suppressNativeHeaderForBlank(ViewGroup attachTarget, ViewGroup holderView) {
+        if (holderView != null) {
+            ThiccTopBarGboardReflector.hideStaleCandidateSlots(holderView);
+            holderView.setAlpha(0.0f);
+            holderView.setVisibility(View.INVISIBLE);
+        }
+        if (attachTarget == null) {
+            return;
+        }
+        ViewGroup headerParent = (attachTarget.getParent() instanceof ViewGroup gp) ? gp : null;
+        if (headerParent != null) {
+            for (int i = 0; i < headerParent.getChildCount(); i++) {
+                View sibling = headerParent.getChildAt(i);
+                if (sibling != attachTarget
+                        && !(sibling instanceof ThiccTopBarView)
+                        && sibling.getVisibility() == View.VISIBLE) {
+                    sibling.setVisibility(View.INVISIBLE);
+                    SUPPRESSED_HEADER_SIBLINGS.put(sibling, Boolean.TRUE);
+                }
+            }
+        }
+        // Also hide any non-holder, non-live-guess sibling inside attachTarget itself
+        for (int i = 0; i < attachTarget.getChildCount(); i++) {
+            View child = attachTarget.getChildAt(i);
+            if (child != holderView
+                    && !LIVE_GUESS_VIEW_TAG.equals(child.getTag())
+                    && !(child instanceof ThiccTopBarView)
+                    && child.getVisibility() == View.VISIBLE) {
+                child.setVisibility(View.INVISIBLE);
+                SUPPRESSED_HEADER_SIBLINGS.put(child, Boolean.TRUE);
+            }
+        }
+    }
+
+    private static void restoreSuppressedHeaderSiblings() {
+        if (SUPPRESSED_HEADER_SIBLINGS.isEmpty()) {
+            return;
+        }
+        for (View v : new ArrayList<>(SUPPRESSED_HEADER_SIBLINGS.keySet())) {
+            if (v != null && v.getVisibility() == View.INVISIBLE) {
+                v.setVisibility(View.VISIBLE);
+            }
+        }
+        SUPPRESSED_HEADER_SIBLINGS.clear();
+    }
+
+    /**
+     * Displays (or clears) a centered intermediate MultiSwipe guess in the native top bar while
+     * {@code nativeTopBarBlankForMultiSwipe} is active and Thicc Top Bar is disabled.
+     */
+    public static void updateNativeTopBarLiveGuess(String word) {
+        Handler handler = getMainHandler();
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post(() -> updateNativeTopBarLiveGuess(word));
+            return;
+        }
+        ViewGroup holderView = lastHolderView;
+        if (!nativeTopBarBlankForMultiSwipe
+                || holderView == null
+                || GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+            hideNativeTopBarLiveGuess(holderView);
+            return;
+        }
+        if (word == null || word.isEmpty()) {
+            return;
+        }
+        ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
+        ViewGroup attachTarget = parent != null ? parent : holderView;
+        TextView guessView = getOrCreateNativeLiveGuessView(attachTarget, holderView);
+        if (guessView != null) {
+            guessView.setText(word);
+            guessView.setVisibility(View.VISIBLE);
+            guessView.bringToFront();
+        }
+    }
+
+    private static TextView getOrCreateNativeLiveGuessView(ViewGroup attachTarget, ViewGroup holderView) {
+        if (attachTarget == null) {
+            return null;
+        }
+        View existing = attachTarget.findViewWithTag(LIVE_GUESS_VIEW_TAG);
+        if (existing instanceof TextView tv) {
+            styleNativeLiveGuessView(tv, holderView);
+            return tv;
+        }
+        try {
+            Context ctx = attachTarget.getContext();
+            TextView tv = new TextView(ctx);
+            tv.setTag(LIVE_GUESS_VIEW_TAG);
+            tv.setGravity(Gravity.CENTER);
+            tv.setSingleLine(true);
+            tv.setEllipsize(TextUtils.TruncateAt.END);
+            tv.setClickable(false);
+            tv.setFocusable(false);
+            tv.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            styleNativeLiveGuessView(tv, holderView);
+            ViewGroup.LayoutParams lp = new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT);
+            attachTarget.addView(tv, lp);
+            return tv;
+        } catch (Throwable t) {
+            Log.w(TAG, "getOrCreateNativeLiveGuessView failed: " + t.getMessage());
+            return null;
+        }
+    }
+
+    private static void styleNativeLiveGuessView(TextView tv, ViewGroup holderView) {
+        ThiccTopBarGboardReflector.applyKeyboardBackground(tv, holderView);
+        TextView sample = findFirstTextView(holderView);
+        if (sample != null) {
+            tv.setTextColor(sample.getCurrentTextColor());
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, sample.getTextSize());
+            tv.setTypeface(sample.getTypeface());
+        } else {
+            boolean dark = (tv.getContext().getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                    == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            tv.setTextColor(dark ? 0xFFE8EAED : 0xFF202124);
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+        }
+    }
+
+    private static TextView findFirstTextView(View root) {
+        if (root instanceof TextView tv && tv.getTextSize() > 0f) {
+            return tv;
+        }
+        if (root instanceof ViewGroup vg) {
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                TextView found = findFirstTextView(vg.getChildAt(i));
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void hideNativeTopBarLiveGuess(ViewGroup holderView) {
+        if (holderView == null) {
+            return;
+        }
+        ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
+        ViewGroup attachTarget = parent != null ? parent : holderView;
+        View existing = attachTarget.findViewWithTag(LIVE_GUESS_VIEW_TAG);
+        if (existing != null && existing.getVisibility() != View.GONE) {
+            existing.setVisibility(View.GONE);
         }
     }
 
@@ -286,7 +447,7 @@ public final class GboardThiccTopBarRuntime {
             if (currentHolder != null && !GboardThiccTopBarSettings.readEnabled(currentHolder.getContext())) {
                 ViewGroup p = (currentHolder.getParent() instanceof ViewGroup pg) ? pg : null;
                 ViewGroup target = p != null ? p : currentHolder;
-                ThiccTopBarGboardReflector.updateHeaderViewsVisibility(target, currentHolder, true);
+                suppressNativeHeaderForBlank(target, currentHolder);
             }
             return true;
         };
@@ -319,8 +480,9 @@ public final class GboardThiccTopBarRuntime {
             }
         }
         if (nativeTopBarBlankForMultiSwipe) {
-            ThiccTopBarGboardReflector.hideStaleCandidateSlots(holderView);
-            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
+            suppressNativeHeaderForBlank(attachTarget, holderView);
+        } else if (ThiccTopBarGboardReflector.getHolderCandidateCount(holderView) <= 0) {
+            restoreSuppressedHeaderSiblings();
         }
     }
 
@@ -374,7 +536,8 @@ public final class GboardThiccTopBarRuntime {
         holderView.post(() -> {
             try {
                 if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
-                    if (nativeTopBarBlankForMultiSwipe && candidateListObj != null) {
+                    if (nativeTopBarBlankForMultiSwipe && candidateListObj != null
+                            && !GboardMultiSwipeRuntime.isLivePreviewTouchActive()) {
                         int count = ThiccTopBarGboardReflector.getHolderCandidateCount(holderView);
                         boolean hasCandidates = count > 0
                                 || (count < 0 && !ThiccTopBarGboardReflector

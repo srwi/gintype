@@ -24,6 +24,7 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputConnection;
 import android.widget.TextView;
 import dev.srwi.gboardmultiswipe.extension.thicctopbar.GboardThiccTopBarRuntime;
+import dev.srwi.gboardmultiswipe.extension.thicctopbar.GboardThiccTopBarSettings;
 import dev.srwi.gboardmultiswipe.extension.thicctopbar.ThiccTopBarGboardReflector;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeDictionaryManager.LanguagePack;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeGeometry.KeySpec;
@@ -37,6 +38,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Runtime hook coordinator for MultiSwipe multi-finger swipe & tap+swipe gesture typing.
@@ -79,6 +84,18 @@ public final class GboardMultiSwipeRuntime {
         int lastKeyboardHeight = 0;
         Runnable autospaceRunnable = null;
         Runnable stockSwipeAutospaceRunnable = null;
+        Runnable livePreviewSettleRunnable = null;
+        final KineticaDtwDecoder livePreviewDecoder = new KineticaDtwDecoder();
+        final AtomicBoolean liveDecodeInFlight = new AtomicBoolean(false);
+        final AtomicInteger liveDecodeGeneration = new AtomicInteger(0);
+        long lastLiveDecodeDispatchMs = 0L;
+
+        void cancelLivePreviewSettle() {
+            if (livePreviewSettleRunnable != null) {
+                mainHandler.removeCallbacks(livePreviewSettleRunnable);
+                livePreviewSettleRunnable = null;
+            }
+        }
 
         void cancelAutospaceTimer() {
             if (autospaceRunnable != null) {
@@ -96,6 +113,13 @@ public final class GboardMultiSwipeRuntime {
             core.stockSwipeAutospacePending = false;
         }
     }
+
+    private static final long LIVE_PREVIEW_INTERVAL_MS = 100L;
+    private static final ExecutorService LIVE_PREVIEW_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "multiswipe-live-preview");
+        t.setDaemon(true);
+        return t;
+    });
 
     private static final Map<Object, HandlerSession> SESSIONS =
             Collections.synchronizedMap(new WeakHashMap<>());
@@ -242,6 +266,19 @@ public final class GboardMultiSwipeRuntime {
         }
     }
 
+    public static boolean isLivePreviewTouchActive() {
+        try {
+            Object handler = lastGestureHandler;
+            if (handler == null) return false;
+            HandlerSession session = SESSIONS.get(handler);
+            return session != null
+                    && !session.core.activePointers.isEmpty()
+                    && session.core.isLivePreviewEligible(session.core.multiSwipeThresholdPx());
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     /**
      * Injected at the start of AbstractGestureMotionEventHandler.g(MotionEvent).
      */
@@ -280,6 +317,9 @@ public final class GboardMultiSwipeRuntime {
 
             switch (actionMasked) {
                 case MotionEvent.ACTION_DOWN: {
+                    session.cancelLivePreviewSettle();
+                    session.liveDecodeGeneration.incrementAndGet();
+                    session.lastLiveDecodeDispatchMs = 0L;
                     int pid = event.getPointerId(0);
                     float x = event.getX(0);
                     float y = event.getY(0);
@@ -339,6 +379,7 @@ public final class GboardMultiSwipeRuntime {
                     }
 
                     maybeActivateTakeover(handler, session, multiSwipeThreshold, true);
+                    maybeScheduleLivePreviewDecode(session, context, activeLang, eventTime);
                     break;
                 }
 
@@ -361,10 +402,13 @@ public final class GboardMultiSwipeRuntime {
                     }
 
                     maybeActivateTakeover(handler, session, multiSwipeThreshold, true);
+                    maybeScheduleLivePreviewDecode(session, context, activeLang, eventTime);
                     break;
                 }
 
                 case MotionEvent.ACTION_UP: {
+                    session.cancelLivePreviewSettle();
+                    session.liveDecodeGeneration.incrementAndGet();
                     for (MultiSwipeWordSession.PointerTrack track : session.core.activePointers.values()) {
                         int pIdx = event.findPointerIndex(track.pointerId);
                         if (pIdx >= 0) {
@@ -381,6 +425,8 @@ public final class GboardMultiSwipeRuntime {
                 }
 
                 case MotionEvent.ACTION_CANCEL: {
+                    session.cancelLivePreviewSettle();
+                    session.liveDecodeGeneration.incrementAndGet();
                     session.core.onActionCancel(callbacks);
                     for (int i = 0; i < 10; i++) {
                         finishTrailForPointer(handler, i, false);
@@ -663,6 +709,80 @@ public final class GboardMultiSwipeRuntime {
         if (claimDispatcher) {
             ensureGestureHandlerOwnsDispatcher(handler);
         }
+    }
+
+    private static void maybeScheduleLivePreviewDecode(
+            HandlerSession session,
+            Context context,
+            String activeLang,
+            long eventTimeMs
+    ) {
+        if (context == null
+                || !session.core.isLivePreviewEligible(session.core.multiSwipeThresholdPx())) {
+            return;
+        }
+        if (GboardThiccTopBarSettings.readEnabled(context)) {
+            return;
+        }
+        GboardThiccTopBarRuntime.setNativeTopBarBlankForMultiSwipe(true);
+        session.cancelLivePreviewSettle();
+        long elapsed = eventTimeMs - session.lastLiveDecodeDispatchMs;
+        if (elapsed < LIVE_PREVIEW_INTERVAL_MS) {
+            long delayMs = Math.max(20L, LIVE_PREVIEW_INTERVAL_MS - elapsed);
+            session.livePreviewSettleRunnable = () -> {
+                session.livePreviewSettleRunnable = null;
+                maybeScheduleLivePreviewDecode(
+                        session, context, activeLang, android.os.SystemClock.uptimeMillis());
+            };
+            session.mainHandler.postDelayed(session.livePreviewSettleRunnable, delayMs);
+            return;
+        }
+        LanguagePack pack = GboardMultiSwipeDictionaryManager.getLoadedIfReady(
+                activeLang, session.geometry.hasDedicatedUmlauts());
+        if (pack == null || !session.geometry.isValid()) {
+            return;
+        }
+        List<MultiSwipeInputToken> snapshotTokens = session.core.buildLiveSnapshotTokens();
+        if (snapshotTokens == null) {
+            return;
+        }
+        if (!session.liveDecodeInFlight.compareAndSet(false, true)) {
+            session.livePreviewSettleRunnable = () -> {
+                session.livePreviewSettleRunnable = null;
+                maybeScheduleLivePreviewDecode(
+                        session, context, activeLang, android.os.SystemClock.uptimeMillis());
+            };
+            session.mainHandler.postDelayed(session.livePreviewSettleRunnable, LIVE_PREVIEW_INTERVAL_MS);
+            return;
+        }
+        session.lastLiveDecodeDispatchMs = eventTimeMs;
+        final int gen = session.liveDecodeGeneration.get();
+        final String prevWord = session.core.lastCommittedWord;
+        final MultiSwipeWordSession coreRef = session.core;
+        final MultiSwipeGeometry geomRef = session.geometry;
+        LIVE_PREVIEW_EXECUTOR.execute(() -> {
+            try {
+                if (session.liveDecodeGeneration.get() != gen) {
+                    return;
+                }
+                GboardMultiSwipeSettings.syncDecoderConstants(context);
+                List<WordCandidate> candidates = session.livePreviewDecoder.decode(
+                        snapshotTokens, pack.trie, pack.bigrams, geomRef, prevWord);
+                if (session.liveDecodeGeneration.get() != gen
+                        || candidates == null
+                        || candidates.isEmpty()) {
+                    return;
+                }
+                String formatted = coreRef.formatWordForCurrentContext(candidates.get(0).word);
+                if (formatted != null && !formatted.isEmpty()) {
+                    GboardThiccTopBarRuntime.updateNativeTopBarLiveGuess(formatted);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "livePreviewDecode error: " + t.getMessage());
+            } finally {
+                session.liveDecodeInFlight.set(false);
+            }
+        });
     }
 
     private static void ensureGestureHandlerOwnsDispatcher(Object handler) {
@@ -1491,6 +1611,9 @@ public final class GboardMultiSwipeRuntime {
                         candidates);
                 if (word != null) {
                     GboardThiccTopBarRuntime.recordMultiSwipeDecodedWord(word, alternatives);
+                    if (context != null && !GboardThiccTopBarSettings.readEnabled(context)) {
+                        GboardThiccTopBarRuntime.updateNativeTopBarLiveGuess(word);
+                    }
                 }
             }
 

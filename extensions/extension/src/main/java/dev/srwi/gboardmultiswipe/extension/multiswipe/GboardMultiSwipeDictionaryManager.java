@@ -179,6 +179,15 @@ public final class GboardMultiSwipeDictionaryManager {
         return existing;
     }
 
+    public static LanguagePack getLoadedIfReady(String lang, boolean hasDedicatedUmlauts) {
+        String key = normalizeLanguageKey(lang);
+        LanguagePack existing = PACKS.get(key);
+        if (existing != null && existing.hasDedicatedUmlauts == hasDedicatedUmlauts) {
+            return existing;
+        }
+        return null;
+    }
+
     public static LanguagePack loadBlockingIfNeeded(Context context, String lang, boolean hasDedicatedUmlauts) {
         String key = normalizeLanguageKey(lang);
         LanguagePack existing = PACKS.get(key);
