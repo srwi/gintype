@@ -279,6 +279,17 @@ public final class GboardMultiSwipeRuntime {
         }
     }
 
+    public static boolean hasActiveTouch() {
+        try {
+            Object handler = lastGestureHandler;
+            if (handler == null) return false;
+            HandlerSession session = SESSIONS.get(handler);
+            return session != null && !session.core.activePointers.isEmpty();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     /**
      * Injected at the start of AbstractGestureMotionEventHandler.g(MotionEvent).
      */
@@ -421,6 +432,7 @@ public final class GboardMultiSwipeRuntime {
                         }
                     }
                     session.core.onActionUp(eventTime, settings, editor, decoder, callbacks);
+                    GboardThiccTopBarRuntime.onGestureEndedForLiveGuess(false);
                     break;
                 }
 
@@ -428,6 +440,7 @@ public final class GboardMultiSwipeRuntime {
                     session.cancelLivePreviewSettle();
                     session.liveDecodeGeneration.incrementAndGet();
                     session.core.onActionCancel(callbacks);
+                    GboardThiccTopBarRuntime.onGestureEndedForLiveGuess(true);
                     for (int i = 0; i < 10; i++) {
                         finishTrailForPointer(handler, i, false);
                     }
@@ -721,10 +734,9 @@ public final class GboardMultiSwipeRuntime {
                 || !session.core.isLivePreviewEligible(session.core.multiSwipeThresholdPx())) {
             return;
         }
-        if (GboardThiccTopBarSettings.readEnabled(context)) {
-            return;
+        if (!GboardThiccTopBarSettings.readEnabled(context)) {
+            GboardThiccTopBarRuntime.setNativeTopBarBlankForMultiSwipe(true);
         }
-        GboardThiccTopBarRuntime.setNativeTopBarBlankForMultiSwipe(true);
         session.cancelLivePreviewSettle();
         long elapsed = eventTimeMs - session.lastLiveDecodeDispatchMs;
         if (elapsed < LIVE_PREVIEW_INTERVAL_MS) {
@@ -775,7 +787,7 @@ public final class GboardMultiSwipeRuntime {
                 }
                 String formatted = coreRef.formatWordForCurrentContext(candidates.get(0).word);
                 if (formatted != null && !formatted.isEmpty()) {
-                    GboardThiccTopBarRuntime.updateNativeTopBarLiveGuess(formatted);
+                    GboardThiccTopBarRuntime.updateLiveGuess(formatted);
                 }
             } catch (Throwable t) {
                 Log.w(TAG, "livePreviewDecode error: " + t.getMessage());

@@ -255,6 +255,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
             List<String> newWords = collectColumnWords(history, currentAlternatives, preferredSelected);
             displayedColumnWords.clear();
             displayedColumnWords.addAll(newWords);
+            scheduleRightDockPositioning(prevWords, prevContentWidth, newWords);
             return;
         }
 
@@ -491,7 +492,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 samePrefixInPlace = false;
             }
         }
-        return !samePrefixInPlace || !equalsIgnoreCaseSafe(newWords.get(n - 1), prevWords.get(n - 1));
+        return !samePrefixInPlace;
     }
 
     static boolean shouldAnimateNewWordEntrance(List<String> prevWords, List<String> newWords) {

@@ -96,6 +96,8 @@ public final class GboardThiccTopBarRuntime {
     private static ViewTreeObserver.OnPreDrawListener nativeTopBarPreDrawGuard = null;
     private static ViewGroup nativeTopBarPreDrawTarget = null;
     private static final Map<View, Boolean> SUPPRESSED_HEADER_SIBLINGS = new WeakHashMap<>();
+    private static volatile boolean thiccTopBarLiveGuessActive = false;
+    private static Runnable thiccTopBarLiveGuessTimeoutRunnable = null;
 
     /**
      * Hook called after SoftKeyboardView finishes inflating to apply the configured
@@ -246,7 +248,12 @@ public final class GboardThiccTopBarRuntime {
 
         ViewGroup holderView = lastHolderView;
         if (blank) {
-            if (holderView == null || GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+            if (holderView == null) {
+                return;
+            }
+            if (GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+                thiccTopBarLiveGuessActive = true;
+                cancelLiveGuessFallback();
                 return;
             }
             nativeTopBarBlankForMultiSwipe = true;
@@ -259,6 +266,7 @@ public final class GboardThiccTopBarRuntime {
             return;
         }
 
+        clearThiccTopBarLiveGuess();
         boolean wasBlank = nativeTopBarBlankForMultiSwipe;
         nativeTopBarBlankForMultiSwipe = false;
         detachNativeTopBarPreDrawGuard();
@@ -321,6 +329,104 @@ public final class GboardThiccTopBarRuntime {
             }
         }
         SUPPRESSED_HEADER_SIBLINGS.clear();
+    }
+
+    /**
+     * Displays a centered intermediate MultiSwipe guess in either Thicc Top Bar's right-hand
+     * active wheel (when enabled) or the native top bar overlay (when Thicc Top Bar is disabled).
+     */
+    public static void updateLiveGuess(String word) {
+        Handler handler = getMainHandler();
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post(() -> updateLiveGuess(word));
+            return;
+        }
+        ViewGroup holderView = lastHolderView;
+        if (holderView == null || word == null || word.isEmpty()) {
+            return;
+        }
+        if (GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+            updateThiccTopBarLiveGuess(holderView, word);
+        } else {
+            updateNativeTopBarLiveGuess(word);
+        }
+    }
+
+    private static void updateThiccTopBarLiveGuess(ViewGroup holderView, String word) {
+        try {
+            if (ThiccTopBarGboardReflector.isDictationActive(holderView)) {
+                return;
+            }
+            ThiccTopBarView barView = getOrCreateBarView(holderView);
+            if (barView == null || isHistorySelectionSessionActive(holderView, barView)) {
+                return;
+            }
+            thiccTopBarLiveGuessActive = true;
+            cancelLiveGuessFallback();
+            if (ThiccTopBarTextHelper.isSentenceEnded(holderView)
+                    || ThiccTopBarTextHelper.isInputEmpty(holderView)) {
+                SENTENCE_BUFFER.clear();
+            } else {
+                // Exclude any uncommitted/combined tap prefix currently in the editor (e.g. Tap+Swipe)
+                // so it is replaced in-place by the live guess instead of being pushed into history.
+                String pendingEditorWord = ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView)
+                        ? null
+                        : ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
+                ThiccTopBarTextHelper.syncSentenceBufferFromText(
+                        holderView, pendingEditorWord, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+            }
+            ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
+            ViewGroup attachTarget = parent != null ? parent : holderView;
+            barView.updateMatrix(
+                    SENTENCE_BUFFER.getEntries(),
+                    Collections.singletonList(word),
+                    0,
+                    null,
+                    null,
+                    null,
+                    null
+            );
+            barView.setVisibility(View.VISIBLE);
+            ThiccTopBarGboardReflector.applyKeyboardBackground(barView, holderView);
+            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
+            barView.bringToFront();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void cancelLiveGuessFallback() {
+        if (thiccTopBarLiveGuessTimeoutRunnable != null) {
+            getMainHandler().removeCallbacks(thiccTopBarLiveGuessTimeoutRunnable);
+            thiccTopBarLiveGuessTimeoutRunnable = null;
+        }
+    }
+
+    private static void clearThiccTopBarLiveGuess() {
+        thiccTopBarLiveGuessActive = false;
+        cancelLiveGuessFallback();
+    }
+
+    /**
+     * Called deterministically when the active touch gesture ends (ACTION_UP or ACTION_CANCEL).
+     * While fingers remain down, {@code thiccTopBarLiveGuessActive} never times out regardless of
+     * swipe duration; only after ACTION_UP does a short handoff fallback guard against cancelled
+     * stock swipes that emit 0 final candidates.
+     */
+    public static void onGestureEndedForLiveGuess(boolean cancelled) {
+        if (!thiccTopBarLiveGuessActive) {
+            return;
+        }
+        if (cancelled) {
+            clearThiccTopBarLiveGuess();
+            return;
+        }
+        cancelLiveGuessFallback();
+        thiccTopBarLiveGuessTimeoutRunnable = () -> {
+            if (!GboardMultiSwipeRuntime.hasActiveTouch()) {
+                thiccTopBarLiveGuessActive = false;
+            }
+        };
+        getMainHandler().postDelayed(thiccTopBarLiveGuessTimeoutRunnable, 300L);
     }
 
     /**
@@ -550,6 +656,10 @@ public final class GboardThiccTopBarRuntime {
                     return;
                 }
 
+                if (GboardMultiSwipeRuntime.isLivePreviewTouchActive()) {
+                    return;
+                }
+
                 ThiccTopBarView barView = getOrCreateBarView(holderView);
                 if (barView == null) {
                     return;
@@ -575,7 +685,13 @@ public final class GboardThiccTopBarRuntime {
                         barView.setVisibility(View.GONE);
                         ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
                     } else {
-                        ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+                        if (thiccTopBarLiveGuessActive
+                        || GboardMultiSwipeRuntime.hasActiveTouch()
+                        || GboardMultiSwipeRuntime.isMultiSwipeWordActive()) {
+                    return;
+                }
+
+                ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
                         if (!SENTENCE_BUFFER.isEmpty()) {
                             showHistoryOnlyBar(holderView, barView);
                         } else {
@@ -614,6 +730,22 @@ public final class GboardThiccTopBarRuntime {
                 // Case 1: No active word being typed/swiped (cursor after manual space, punctuation, or empty)
                 if (currentWord == null || currentWord.isEmpty()) {
                     activeOriginalSuggestions = null;
+                    if (items != null && items.size() == 1) {
+                        CandidateItem only = items.get(0);
+                        if (only != null && !only.isRaw && !only.isPrediction
+                                && only.text != null && !only.text.trim().isEmpty()) {
+                            updateThiccTopBarLiveGuess(holderView, only.text.trim());
+                            return;
+                        }
+                    }
+                    if ((thiccTopBarLiveGuessActive
+                            || GboardMultiSwipeRuntime.hasActiveTouch()
+                            || GboardMultiSwipeRuntime.isMultiSwipeWordActive())
+                            && !ThiccTopBarTextHelper.isSentenceEnded(holderView)
+                            && !ThiccTopBarTextHelper.isInputEmpty(holderView)) {
+                        return;
+                    }
+                    clearThiccTopBarLiveGuess();
                     if (ThiccTopBarTextHelper.isSentenceEnded(holderView) || ThiccTopBarTextHelper.isInputEmpty(holderView)) {
                         SENTENCE_BUFFER.clear();
                         hideJumpToEndArrow();
@@ -632,6 +764,7 @@ public final class GboardThiccTopBarRuntime {
                     return;
                 }
 
+                clearThiccTopBarLiveGuess();
                 int[] centerIdxOut = new int[1];
                 List<String> words = buildTrimmedSuggestions(items, currentWord, centerIdxOut);
                 int centerIndex = centerIdxOut[0];
@@ -757,6 +890,7 @@ public final class GboardThiccTopBarRuntime {
                 }
 
                 if (ThiccTopBarTextHelper.isSentenceEnded(holderView) || ThiccTopBarTextHelper.isInputEmpty(holderView)) {
+                    thiccTopBarLiveGuessActive = false;
                     SENTENCE_BUFFER.clear();
                     activeOriginalSuggestions = null;
                     hideJumpToEndArrow();
@@ -810,6 +944,12 @@ public final class GboardThiccTopBarRuntime {
                     ThiccTopBarGboardReflector.applyKeyboardBackground(barView, holderView);
                     ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                     barView.bringToFront();
+                    return;
+                }
+
+                if (thiccTopBarLiveGuessActive
+                        || GboardMultiSwipeRuntime.hasActiveTouch()
+                        || GboardMultiSwipeRuntime.isMultiSwipeWordActive()) {
                     return;
                 }
 
@@ -1638,6 +1778,7 @@ public final class GboardThiccTopBarRuntime {
                     : ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
 
             if (activeWord != null && !activeWord.isEmpty()) {
+                clearThiccTopBarLiveGuess();
                 List<String> words = resolveSuggestionsForWord(activeWord);
                 int centerIdx = Math.max(0, findCaseInsensitiveIndex(words, activeWord));
                 words.set(centerIdx, activeWord);
