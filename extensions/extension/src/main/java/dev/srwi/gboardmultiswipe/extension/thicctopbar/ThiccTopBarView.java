@@ -234,11 +234,34 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 : Collections.emptyList();
         final int prevContentWidth = wasVisible ? getChildrenTotalWidth() : 0;
 
+        boolean hasCurrent = (currentAlternatives != null && !currentAlternatives.isEmpty());
+        if (wasVisible
+                && hasCurrent
+                && currentWheelView.getParent() == contentLayout
+                && matchesHistoryColumns(history)) {
+            currentWheelView.setAlpha(1.0f);
+            currentWheelView.setIsActiveWord(true);
+            currentWheelView.setAlternatives(currentAlternatives, preferredSelected);
+            currentWheelView.setOnWordActionListener((newIndex, newWord) -> {
+                if (onActiveSwap != null) {
+                    onActiveSwap.onActiveWordSwapped(newIndex, newWord);
+                }
+            });
+            currentWheelView.setOnCenterClickListener((index, word) -> {
+                if (onCommit != null) {
+                    onCommit.onCommit(index, word);
+                }
+            });
+            List<String> newWords = collectColumnWords(history, currentAlternatives, preferredSelected);
+            displayedColumnWords.clear();
+            displayedColumnWords.addAll(newWords);
+            return;
+        }
+
         contentLayout.removeAllViews();
         historyWheels.clear();
         selectedHistoryIndex = -1;
 
-        boolean hasCurrent = (currentAlternatives != null && !currentAlternatives.isEmpty());
         populateHistoryColumns(history, hasCurrent, onHistoryReplace, onHistoryClick);
 
         // 2. Add current active candidate wheel at the RIGHT edge
@@ -269,6 +292,25 @@ public class ThiccTopBarView extends HorizontalScrollView {
         displayedColumnWords.clear();
         displayedColumnWords.addAll(newWords);
         scheduleRightDockPositioning(prevWords, prevContentWidth, newWords);
+    }
+
+    private boolean matchesHistoryColumns(List<ThiccTopBarSentenceBuffer.WordEntry> history) {
+        int count = history != null ? history.size() : 0;
+        if (historyWheels.size() != count) {
+            return false;
+        }
+        for (int i = 0; i < count; i++) {
+            VerticalWordWheelView wheel = historyWheels.get(i);
+            ThiccTopBarSentenceBuffer.WordEntry entry = history.get(i);
+            if (!wheel.getAlternatives().equals(entry.alternatives)) {
+                return false;
+            }
+            String wheelWord = wheel.getSelectedWord();
+            if (wheelWord == null ? entry.committedWord != null : !wheelWord.equals(entry.committedWord)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public void updateHistoryOnly(List<ThiccTopBarSentenceBuffer.WordEntry> history,

@@ -17,6 +17,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -58,6 +59,8 @@ public class VerticalWordWheelView extends LinearLayout {
     private List<String> alternatives = Collections.emptyList();
     private int selectedIndex = 0;
     private boolean isActiveWord = false;
+    private boolean widthAnimActive = false;
+    private float widthAnimViewportCenterX = 0f;
     private float scaleFactor = GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE;
     private boolean invertVerticalSwipe = GboardThiccTopBarSettings.DEFAULT_INVERT_SWIPE;
 
@@ -347,7 +350,47 @@ public class VerticalWordWheelView extends LinearLayout {
             activeSwapAnimator.cancel();
             activeSwapAnimator = null;
         }
+        restoreWrapContentWidth();
         resetRowTransforms();
+    }
+
+    private void restoreWrapContentWidth() {
+        widthAnimActive = false;
+        ViewGroup.LayoutParams lp = getLayoutParams();
+        if (lp != null && lp.width != ViewGroup.LayoutParams.WRAP_CONTENT) {
+            lp.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+            setLayoutParams(lp);
+        }
+    }
+
+    private HorizontalScrollView findParentScrollView() {
+        if (getParent() instanceof ViewGroup parent && parent.getParent() instanceof HorizontalScrollView hsv) {
+            return hsv;
+        }
+        return null;
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int l, int t, int r, int b) {
+        super.onLayout(changed, l, t, r, b);
+        if (widthAnimActive) {
+            HorizontalScrollView hsv = findParentScrollView();
+            if (hsv != null && getParent() instanceof ViewGroup contentLayout) {
+                int maxScrollX = Math.max(0, contentLayout.getWidth() - hsv.getWidth());
+                int targetScrollX = Math.round(l + (r - l) * 0.5f - widthAnimViewportCenterX);
+                int minVisibleScrollX = r - hsv.getWidth();
+                if (targetScrollX < minVisibleScrollX) {
+                    targetScrollX = minVisibleScrollX;
+                }
+                if (targetScrollX > l) {
+                    targetScrollX = l;
+                }
+                int clampedScrollX = Math.max(0, Math.min(maxScrollX, targetScrollX));
+                if (hsv.getScrollX() != clampedScrollX) {
+                    hsv.scrollTo(clampedScrollX, hsv.getScrollY());
+                }
+            }
+        }
     }
 
     private void resetRowTransforms() {
@@ -362,8 +405,20 @@ public class VerticalWordWheelView extends LinearLayout {
         bottomView.setAlpha(sideAlpha);
     }
 
-    private void animateVerticalSwap(boolean flickUp) {
+    private void animateSwap(boolean flickUp, boolean animateVertical, int oldWidth, int newWidth) {
         cancelSwapAnimation();
+        boolean animateWidth = oldWidth > 0 && newWidth > 0 && oldWidth != newWidth && getLayoutParams() != null;
+        if (!animateVertical && !animateWidth) {
+            return;
+        }
+
+        if (animateWidth) {
+            ViewGroup.LayoutParams lp = getLayoutParams();
+            lp.width = oldWidth;
+            setLayoutParams(lp);
+            widthAnimActive = true;
+        }
+
         int rowHeight = centerView.getHeight();
         int maxStepPx = dpToPx(18f * scaleFactor);
         float stepPx = rowHeight > 0 ? Math.min(rowHeight, maxStepPx) : dpToPx(14f * scaleFactor);
@@ -375,19 +430,31 @@ public class VerticalWordWheelView extends LinearLayout {
         animator.setInterpolator(new DecelerateInterpolator(1.5f));
         animator.addUpdateListener(anim -> {
             float t = (Float) anim.getAnimatedValue();
-            float y = startY * (1f - t);
-            float scale = 0.94f + 0.06f * t;
-            float centerAlpha = 0.80f + 0.20f * t;
-            float sideAlpha = sideAlphaTarget * (0.60f + 0.40f * t);
+            if (animateWidth) {
+                ViewGroup.LayoutParams lp = getLayoutParams();
+                if (lp != null) {
+                    int w = Math.round(oldWidth + (newWidth - oldWidth) * t);
+                    if (lp.width != w) {
+                        lp.width = w;
+                        setLayoutParams(lp);
+                    }
+                }
+            }
+            if (animateVertical) {
+                float y = startY * (1f - t);
+                float scale = 0.94f + 0.06f * t;
+                float centerAlpha = 0.80f + 0.20f * t;
+                float sideAlpha = sideAlphaTarget * (0.60f + 0.40f * t);
 
-            topView.setTranslationY(y);
-            topView.setAlpha(sideAlpha);
-            centerView.setTranslationY(y);
-            centerView.setScaleX(scale);
-            centerView.setScaleY(scale);
-            centerView.setAlpha(centerAlpha);
-            bottomView.setTranslationY(y);
-            bottomView.setAlpha(sideAlpha);
+                topView.setTranslationY(y);
+                topView.setAlpha(sideAlpha);
+                centerView.setTranslationY(y);
+                centerView.setScaleX(scale);
+                centerView.setScaleY(scale);
+                centerView.setAlpha(centerAlpha);
+                bottomView.setTranslationY(y);
+                bottomView.setAlpha(sideAlpha);
+            }
         });
         animator.addListener(new AnimatorListenerAdapter() {
             @Override
@@ -395,6 +462,7 @@ public class VerticalWordWheelView extends LinearLayout {
                 if (activeSwapAnimator == animation) {
                     activeSwapAnimator = null;
                 }
+                restoreWrapContentWidth();
                 resetRowTransforms();
             }
 
@@ -403,6 +471,7 @@ public class VerticalWordWheelView extends LinearLayout {
                 if (activeSwapAnimator == animation) {
                     activeSwapAnimator = null;
                 }
+                restoreWrapContentWidth();
                 resetRowTransforms();
             }
         });
@@ -446,10 +515,22 @@ public class VerticalWordWheelView extends LinearLayout {
                         selectedIndex = computeSwappedIndex(selectedIndex, size, false, invertVerticalSwipe);
                     }
 
+                    int oldWidth = getWidth();
+                    HorizontalScrollView hsv = findParentScrollView();
+                    if (hsv != null && oldWidth > 0) {
+                        widthAnimViewportCenterX = getLeft() + oldWidth * 0.5f - hsv.getScrollX();
+                    }
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                     updateDisplay();
-                    if (size >= 2 && !invertVerticalSwipe) {
-                        animateVerticalSwap(flickUp);
+                    int newWidth = 0;
+                    if (oldWidth > 0 && getHeight() > 0) {
+                        measure(
+                                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+                                MeasureSpec.makeMeasureSpec(getHeight(), MeasureSpec.EXACTLY));
+                        newWidth = getMeasuredWidth();
+                    }
+                    if (size >= 2) {
+                        animateSwap(flickUp, !invertVerticalSwipe, oldWidth, newWidth);
                     }
 
                     String newWord = getSelectedWord();
