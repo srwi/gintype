@@ -144,6 +144,7 @@ final class MultiSwipeWordSession {
         default void onCancelStockSwipeAutospaceTimer() {}
         default void onBufferTimerUpdated(long durationMs) {}
         default void onWordReadyTimerElapsed() {}
+        default void onNativeTopBarBlankChanged(boolean blank) {}
         void onWordDecoded(
                 String word,
                 List<String> alternatives,
@@ -919,6 +920,9 @@ final class MultiSwipeWordSession {
             lastObservedTextBeforeCursor = snapshotNow;
             if (callbacks != null) {
                 callbacks.onTrailAccentChanged(multiswipeWordActive);
+                if (!multiswipeWordActive) {
+                    callbacks.onNativeTopBarBlankChanged(false);
+                }
             }
             registerPointerDown(pointerId, x, y, eventTimeMs);
             return false;
@@ -959,6 +963,7 @@ final class MultiSwipeWordSession {
 
         if (callbacks != null) {
             callbacks.onTrailAccentChanged(isWordContinuing);
+            callbacks.onNativeTopBarBlankChanged(isWordContinuing);
         }
         registerPointerDown(pointerId, x, y, eventTimeMs);
         return isWordContinuing;
@@ -1152,6 +1157,7 @@ final class MultiSwipeWordSession {
             multiswipeWordActive = true;
             if (callbacks != null) {
                 callbacks.onTrailAccentChanged(true);
+                callbacks.onNativeTopBarBlankChanged(true);
                 callbacks.onTakeoverActivatedOnFinish();
             }
 
@@ -1222,6 +1228,7 @@ final class MultiSwipeWordSession {
     ) {
         if (callbacks != null) {
             callbacks.onTrailAccentChanged(false);
+            callbacks.onNativeTopBarBlankChanged(false);
         }
         String tapBaselineAtDown = textSnapshotAtActionDown;
         boolean strokeHadMultiTouch = sawMultiTouch;
@@ -1412,6 +1419,7 @@ final class MultiSwipeWordSession {
     void onActionCancel(LifecycleCallbacks callbacks) {
         if (callbacks != null) {
             callbacks.onTrailAccentChanged(false);
+            callbacks.onNativeTopBarBlankChanged(false);
             callbacks.onClearTrailManagerActive();
         }
         resetGestureState();

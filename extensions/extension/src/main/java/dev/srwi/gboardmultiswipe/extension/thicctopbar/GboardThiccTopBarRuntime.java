@@ -1,12 +1,15 @@
 package dev.srwi.gboardmultiswipe.extension.thicctopbar;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeRuntime;
@@ -82,6 +85,13 @@ public final class GboardThiccTopBarRuntime {
     private static View currentVoiceButton = null;
     private static JumpToEndArrowView currentJumpToEndArrow = null;
     private static Runnable pendingJumpRunnable = null;
+
+    private static final long NATIVE_TOP_BAR_BLANK_TIMEOUT_MS = 600L;
+    private static volatile Handler mainHandler = null;
+    private static volatile boolean nativeTopBarBlankForMultiSwipe = false;
+    private static Runnable nativeTopBarBlankTimeoutRunnable = null;
+    private static ViewTreeObserver.OnPreDrawListener nativeTopBarPreDrawGuard = null;
+    private static ViewGroup nativeTopBarPreDrawTarget = null;
 
     /**
      * Hook called after SoftKeyboardView finishes inflating to apply the configured
@@ -205,14 +215,112 @@ public final class GboardThiccTopBarRuntime {
         }
     }
 
+    private static Handler getMainHandler() {
+        Handler h = mainHandler;
+        if (h == null) {
+            h = new Handler(Looper.getMainLooper());
+            mainHandler = h;
+        }
+        return h;
+    }
+
+    /**
+     * Suppresses Gboard's stale 1-finger live guess and Quick-Access toolbar siblings during a
+     * MultiSwipe takeover when Thicc Top Bar is disabled, keeping the native top bar blank until
+     * Gboard populates the decoded word alternatives (or a short safety timeout expires).
+     */
+    public static void setNativeTopBarBlankForMultiSwipe(boolean blank) {
+        Handler handler = getMainHandler();
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post(() -> setNativeTopBarBlankForMultiSwipe(blank));
+            return;
+        }
+        if (nativeTopBarBlankTimeoutRunnable != null) {
+            handler.removeCallbacks(nativeTopBarBlankTimeoutRunnable);
+            nativeTopBarBlankTimeoutRunnable = null;
+        }
+
+        ViewGroup holderView = lastHolderView;
+        if (blank) {
+            if (holderView == null || GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+                return;
+            }
+            nativeTopBarBlankForMultiSwipe = true;
+            ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
+            ViewGroup attachTarget = parent != null ? parent : holderView;
+            ThiccTopBarGboardReflector.hideStaleCandidateSlots(holderView);
+            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
+            attachNativeTopBarPreDrawGuard(attachTarget, holderView);
+            nativeTopBarBlankTimeoutRunnable = () -> setNativeTopBarBlankForMultiSwipe(false);
+            handler.postDelayed(nativeTopBarBlankTimeoutRunnable, NATIVE_TOP_BAR_BLANK_TIMEOUT_MS);
+            return;
+        }
+
+        boolean wasBlank = nativeTopBarBlankForMultiSwipe;
+        nativeTopBarBlankForMultiSwipe = false;
+        detachNativeTopBarPreDrawGuard();
+        if (wasBlank && holderView != null && !GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+            ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
+            ViewGroup attachTarget = parent != null ? parent : holderView;
+            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+        }
+    }
+
+    private static void attachNativeTopBarPreDrawGuard(ViewGroup attachTarget, ViewGroup holderView) {
+        ViewGroup guardRoot = (attachTarget.getParent() instanceof ViewGroup gp) ? gp : attachTarget;
+        if (nativeTopBarPreDrawGuard != null && nativeTopBarPreDrawTarget == guardRoot) {
+            return;
+        }
+        detachNativeTopBarPreDrawGuard();
+        ViewTreeObserver vto = guardRoot.getViewTreeObserver();
+        if (vto == null || !vto.isAlive()) {
+            return;
+        }
+        nativeTopBarPreDrawTarget = guardRoot;
+        nativeTopBarPreDrawGuard = () -> {
+            if (!nativeTopBarBlankForMultiSwipe) {
+                detachNativeTopBarPreDrawGuard();
+                return true;
+            }
+            ViewGroup currentHolder = lastHolderView != null ? lastHolderView : holderView;
+            if (currentHolder != null && !GboardThiccTopBarSettings.readEnabled(currentHolder.getContext())) {
+                ViewGroup p = (currentHolder.getParent() instanceof ViewGroup pg) ? pg : null;
+                ViewGroup target = p != null ? p : currentHolder;
+                ThiccTopBarGboardReflector.updateHeaderViewsVisibility(target, currentHolder, true);
+            }
+            return true;
+        };
+        vto.addOnPreDrawListener(nativeTopBarPreDrawGuard);
+    }
+
+    private static void detachNativeTopBarPreDrawGuard() {
+        if (nativeTopBarPreDrawTarget != null && nativeTopBarPreDrawGuard != null) {
+            try {
+                ViewTreeObserver vto = nativeTopBarPreDrawTarget.getViewTreeObserver();
+                if (vto != null && vto.isAlive()) {
+                    vto.removeOnPreDrawListener(nativeTopBarPreDrawGuard);
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        nativeTopBarPreDrawGuard = null;
+        nativeTopBarPreDrawTarget = null;
+    }
+
     private static void handleDisabledState(ViewGroup holderView) {
         syncHeaderHeight(holderView, GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE);
-        ViewGroup parent = (ViewGroup) holderView.getParent();
+        ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
         ViewGroup attachTarget = parent != null ? parent : holderView;
         ThiccTopBarView existing = ACTIVE_BARS.get(attachTarget);
         if (existing != null && existing.getVisibility() != View.GONE) {
             existing.setVisibility(View.GONE);
-            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+            if (!nativeTopBarBlankForMultiSwipe) {
+                ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+            }
+        }
+        if (nativeTopBarBlankForMultiSwipe) {
+            ThiccTopBarGboardReflector.hideStaleCandidateSlots(holderView);
+            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
         }
     }
 
@@ -266,6 +374,15 @@ public final class GboardThiccTopBarRuntime {
         holderView.post(() -> {
             try {
                 if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+                    if (nativeTopBarBlankForMultiSwipe && candidateListObj != null) {
+                        int count = ThiccTopBarGboardReflector.getHolderCandidateCount(holderView);
+                        boolean hasCandidates = count > 0
+                                || (count < 0 && !ThiccTopBarGboardReflector
+                                .extractCandidatesFromIterable(candidateListObj).isEmpty());
+                        if (hasCandidates) {
+                            setNativeTopBarBlankForMultiSwipe(false);
+                        }
+                    }
                     handleDisabledState(holderView);
                     return;
                 }

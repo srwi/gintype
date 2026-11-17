@@ -1057,6 +1057,33 @@ public class MultiSwipeIntegrationTest {
                 3600L, backspaceX, backspaceY, wholeWordSettings, editor, halloDecoder, callbacks));
     }
 
+    @Test
+    public void nativeTopBarBlankSuppressesQuickAccessAcrossActionUpAndClearsOnCancelOrSpace() {
+        SettingsSnapshot settings = new SettingsSnapshot(true, true, 0, 150, true, true);
+        DecodePort decoder = (tokens, prev) -> List.of(
+                cand("hallo", 10f), cand("halte", 8f), cand("hals", 6f));
+
+        // 1) Two-finger swipe enables native top-bar blanking on ACTION_UP and keeps it active
+        //    even if autospaceDelayMs == 0 commits immediately (until Gboard's onCandidatesUpdated
+        //    delivers the 3 alternatives or safety timeout expires).
+        performTwoFingerSwipe(1000L, settings, decoder);
+        assertEquals(Boolean.TRUE, callbacks.lastNativeTopBarBlank);
+        session.finalizeAutospace(true, true, editor, callbacks);
+        assertEquals(Boolean.TRUE, callbacks.lastNativeTopBarBlank);
+
+        // 2) Pressing Space clears the blanking immediately.
+        session.onActionDown(0, spaceX, spaceY, 1200L, settings, editor, callbacks);
+        assertEquals(Boolean.FALSE, callbacks.lastNativeTopBarBlank);
+        session.onActionUp(1240L, settings, editor, decoder, callbacks);
+
+        // 3) ACTION_CANCEL also clears native top-bar blanking.
+        session.onActionDown(0, letterAX, letterAY, 2000L, settings, editor, callbacks);
+        session.onPointerDown(1, letterLX, letterLY, 2020L);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 2040L, session.geometry);
+        session.onActionCancel(callbacks);
+        assertEquals(Boolean.FALSE, callbacks.lastNativeTopBarBlank);
+    }
+
     private boolean performBackspaceTap(
             long downMs,
             SettingsSnapshot settings,
@@ -1187,6 +1214,7 @@ public class MultiSwipeIntegrationTest {
 
     private static final class RecordingCallbacks implements LifecycleCallbacks {
         Boolean lastTrailAccent;
+        Boolean lastNativeTopBarBlank;
         String lastSkippedReason;
         boolean autospaceScheduled;
         long lastAutospaceDelayMs;
@@ -1200,6 +1228,7 @@ public class MultiSwipeIntegrationTest {
         boolean lastCommitAutoSpace;
 
         @Override public void onTrailAccentChanged(boolean active) { lastTrailAccent = active; }
+        @Override public void onNativeTopBarBlankChanged(boolean blank) { lastNativeTopBarBlank = blank; }
         @Override public void onTakeoverActivatedOnFinish() {}
         @Override public void onPointerFinished(int pointerId, boolean isSwipe, boolean inMultiSwipeGesture) {}
         @Override public void onClearTrailManagerActive() {}

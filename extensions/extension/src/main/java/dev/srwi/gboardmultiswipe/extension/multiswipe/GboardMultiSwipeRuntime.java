@@ -658,6 +658,7 @@ public final class GboardMultiSwipeRuntime {
         }
         session.core.multiswipeTakeoverActive = true;
         setMultiSwipeTrailAccentActive(handler, true, null);
+        GboardThiccTopBarRuntime.setNativeTopBarBlankForMultiSwipe(true);
         ensureTrailRecorderEnabled(handler);
         if (claimDispatcher) {
             ensureGestureHandlerOwnsDispatcher(handler);
@@ -1452,6 +1453,11 @@ public final class GboardMultiSwipeRuntime {
             @Override
             public void onWordReadyTimerElapsed() {
                 triggerWordReadyVibration(context, handler, session);
+            }
+
+            @Override
+            public void onNativeTopBarBlankChanged(boolean blank) {
+                GboardThiccTopBarRuntime.setNativeTopBarBlankForMultiSwipe(blank);
             }
 
             @Override
