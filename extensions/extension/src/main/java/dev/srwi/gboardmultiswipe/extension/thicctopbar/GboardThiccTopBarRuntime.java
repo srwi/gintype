@@ -707,13 +707,8 @@ public final class GboardThiccTopBarRuntime {
     private static void commitCandidate(ViewGroup holderView, CandidateItem selectedItem, List<CandidateItem> allItems) {
         Log.i(TAG, "commitCandidate: word=" + selectedItem.text + " slotIndex=" + selectedItem.slotIndex);
 
-        // 1. Try native commit via SoftKeyboardView.a(softKey)
-        boolean nativeCommitted = ThiccTopBarGboardReflector.commitCandidateNative(holderView, selectedItem);
-
-        // 2. Fallback: clean InputConnection replacement
-        if (!nativeCommitted) {
-            replaceActiveCandidateViaInputConnection(holderView, selectedItem);
-        }
+        // Commit cleanly via InputConnection (avoids SoftKeyboardView.a(softKey) synthetic touch replay).
+        replaceActiveCandidateViaInputConnection(holderView, selectedItem);
 
         // 3. Record in sentence buffer
         List<String> altStrings = new ArrayList<>();
