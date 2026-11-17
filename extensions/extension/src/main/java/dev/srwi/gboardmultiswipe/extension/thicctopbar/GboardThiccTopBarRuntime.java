@@ -1412,21 +1412,38 @@ public final class GboardThiccTopBarRuntime {
 
     static void cacheAlternativeGroup(List<String> words, String primaryWord) {
         if (words == null || words.isEmpty()) return;
-        List<String> copy = new ArrayList<>();
         String primaryExact = (primaryWord != null && !primaryWord.isEmpty()) ? primaryWord : null;
-        if (primaryExact != null) {
-            copy.add(primaryExact);
-        }
+        List<String> deduped = new ArrayList<>(words.size());
         for (String w : words) {
             if (w == null || w.isEmpty()) continue;
-            if (findCaseInsensitiveIndex(copy, w) < 0) {
-                copy.add(w);
-            }
-            if (copy.size() >= 3) {
-                break;
+            if (findCaseInsensitiveIndex(deduped, w) < 0) {
+                deduped.add(w);
             }
         }
-        if (copy.isEmpty()) return;
+        if (primaryExact != null) {
+            int primaryIdx = findCaseInsensitiveIndex(deduped, primaryExact);
+            if (primaryIdx >= 0) {
+                deduped.set(primaryIdx, primaryExact);
+            } else {
+                deduped.add(0, primaryExact);
+            }
+        }
+        if (deduped.isEmpty()) return;
+
+        // Preserve the wheel order so top/bottom alternatives don't swap when the word moves to history.
+        List<String> copy;
+        if (deduped.size() > 3) {
+            int primaryIdx = (primaryExact != null) ? findCaseInsensitiveIndex(deduped, primaryExact) : 0;
+            if (primaryIdx <= 0) {
+                copy = new ArrayList<>(deduped.subList(0, 3));
+            } else if (primaryIdx >= deduped.size() - 1) {
+                copy = new ArrayList<>(deduped.subList(deduped.size() - 3, deduped.size()));
+            } else {
+                copy = new ArrayList<>(deduped.subList(primaryIdx - 1, primaryIdx + 2));
+            }
+        } else {
+            copy = deduped;
+        }
         String primaryKey = primaryExact != null ? primaryExact.toLowerCase() : null;
         if (primaryExact != null) {
             putAlternativeGroupIfBetter(primaryExact, copy, true);

@@ -1100,6 +1100,29 @@ public final class ThiccTopBarTextHelperTest {
     }
 
     @Test
+    public void cacheAlternativeGroup_preservesTopAndBottomOrderWhenMovingToHistory() {
+        ThiccTopBarSentenceBuffer buf = GboardThiccTopBarRuntime.getSentenceBuffer();
+        buf.clear();
+        Map<String, List<String>> cache = GboardThiccTopBarRuntime.getWordAlternativesCacheForTesting();
+        cache.clear();
+
+        // Active right wheel has centerIndex=1 -> top="Hallo", center="Welt", bottom="Wald"
+        GboardThiccTopBarRuntime.cacheAlternativeGroup(Arrays.asList("Hallo", "Welt", "Wald"), "Welt");
+
+        // After typing a period or space/next word, "Welt" moves to history and must keep top="Hallo", bottom="Wald"
+        TestInputConnection ic = new TestInputConnection("Welt.", 5, 5);
+        ThiccTopBarTextHelper.syncSentenceBufferFromText(ic, null, buf, cache);
+
+        Assert.assertEquals(1, buf.getEntries().size());
+        ThiccTopBarSentenceBuffer.WordEntry entry = buf.getEntries().get(0);
+        Assert.assertEquals(1, entry.selectedIndex);
+        Assert.assertEquals(Arrays.asList("Hallo.", "Welt.", "Wald."), entry.alternatives);
+        int size = entry.alternatives.size();
+        Assert.assertEquals("Hallo.", entry.alternatives.get((entry.selectedIndex - 1 + size) % size));
+        Assert.assertEquals("Wald.", entry.alternatives.get((entry.selectedIndex + 1) % size));
+    }
+
+    @Test
     public void testMultiSwipeRepeatedDecodeAndCommitDoesNotShiftLastWordSelection() {
         ThiccTopBarSentenceBuffer buf = GboardThiccTopBarRuntime.getSentenceBuffer();
         buf.clear();
