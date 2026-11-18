@@ -79,7 +79,9 @@ public final class GboardThiccTopBarRuntime {
     private static volatile long lastSelfReplaceTimestamp = 0;
     private static volatile String lastSelfReplacedWord = null;
     private static volatile long lastHistoryInteractionTimestamp = 0;
+    private static volatile long lastHistoryReplaceTimestamp = 0;
     private static volatile long lastWordNavTimestamp = 0;
+    private static volatile long candidatesEventSeq = 0L;
     private static volatile ViewGroup lastHolderView = null;
     private static volatile String lastMultiSwipeWord = null;
     private static volatile List<String> lastMultiSwipeSuggestions = null;
@@ -356,6 +358,9 @@ public final class GboardThiccTopBarRuntime {
         if (holderView == null || word == null || word.isEmpty()) {
             return;
         }
+        if (!GboardMultiSwipeRuntime.hasActiveTouch()) {
+            return;
+        }
         if (GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
             updateThiccTopBarLiveGuess(holderView, word, excludePendingEditorWord);
         } else {
@@ -394,6 +399,9 @@ public final class GboardThiccTopBarRuntime {
                 return;
             }
             thiccTopBarLiveGuessActive = true;
+            candidatesEventSeq++;
+            lastWordNavTimestamp = 0;
+            lastHistoryInteractionTimestamp = 0;
             cancelLiveGuessFallback();
             int historyBeforeCount = 0;
             if (ThiccTopBarTextHelper.isSentenceEnded(holderView)
@@ -673,9 +681,13 @@ public final class GboardThiccTopBarRuntime {
             }
         }
 
+        final long eventSeq = ++candidatesEventSeq;
         // Run after LatinFixedCountCandidatesHolderView populates slot views
         holderView.post(() -> {
             try {
+                if (eventSeq != candidatesEventSeq) {
+                    return;
+                }
                 if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
                     if (nativeTopBarBlankForMultiSwipe && candidateListObj != null
                             && !GboardMultiSwipeRuntime.isLivePreviewTouchActive()) {
@@ -738,6 +750,15 @@ public final class GboardThiccTopBarRuntime {
                     return;
                 }
 
+                boolean hasComposingCandidates = items != null && !items.isEmpty()
+                        && !ThiccTopBarTextHelper.allPredictions(items);
+                if (hasComposingCandidates
+                        && !ThiccTopBarTextHelper.hasSelection(holderView)
+                        && (SystemClock.uptimeMillis() - lastHistoryReplaceTimestamp) >= 600) {
+                    lastWordNavTimestamp = 0;
+                    lastHistoryInteractionTimestamp = 0;
+                }
+
                 boolean isSingleLiveSwipeCandidate = items != null && items.size() == 1
                         && items.get(0) != null && !items.get(0).isRaw && !items.get(0).isPrediction
                         && items.get(0).text != null && !items.get(0).text.trim().isEmpty();
@@ -757,7 +778,7 @@ public final class GboardThiccTopBarRuntime {
                 }
 
                 String currentWord = ThiccTopBarTextHelper.getActiveWord(holderView, items);
-                if (currentWord == null && !ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView)) {
+                if (currentWord == null) {
                     String editorActiveWord = ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
                     if (editorActiveWord != null && isRecentMultiSwipeWord(editorActiveWord)) {
                         currentWord = editorActiveWord;
@@ -873,7 +894,9 @@ public final class GboardThiccTopBarRuntime {
                         // onHistoryReplace: Flick or tap on a history column swaps that past word in sentence
                         (histColIdx, oldWord, newWord) -> {
                             GboardMultiSwipeRuntime.onTopBarUserInteraction();
-                            lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
+                            long now = SystemClock.uptimeMillis();
+                            lastHistoryInteractionTimestamp = now;
+                            lastHistoryReplaceTimestamp = now;
                             ThiccTopBarTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                         },
                         createHistoryWordClickCallback(holderView, barView)
@@ -899,11 +922,15 @@ public final class GboardThiccTopBarRuntime {
         }
         lastHolderView = holderView;
 
+        final long eventSeq = ++candidatesEventSeq;
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.i(TAG, "onCandidatesCleared");
         }
         holderView.post(() -> {
             try {
+                if (eventSeq != candidatesEventSeq) {
+                    return;
+                }
                 if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
                     handleDisabledState(holderView);
                     return;
@@ -946,11 +973,9 @@ public final class GboardThiccTopBarRuntime {
                     return;
                 }
 
-                // If an active word is present (allowTrailingSpace = false: if candidates are cleared after space, no active word!)
-                // Also skip active-word mode when text follows on the same line (e.g., cursor moved left via spacebar).
-                String activeWord = ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView)
-                        ? null
-                        : ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
+                // If an active word is present (allowTrailingSpace = false: if candidates are cleared after space, no active word!),
+                // retain it when at the end of the line or when continuing an active mid-sentence word.
+                String activeWord = resolveClearedActiveWord(holderView, barView);
                 if (activeWord != null && !activeWord.isEmpty()) {
                     List<String> words = resolveSuggestionsForWord(activeWord);
                     int centerIdx = Math.max(0, findCaseInsensitiveIndex(words, activeWord));
@@ -985,7 +1010,9 @@ public final class GboardThiccTopBarRuntime {
                             },
                             (histColIdx, oldWord, newWord) -> {
                                 GboardMultiSwipeRuntime.onTopBarUserInteraction();
-                                lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
+                                long now = SystemClock.uptimeMillis();
+                                lastHistoryInteractionTimestamp = now;
+                                lastHistoryReplaceTimestamp = now;
                                 ThiccTopBarTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                             },
                             createHistoryWordClickCallback(holderView, barView)
@@ -1265,7 +1292,9 @@ public final class GboardThiccTopBarRuntime {
                 entries,
                 (histColIdx, oldWord, newWord) -> {
                     GboardMultiSwipeRuntime.onTopBarUserInteraction();
-                    lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
+                    long now = SystemClock.uptimeMillis();
+                    lastHistoryInteractionTimestamp = now;
+                    lastHistoryReplaceTimestamp = now;
                     ThiccTopBarTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                 },
                 createHistoryWordClickCallback(holderView, barView)
@@ -1350,14 +1379,56 @@ public final class GboardThiccTopBarRuntime {
         }
     }
 
+    private static String resolveClearedActiveWord(ViewGroup holderView, ThiccTopBarView barView) {
+        String editorWord = ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
+        if (editorWord == null || editorWord.isEmpty()) {
+            return null;
+        }
+        if (!ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView)) {
+            return editorWord;
+        }
+        String activeWheelWord = barView != null ? barView.getActiveWheelWord() : null;
+        return shouldRetainMidSentenceClearedActiveWord(
+                editorWord, activeWheelWord, isRecentMultiSwipeWord(editorWord), thiccTopBarLiveGuessActive)
+                ? editorWord
+                : null;
+    }
+
+    static boolean shouldRetainMidSentenceClearedActiveWord(
+            String editorWord,
+            String activeWheelWord,
+            boolean recentMultiSwipe,
+            boolean liveGuessActive
+    ) {
+        if (editorWord == null || editorWord.isEmpty()) {
+            return false;
+        }
+        if (recentMultiSwipe || liveGuessActive) {
+            return true;
+        }
+        if (activeWheelWord == null || activeWheelWord.isEmpty()) {
+            return false;
+        }
+        if (editorWord.equalsIgnoreCase(activeWheelWord)) {
+            return true;
+        }
+        String lowerEditor = editorWord.toLowerCase();
+        String lowerWheel = activeWheelWord.toLowerCase();
+        return lowerEditor.startsWith(lowerWheel) || lowerWheel.startsWith(lowerEditor);
+    }
+
     private static boolean isHistorySelectionSessionActive(ViewGroup holderView, ThiccTopBarView barView) {
-        if ((SystemClock.uptimeMillis() - lastWordNavTimestamp) < 600) {
+        long now = SystemClock.uptimeMillis();
+        if ((now - lastHistoryReplaceTimestamp) < 600) {
+            return true;
+        }
+        if ((now - lastWordNavTimestamp) < 600) {
             return !ThiccTopBarTextHelper.isCursorAtEnd(holderView) || ThiccTopBarTextHelper.hasSelection(holderView);
         }
         if (barView == null || barView.getSelectedHistoryIndex() < 0) {
             return false;
         }
-        boolean withinGrace = (SystemClock.uptimeMillis() - lastHistoryInteractionTimestamp) < 600;
+        boolean withinGrace = (now - lastHistoryInteractionTimestamp) < 600;
         return ThiccTopBarTextHelper.hasSelection(holderView) || withinGrace;
     }
 
@@ -1785,6 +1856,8 @@ public final class GboardThiccTopBarRuntime {
             lastMultiSwipeWord = committedWord;
             lastMultiSwipeSuggestions = new ArrayList<>(trimmedAlts);
             lastMultiSwipeTimestamp = safeUptimeMillis();
+            lastWordNavTimestamp = 0;
+            lastHistoryInteractionTimestamp = 0;
             activeOriginalSuggestions = new ArrayList<>(trimmedAlts);
 
             ViewGroup holderView = lastHolderView;
@@ -1844,9 +1917,13 @@ public final class GboardThiccTopBarRuntime {
                 return;
             }
 
-            String activeWord = ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView)
-                    ? null
-                    : ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
+            String activeWord = ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
+            if (activeWord == null) {
+                String trailingCandidate = ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), true);
+                if (trailingCandidate != null && isRecentMultiSwipeWord(trailingCandidate)) {
+                    activeWord = trailingCandidate;
+                }
+            }
 
             if (activeWord != null && !activeWord.isEmpty()) {
                 clearThiccTopBarLiveGuess();
@@ -1886,7 +1963,9 @@ public final class GboardThiccTopBarRuntime {
                         },
                         (histColIdx, oldWord, newWord) -> {
                             GboardMultiSwipeRuntime.onTopBarUserInteraction();
-                            lastHistoryInteractionTimestamp = SystemClock.uptimeMillis();
+                            long now = SystemClock.uptimeMillis();
+                            lastHistoryInteractionTimestamp = now;
+                            lastHistoryReplaceTimestamp = now;
                             ThiccTopBarTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
                         },
                         createHistoryWordClickCallback(holderView, barView)
@@ -1895,6 +1974,10 @@ public final class GboardThiccTopBarRuntime {
                 ThiccTopBarGboardReflector.applyKeyboardBackground(barView, holderView);
                 ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
                 barView.bringToFront();
+                return;
+            }
+
+            if (thiccTopBarLiveGuessActive) {
                 return;
             }
 

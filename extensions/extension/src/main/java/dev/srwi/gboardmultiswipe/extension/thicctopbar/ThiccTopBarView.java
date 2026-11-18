@@ -68,6 +68,12 @@ public class ThiccTopBarView extends HorizontalScrollView {
     private OnHistoryWordClickCallback activeHistoryClickCallback;
     private int selectedHistoryIndex = -1;
     private int activeColumnSplitIndex = -1;
+    private boolean activeColumnHadTrailingHistory = false;
+    private final ActiveColumnAnchor activeColumnAnchor = new ActiveColumnAnchor();
+    private boolean pendingAnchorLayoutSync = false;
+    private int lastCommittedMidSentenceColIndex = -1;
+    private float lastCommittedMidSentenceViewportRightX = -1f;
+    private int lastCommittedMidSentenceHeight = 0;
     private float scaleFactor = GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE;
     private float swipeSensitivity = GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY;
     private boolean invertVerticalSwipe = GboardThiccTopBarSettings.DEFAULT_INVERT_SWIPE;
@@ -204,6 +210,8 @@ public class ThiccTopBarView extends HorizontalScrollView {
         contentLayout.setClipToPadding(false);
 
         currentWheelView = new VerticalWordWheelView(context);
+        currentWheelView.setOnLayoutScrollSyncListener((wheel, left, right) ->
+                syncActiveColumnScroll(left, right));
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
@@ -213,6 +221,57 @@ public class ThiccTopBarView extends HorizontalScrollView {
 
     public VerticalWordWheelView getCurrentWheelView() {
         return currentWheelView;
+    }
+
+    public boolean hasActiveWheel() {
+        return currentWheelView.getParent() == contentLayout
+                && currentWheelView.getVisibility() == View.VISIBLE;
+    }
+
+    public String getActiveWheelWord() {
+        return hasActiveWheel() ? currentWheelView.getSelectedWord() : null;
+    }
+
+    private void syncActiveColumnScroll(int left, int right) {
+        if (!activeColumnAnchor.isActive()) {
+            pendingAnchorLayoutSync = false;
+            return;
+        }
+        if (!currentWheelView.isWidthAnimationActive() && !pendingAnchorLayoutSync) {
+            return;
+        }
+        int barWidth = getWidth();
+        int contentWidth = contentLayout.getWidth();
+        if (barWidth <= 0 || contentWidth <= 0) {
+            return;
+        }
+        pendingAnchorLayoutSync = false;
+        int targetScrollX = activeColumnAnchor.resolveScrollX(left, right, contentWidth, barWidth);
+        if (targetScrollX >= 0 && getScrollX() != targetScrollX) {
+            scrollTo(targetScrollX, getScrollY());
+        }
+    }
+
+    private int getDividerTotalWidth() {
+        return dpToPx(1f) + 2 * dpToPx(2f * scaleFactor);
+    }
+
+    private VerticalWordWheelView findLogicalColumnWheel(int logicalIndex) {
+        if (logicalIndex < 0) {
+            return null;
+        }
+        if (currentWheelView.getParent() == contentLayout && activeColumnSplitIndex == logicalIndex) {
+            return currentWheelView;
+        }
+        int histIdx = (currentWheelView.getParent() == contentLayout
+                && activeColumnSplitIndex >= 0
+                && activeColumnSplitIndex < logicalIndex)
+                ? logicalIndex - 1
+                : logicalIndex;
+        if (histIdx >= 0 && histIdx < historyWheels.size()) {
+            return historyWheels.get(histIdx);
+        }
+        return null;
     }
 
     public void updateMatrix(List<ThiccTopBarSentenceBuffer.WordEntry> history,
@@ -261,6 +320,13 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 && currentWheelView.getParent() == contentLayout
                 && activeColumnSplitIndex == beforeList.size()
                 && matchesHistoryColumns(beforeList, afterList)) {
+            cancelScrollAnimation();
+            if (afterList.isEmpty()) {
+                activeColumnAnchor.anchorRight();
+            } else if (!activeColumnAnchor.isActive()) {
+                activeColumnAnchor.anchorLeft(currentWheelView.getLeft() - getScrollX());
+            }
+            activeColumnHadTrailingHistory = !afterList.isEmpty();
             currentWheelView.setAlpha(1.0f);
             currentWheelView.setIsActiveWord(true);
             currentWheelView.setAlternatives(currentAlternatives, preferredSelected, true);
@@ -283,47 +349,93 @@ public class ThiccTopBarView extends HorizontalScrollView {
             return;
         }
 
-        // Preserve anchor position/width when transitioning a selected/active column in-place,
-        // or animate a newly inserted mid-sentence column from 1px at the previous word's right edge
-        // to being centered where that previous word was.
+        cancelScrollAnimation();
+        if (hasCurrent && !afterList.isEmpty()) {
+            cancelEntranceAnimation();
+        }
+
+        // Determine horizontal anchor and starting width before rebuilding columns:
+        // - In-place transition (selected history word, rebuilt active word, or history word
+        //   becoming active): keep its current left edge fixed (or right-clamped if at end /
+        //   already clamped) and animate smoothly from its previous width.
+        // - Newly inserted mid-sentence word: anchor its left edge immediately after the
+        //   preceding column + divider (or at the leading edge if inserting at index 0) and
+        //   expand smoothly from 1px; ActiveColumnAnchor latches to the right edge once it
+        //   reaches barWidth.
         int anchorOldWidth = 0;
         int anchorHeight = 0;
-        float anchorStartViewportCenterX = 0f;
-        float anchorEndViewportCenterX = 0f;
-        if (wasVisible && hasCurrent) {
-            VerticalWordWheelView anchorWheel = null;
-            if (selectedHistoryIndex >= 0 && selectedHistoryIndex < historyWheels.size()
-                    && selectedHistoryIndex == beforeList.size()) {
-                anchorWheel = historyWheels.get(selectedHistoryIndex);
-            } else if (!afterList.isEmpty() && currentWheelView.getParent() == contentLayout
-                    && activeColumnSplitIndex == beforeList.size()) {
-                anchorWheel = currentWheelView;
+        if (hasCurrent) {
+            if (afterList.isEmpty()) {
+                activeColumnAnchor.anchorRight();
             }
-            if (anchorWheel != null && anchorWheel.getWidth() > 0 && anchorWheel.getHeight() > 0) {
-                anchorOldWidth = anchorWheel.getWidth();
-                anchorHeight = anchorWheel.getHeight();
-                anchorStartViewportCenterX = anchorWheel.getLeft() + anchorOldWidth * 0.5f - getScrollX();
-                anchorEndViewportCenterX = anchorStartViewportCenterX;
-            } else if (!afterList.isEmpty() && !beforeList.isEmpty()) {
-                int prevIdx = beforeList.size() - 1;
-                VerticalWordWheelView prevWheel = null;
-                if (currentWheelView.getParent() == contentLayout && activeColumnSplitIndex == prevIdx) {
-                    prevWheel = currentWheelView;
-                } else {
-                    int histIdx = (currentWheelView.getParent() == contentLayout && activeColumnSplitIndex >= 0
-                            && activeColumnSplitIndex < prevIdx) ? prevIdx - 1 : prevIdx;
-                    if (histIdx >= 0 && histIdx < historyWheels.size()) {
-                        prevWheel = historyWheels.get(histIdx);
+            if (wasVisible) {
+                VerticalWordWheelView inPlaceWheel = null;
+                boolean preserveExistingAnchor = false;
+                if (selectedHistoryIndex >= 0 && selectedHistoryIndex < historyWheels.size()
+                        && selectedHistoryIndex == beforeList.size()) {
+                    inPlaceWheel = historyWheels.get(selectedHistoryIndex);
+                } else if (currentWheelView.getParent() == contentLayout
+                        && activeColumnSplitIndex == beforeList.size()) {
+                    inPlaceWheel = currentWheelView;
+                    preserveExistingAnchor = true;
+                } else if (currentWheelView.getParent() != contentLayout
+                        && historyWheels.size() == beforeList.size() + 1 + afterList.size()
+                        && beforeList.size() < historyWheels.size()) {
+                    inPlaceWheel = historyWheels.get(beforeList.size());
+                }
+
+                if (inPlaceWheel != null && inPlaceWheel.getCurrentAnimatedWidth() > 0 && inPlaceWheel.getHeight() > 0) {
+                    anchorOldWidth = inPlaceWheel.getCurrentAnimatedWidth();
+                    anchorHeight = inPlaceWheel.getHeight();
+                    if (!afterList.isEmpty() && (!preserveExistingAnchor || !activeColumnAnchor.isActive())) {
+                        activeColumnAnchor.anchorLeft(inPlaceWheel.getLeft() - getScrollX());
+                    }
+                } else if (!afterList.isEmpty()) {
+                    if (!beforeList.isEmpty()) {
+                        int prevIdx = beforeList.size() - 1;
+                        VerticalWordWheelView prevWheel = findLogicalColumnWheel(prevIdx);
+                        if (prevWheel != null && prevWheel.getTargetWidth() > 0 && prevWheel.getHeight() > 0) {
+                            anchorOldWidth = 1;
+                            anchorHeight = prevWheel.getHeight();
+                            float newLeftViewportX;
+                            if (prevWheel == currentWheelView
+                                    && activeColumnAnchor.getMode() == ActiveColumnAnchor.Mode.RIGHT_CLAMPED
+                                    && getWidth() > 0) {
+                                newLeftViewportX = getWidth() + getDividerTotalWidth();
+                            } else {
+                                newLeftViewportX = prevWheel.getLeft() + prevWheel.getTargetWidth()
+                                        - getScrollX() + getDividerTotalWidth();
+                            }
+                            activeColumnAnchor.anchorLeft(newLeftViewportX);
+                        } else if (lastCommittedMidSentenceColIndex == prevIdx
+                                && lastCommittedMidSentenceViewportRightX >= 0f
+                                && lastCommittedMidSentenceHeight > 0) {
+                            anchorOldWidth = 1;
+                            anchorHeight = lastCommittedMidSentenceHeight;
+                            activeColumnAnchor.anchorLeft(
+                                    lastCommittedMidSentenceViewportRightX + getDividerTotalWidth());
+                        } else {
+                            activeColumnAnchor.reset();
+                        }
+                    } else {
+                        VerticalWordWheelView nextWheel = findLogicalColumnWheel(0);
+                        if (nextWheel != null && nextWheel.getHeight() > 0) {
+                            anchorOldWidth = 1;
+                            anchorHeight = nextWheel.getHeight();
+                            float newLeftViewportX = Math.max(0f, nextWheel.getLeft() - getScrollX());
+                            activeColumnAnchor.anchorLeft(newLeftViewportX);
+                        } else {
+                            activeColumnAnchor.reset();
+                        }
                     }
                 }
-                if (prevWheel != null && prevWheel.getWidth() > 0 && prevWheel.getHeight() > 0) {
-                    anchorOldWidth = 1;
-                    anchorHeight = prevWheel.getHeight();
-                    anchorStartViewportCenterX = prevWheel.getRight() - getScrollX();
-                    anchorEndViewportCenterX = prevWheel.getLeft() + prevWheel.getWidth() * 0.5f - getScrollX();
-                }
+            } else if (!afterList.isEmpty()) {
+                activeColumnAnchor.reset();
             }
+        } else {
+            activeColumnAnchor.reset();
         }
+        clearLastCommittedMidSentenceCache();
 
         contentLayout.removeAllViews();
         historyWheels.clear();
@@ -354,11 +466,13 @@ public class ThiccTopBarView extends HorizontalScrollView {
             contentLayout.addView(currentWheelView, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT));
             activeColumnSplitIndex = beforeList.size();
+            activeColumnHadTrailingHistory = !afterList.isEmpty();
             if (!afterList.isEmpty()) {
                 addColumnDivider();
             }
         } else {
             activeColumnSplitIndex = -1;
+            activeColumnHadTrailingHistory = false;
         }
 
         populateHistoryColumns(afterList, beforeList.size(), false, onHistoryReplace, onHistoryClick);
@@ -368,8 +482,8 @@ public class ThiccTopBarView extends HorizontalScrollView {
         displayedColumnWords.clear();
         displayedColumnWords.addAll(newWords);
         if (anchorOldWidth > 0 && hasCurrent) {
-            currentWheelView.animateWidthFrom(
-                    anchorOldWidth, anchorHeight, anchorStartViewportCenterX, anchorEndViewportCenterX);
+            pendingAnchorLayoutSync = true;
+            currentWheelView.animateWidthFrom(anchorOldWidth, anchorHeight);
             if (afterList.isEmpty() && !currentWheelView.isWidthAnimationActive()) {
                 scheduleRightDockPositioning(prevWords, prevContentWidth, newWords);
             }
@@ -425,11 +539,39 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 : Collections.emptyList();
         final int prevContentWidth = wasVisible ? getChildrenTotalWidth() : 0;
 
-        final int prevSplitIndex = activeColumnSplitIndex;
+        final boolean wasMidSentence = wasVisible && activeColumnHadTrailingHistory;
+        if (wasMidSentence && currentWheelView.getParent() == contentLayout && activeColumnSplitIndex >= 0) {
+            int wheelHeight = currentWheelView.getHeight() > 0
+                    ? currentWheelView.getHeight()
+                    : currentWheelView.getMeasuredHeight();
+            int targetWidth = currentWheelView.getTargetWidth();
+            if (wheelHeight > 0) {
+                lastCommittedMidSentenceColIndex = activeColumnSplitIndex;
+                lastCommittedMidSentenceHeight = wheelHeight;
+                if (activeColumnAnchor.getMode() == ActiveColumnAnchor.Mode.RIGHT_CLAMPED && getWidth() > 0) {
+                    lastCommittedMidSentenceViewportRightX = getWidth();
+                } else if (targetWidth > 0 && currentWheelView.getWidth() > 0) {
+                    lastCommittedMidSentenceViewportRightX =
+                            currentWheelView.getLeft() + targetWidth - getScrollX();
+                } else if (activeColumnAnchor.getMode() == ActiveColumnAnchor.Mode.LEFT_ANCHORED && targetWidth > 0) {
+                    lastCommittedMidSentenceViewportRightX =
+                            activeColumnAnchor.getAnchorViewportLeftX() + targetWidth;
+                } else {
+                    clearLastCommittedMidSentenceCache();
+                }
+            } else {
+                clearLastCommittedMidSentenceCache();
+            }
+        } else {
+            clearLastCommittedMidSentenceCache();
+        }
         contentLayout.removeAllViews();
         historyWheels.clear();
         selectedHistoryIndex = -1;
         activeColumnSplitIndex = -1;
+        activeColumnHadTrailingHistory = false;
+        activeColumnAnchor.reset();
+        pendingAnchorLayoutSync = false;
 
         if (history == null || history.isEmpty()) {
             displayedColumnWords.clear();
@@ -443,7 +585,6 @@ public class ThiccTopBarView extends HorizontalScrollView {
         displayedColumnWords.clear();
         displayedColumnWords.addAll(newWords);
         setVisibility(View.VISIBLE);
-        boolean wasMidSentence = wasVisible && prevSplitIndex >= 0 && prevSplitIndex < history.size() - 1;
         if (!wasMidSentence) {
             scheduleRightDockPositioning(prevWords, prevContentWidth, newWords);
         }
@@ -752,10 +893,20 @@ public class ThiccTopBarView extends HorizontalScrollView {
         vto.addOnPreDrawListener(pendingPreDrawListener);
     }
 
+    private void clearLastCommittedMidSentenceCache() {
+        lastCommittedMidSentenceColIndex = -1;
+        lastCommittedMidSentenceViewportRightX = -1f;
+        lastCommittedMidSentenceHeight = 0;
+    }
+
     @Override
     public void setVisibility(int visibility) {
         if (visibility != View.VISIBLE && getVisibility() == View.VISIBLE) {
             displayedColumnWords.clear();
+            activeColumnAnchor.reset();
+            pendingAnchorLayoutSync = false;
+            activeColumnHadTrailingHistory = false;
+            clearLastCommittedMidSentenceCache();
             cancelEntranceAnimation();
             cancelScrollAnimation();
         }
@@ -764,6 +915,11 @@ public class ThiccTopBarView extends HorizontalScrollView {
 
     public void selectHistoryWord(int historyIndex) {
         this.selectedHistoryIndex = historyIndex;
+        if (historyIndex >= 0) {
+            activeColumnAnchor.reset();
+            pendingAnchorLayoutSync = false;
+            clearLastCommittedMidSentenceCache();
+        }
         for (int i = 0; i < historyWheels.size(); i++) {
             VerticalWordWheelView wheel = historyWheels.get(i);
             wheel.setIsActiveWord(i == historyIndex);
