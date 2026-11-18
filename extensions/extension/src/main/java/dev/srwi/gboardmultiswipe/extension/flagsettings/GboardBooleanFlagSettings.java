@@ -2,8 +2,6 @@ package dev.srwi.gboardmultiswipe.extension.flagsettings;
 
 import android.content.SharedPreferences;
 
-import java.util.Map;
-
 public final class GboardBooleanFlagSettings {
     private GboardBooleanFlagSettings() {
     }
@@ -15,21 +13,26 @@ public final class GboardBooleanFlagSettings {
         if (preferences == null || preferenceKey == null || preferenceKey.isEmpty()) {
             return false;
         }
-        Map<String, ?> values = preferences.getAll();
-        if (!values.containsKey(preferenceKey)) {
+        if (!preferences.contains(preferenceKey)) {
             return defaultEnabled;
         }
-        Object raw = values.get(preferenceKey);
-        if (raw instanceof Boolean value) {
-            return value.booleanValue();
+        try {
+            boolean asFalseDefault = preferences.getBoolean(preferenceKey, false);
+            boolean asTrueDefault = preferences.getBoolean(preferenceKey, true);
+            if (asFalseDefault == asTrueDefault) {
+                return asFalseDefault;
+            }
+        } catch (ClassCastException ignored) {
         }
-        if (raw instanceof String value) {
-            if ("true".equalsIgnoreCase(value)) {
+        try {
+            String raw = preferences.getString(preferenceKey, null);
+            if ("true".equalsIgnoreCase(raw)) {
                 return true;
             }
-            if ("false".equalsIgnoreCase(value)) {
+            if ("false".equalsIgnoreCase(raw)) {
                 return false;
             }
+        } catch (ClassCastException ignored) {
         }
         return false;
     }

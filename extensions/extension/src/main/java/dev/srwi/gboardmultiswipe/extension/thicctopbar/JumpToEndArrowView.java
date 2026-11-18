@@ -33,7 +33,7 @@ public class JumpToEndArrowView extends FrameLayout {
         super(context);
         setClickable(true);
         setFocusable(true);
-        setContentDescription("Zum Ende springen");
+        setContentDescription("Jump to end");
 
         TypedValue outValue = new TypedValue();
         if (context.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outValue, true)) {

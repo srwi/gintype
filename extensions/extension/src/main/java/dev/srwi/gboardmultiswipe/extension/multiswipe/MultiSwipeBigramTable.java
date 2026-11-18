@@ -31,6 +31,7 @@ public final class MultiSwipeBigramTable {
     private final Map<String, Integer> maxCount = new HashMap<>(4096);
 
     public int entryCount = 0;
+    private boolean frozen = false;
 
     public void put(String prev, String next, int count) {
         String key = prev.toLowerCase();
@@ -49,16 +50,21 @@ public final class MultiSwipeBigramTable {
                 break;
             }
         }
+        int effectiveCount = count;
         if (idx >= 0) {
-            list.set(idx, new NextWord(nw, list.get(idx).count + count));
+            effectiveCount = list.get(idx).count + count;
+            list.set(idx, new NextWord(nw, effectiveCount));
         } else {
             list.add(new NextWord(nw, count));
             entryCount++;
         }
+        if (frozen && list.size() > 1) {
+            Collections.sort(list);
+        }
 
         Integer curMax = maxCount.get(key);
-        if (curMax == null || count > curMax) {
-            maxCount.put(key, count);
+        if (curMax == null || effectiveCount > curMax) {
+            maxCount.put(key, effectiveCount);
         }
     }
 
@@ -66,6 +72,7 @@ public final class MultiSwipeBigramTable {
         for (List<NextWord> list : table.values()) {
             Collections.sort(list);
         }
+        frozen = true;
     }
 
     public float score(String prevWord, String candidate) {

@@ -41,6 +41,8 @@ public final class GboardMultiSwipeDictionaryManager {
         public final String sourcePath;
         public final long sourceLastModified;
         public final long sourceLength;
+        public final java.util.concurrent.locks.ReentrantReadWriteLock rwLock =
+                new java.util.concurrent.locks.ReentrantReadWriteLock();
 
         public LanguagePack(String lang, MultiSwipeTrie trie, MultiSwipeBigramTable bigrams) {
             this(lang, trie, bigrams, false, "", 0L, 0L);
@@ -555,14 +557,23 @@ public final class GboardMultiSwipeDictionaryManager {
         int commits = COMMIT_COUNTS.merge(countKey, 1, Integer::sum);
         if (pack == null) return;
 
-        if (commits >= KineticaConstants.PERSONAL_MERGE_MIN_COUNT) {
-            int existingFreq = pack.trie.lookupFrequency(committedWord);
-            int freqByte = Math.min(255, Math.max(128, existingFreq + 8));
-            MultiSwipeDictionaryLoader.insertWordIntoTrie(
-                    pack.trie, committedWord, freqByte, false, key, pack.hasDedicatedUmlauts);
-        }
-        if (prevWord != null && !prevWord.isEmpty()) {
-            pack.bigrams.put(prevWord, committedWord, 50);
+        boolean learnWord = commits >= KineticaConstants.PERSONAL_MERGE_MIN_COUNT;
+        boolean learnBigram = prevWord != null && !prevWord.isEmpty();
+        if (!learnWord && !learnBigram) return;
+
+        pack.rwLock.writeLock().lock();
+        try {
+            if (learnWord) {
+                int existingFreq = pack.trie.lookupFrequency(committedWord);
+                int freqByte = Math.min(255, Math.max(128, existingFreq + 8));
+                MultiSwipeDictionaryLoader.insertWordIntoTrie(
+                        pack.trie, committedWord, freqByte, false, key, pack.hasDedicatedUmlauts);
+            }
+            if (learnBigram) {
+                pack.bigrams.put(prevWord, committedWord, 50);
+            }
+        } finally {
+            pack.rwLock.writeLock().unlock();
         }
     }
 

@@ -976,7 +976,18 @@ final class MultiSwipeWordSession {
         String endedBaseline = textSnapshotAtActionDown;
 
         boolean armedLeadingSpace = pendingLeadingSpaceBeforeNextWord;
-        pendingLeadingSpaceBeforeNextWord = false;
+        boolean snapshotUnchanged = lastObservedTextBeforeCursor == null
+                || snapshotNow == null
+                || snapshotNow.equals(lastObservedTextBeforeCursor);
+        boolean downOnModifier = !downOnLetter
+                && !downOnSpace
+                && !geometry.isBackspaceKeyAt(x, y)
+                && !geometry.isPunctuationAt(x, y)
+                && geometry.findKeyAt(x, y) == null
+                && geometry.isNonCharControlKeyAt(x, y);
+        if (!downOnModifier || !snapshotUnchanged) {
+            pendingLeadingSpaceBeforeNextWord = false;
+        }
         if (armedLeadingSpace
                 && downOnLetter
                 && !isWordContinuing
@@ -1481,8 +1492,6 @@ final class MultiSwipeWordSession {
                 textSnapshotAtActionDown = tailSnapshot(textSnapshotAtActionDown + " ");
             }
             leadingSpaceEvaluated = true;
-            suppressNextLeadingSpace = false;
-            suppressLeadingSpaceBaseline = null;
             pendingBackspaceCheck = false;
             expectedSnapshotAfterPreview = (textSnapshotAtActionDown != null)
                     ? tailSnapshot(textSnapshotAtActionDown + bestWord)
@@ -1686,7 +1695,13 @@ final class MultiSwipeWordSession {
                 || (eventTimeMs - backspaceDownTimeMs) > BACKSPACE_HOLD_TIMEOUT_MS) {
             pendingBackspaceTap = false;
             lastCommittedWordUndo = null;
+            boolean wasActive = multiswipeTakeoverActive || multiswipeWordActive;
+            multiswipeTakeoverActive = false;
             clearWordBuffer(callbacks);
+            if (wasActive && callbacks != null) {
+                callbacks.onTrailAccentChanged(false);
+                callbacks.onNativeTopBarBlankChanged(false);
+            }
         }
     }
 

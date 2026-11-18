@@ -725,7 +725,9 @@ public final class GboardThiccTopBarRuntime {
                         currentWord = editorActiveWord;
                     }
                 }
-                Log.i(TAG, "onCandidatesUpdated: resolved " + items.size() + " candidates, currentWord='" + currentWord + "': " + items);
+                if (Log.isLoggable(TAG, Log.DEBUG)) {
+                    Log.i(TAG, "onCandidatesUpdated: resolved " + items.size() + " candidates, currentWord='" + currentWord + "': " + items);
+                }
 
                 // Case 1: No active word being typed/swiped (cursor after manual space, punctuation, or empty)
                 if (currentWord == null || currentWord.isEmpty()) {
@@ -786,7 +788,9 @@ public final class GboardThiccTopBarRuntime {
                     int idx = findCaseInsensitiveIndex(words, currentWord);
                     centerIndex = (idx >= 0) ? idx : 0;
                     words.set(centerIndex, currentWord);
-                    Log.i(TAG, "onCandidatesUpdated: preserving original 3 suggestions: " + words + ", centerIndex=" + centerIndex);
+                    if (Log.isLoggable(TAG, Log.DEBUG)) {
+                        Log.i(TAG, "onCandidatesUpdated: preserving original 3 suggestions: " + words + ", centerIndex=" + centerIndex);
+                    }
                 } else {
                     activeOriginalSuggestions = new ArrayList<>(words);
                     cacheAlternativeGroup(words, currentWord);
@@ -805,6 +809,7 @@ public final class GboardThiccTopBarRuntime {
                         centerIndex,
                         // onCommit: Tapping active word center pill selects the word if already in editor, or commits
                         (selectedIndex, word) -> {
+                            GboardMultiSwipeRuntime.onTopBarUserInteraction();
                             if (selectActiveWordIfAlreadyInEditor(holderView, barView, word)) {
                                 return;
                             }
@@ -854,7 +859,9 @@ public final class GboardThiccTopBarRuntime {
         }
         lastHolderView = holderView;
 
-        Log.i(TAG, "onCandidatesCleared");
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.i(TAG, "onCandidatesCleared");
+        }
         holderView.post(() -> {
             try {
                 if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
@@ -915,6 +922,7 @@ public final class GboardThiccTopBarRuntime {
                             words,
                             centerIdx,
                             (selectedIndex, word) -> {
+                                GboardMultiSwipeRuntime.onTopBarUserInteraction();
                                 if (selectActiveWordIfAlreadyInEditor(holderView, barView, word)) {
                                     return;
                                 }
@@ -1125,7 +1133,9 @@ public final class GboardThiccTopBarRuntime {
      * Commits the chosen candidate into Gboard and the target text field.
      */
     private static void commitCandidate(ViewGroup holderView, CandidateItem selectedItem, List<CandidateItem> allItems) {
-        Log.i(TAG, "commitCandidate: word=" + selectedItem.text + " slotIndex=" + selectedItem.slotIndex);
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.i(TAG, "commitCandidate: word=" + selectedItem.text + " slotIndex=" + selectedItem.slotIndex);
+        }
 
         // Commit cleanly via InputConnection (avoids SoftKeyboardView.a(softKey) synthetic touch replay).
         replaceActiveCandidateViaInputConnection(holderView, selectedItem);
@@ -1350,7 +1360,9 @@ public final class GboardThiccTopBarRuntime {
                         ic.deleteSurroundingText(deleteLen, 0);
                         ic.commitText(selectedItem.text + " ", 1);
                         ic.endBatchEdit();
-                        Log.i(TAG, "replaceActiveCandidateViaInputConnection: cleanly replaced '" + lastWord + "' with '" + selectedItem.text + "'");
+                        if (Log.isLoggable(TAG, Log.DEBUG)) {
+                            Log.i(TAG, "replaceActiveCandidateViaInputConnection: cleanly replaced '" + lastWord + "' with '" + selectedItem.text + "'");
+                        }
                         return;
                     }
                 }
@@ -1792,6 +1804,7 @@ public final class GboardThiccTopBarRuntime {
                         words,
                         centerIdx,
                         (selectedIndex, word) -> {
+                            GboardMultiSwipeRuntime.onTopBarUserInteraction();
                             if (selectActiveWordIfAlreadyInEditor(holderView, barView, word)) {
                                 return;
                             }

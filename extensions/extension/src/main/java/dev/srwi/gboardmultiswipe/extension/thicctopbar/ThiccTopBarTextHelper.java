@@ -26,7 +26,9 @@ public final class ThiccTopBarTextHelper {
 
     private static void logI(String tag, String msg) {
         try {
-            Log.i(tag, msg);
+            if (Log.isLoggable(tag, Log.DEBUG)) {
+                Log.i(tag, msg);
+            }
         } catch (Throwable ignored) {
         }
     }

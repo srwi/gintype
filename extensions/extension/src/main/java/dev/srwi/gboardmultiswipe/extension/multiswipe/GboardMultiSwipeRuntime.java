@@ -192,6 +192,9 @@ public final class GboardMultiSwipeRuntime {
     }
 
     private static void writeCrashToFile(Thread thread, Throwable throwable) {
+        if (cachedContext == null || !GboardMultiSwipeSettings.isTraceLoggingEnabled(cachedContext)) {
+            return;
+        }
         try {
             java.io.StringWriter sw = new java.io.StringWriter();
             java.io.PrintWriter pw = new java.io.PrintWriter(sw);
@@ -207,24 +210,10 @@ public final class GboardMultiSwipeRuntime {
             pw.flush();
             String report = sw.toString();
 
-            try {
-                java.io.File file = new java.io.File("/sdcard/Download/gboard_crash.txt");
-                java.io.FileWriter fw = new java.io.FileWriter(file, true);
+            java.io.File file = new java.io.File(cachedContext.getCacheDir(), "gboard_crash.txt");
+            try (java.io.FileWriter fw = new java.io.FileWriter(file, true)) {
                 fw.write(report);
                 fw.write("\n\n");
-                fw.close();
-            } catch (Throwable ignored) {
-            }
-
-            if (cachedContext != null) {
-                try {
-                    java.io.File file = new java.io.File(cachedContext.getCacheDir(), "gboard_crash.txt");
-                    java.io.FileWriter fw = new java.io.FileWriter(file, true);
-                    fw.write(report);
-                    fw.write("\n\n");
-                    fw.close();
-                } catch (Throwable ignored) {
-                }
             }
         } catch (Throwable ignored) {
         }
@@ -778,8 +767,14 @@ public final class GboardMultiSwipeRuntime {
                     return;
                 }
                 GboardMultiSwipeSettings.syncDecoderConstants(context);
-                List<WordCandidate> candidates = session.livePreviewDecoder.decode(
-                        snapshotTokens, pack.trie, pack.bigrams, geomRef, prevWord);
+                List<WordCandidate> candidates;
+                pack.rwLock.readLock().lock();
+                try {
+                    candidates = session.livePreviewDecoder.decode(
+                            snapshotTokens, pack.trie, pack.bigrams, geomRef, prevWord);
+                } finally {
+                    pack.rwLock.readLock().unlock();
+                }
                 if (session.liveDecodeGeneration.get() != gen
                         || candidates == null
                         || candidates.isEmpty()) {
@@ -1473,7 +1468,12 @@ public final class GboardMultiSwipeRuntime {
                 }
                 GboardMultiSwipeSettings.syncDecoderConstants(context);
                 KineticaDtwDecoder decoder = new KineticaDtwDecoder();
-                return decoder.decode(tokens, pack.trie, pack.bigrams, session.geometry, prevWord);
+                pack.rwLock.readLock().lock();
+                try {
+                    return decoder.decode(tokens, pack.trie, pack.bigrams, session.geometry, prevWord);
+                } finally {
+                    pack.rwLock.readLock().unlock();
+                }
             } catch (Throwable t) {
                 Log.e(TAG, "decodePort failed", t);
                 return Collections.emptyList();
@@ -2346,31 +2346,29 @@ public final class GboardMultiSwipeRuntime {
             if (child == null || child.getVisibility() != View.VISIBLE) continue;
 
             if (child.getClass().getSimpleName().contains("SoftKeyView")) {
-                char labelChar = extractSingleLetterFromSoftKeyView(child);
-                if (labelChar != '\0') {
-                    if (labelChar == 'ä' || labelChar == 'ö' || labelChar == 'ü') {
-                        hasUmlaut[0] = true;
+                float w = child.getWidth();
+                float h = child.getHeight();
+                if (w > 10f && h > 10f) {
+                    float cx = child.getX() + w * 0.5f;
+                    float cy = child.getY() + h * 0.5f;
+                    View parent = (View) child.getParent();
+                    while (parent != null && parent != rootKeyboardView) {
+                        cx += parent.getX();
+                        cy += parent.getY();
+                        parent = (parent.getParent() instanceof View)
+                                ? (View) parent.getParent()
+                                : null;
                     }
-                    int idx = MultiSwipeAlphabet.charIndex(labelChar);
-                    if (child.getWidth() > 0 && child.getHeight() > 0) {
-                        float cx = child.getX() + child.getWidth() * 0.5f;
-                        float cy = child.getY() + child.getHeight() * 0.5f;
-                        View parent = (View) child.getParent();
-                        while (parent != null && parent != rootKeyboardView) {
-                            cx += parent.getX();
-                            cy += parent.getY();
-                            parent = (parent.getParent() instanceof View)
-                                    ? (View) parent.getParent()
-                                    : null;
+                    char labelChar = extractSupportedCharFromSoftKey(child);
+                    if (labelChar == '\0') {
+                        out.add(new KeySpec('\0', cx, cy, w, h));
+                    } else {
+                        if (labelChar == 'ä' || labelChar == 'ö' || labelChar == 'ü') {
+                            hasUmlaut[0] = true;
                         }
+                        int idx = MultiSwipeAlphabet.charIndex(labelChar);
                         char storeChar = (idx >= 0) ? MultiSwipeAlphabet.indexToChar(idx) : labelChar;
-                        out.add(new KeySpec(
-                                storeChar,
-                                cx,
-                                cy,
-                                child.getWidth(),
-                                child.getHeight()
-                        ));
+                        out.add(new KeySpec(storeChar, cx, cy, w, h));
                     }
                 }
             } else if (child instanceof ViewGroup) {

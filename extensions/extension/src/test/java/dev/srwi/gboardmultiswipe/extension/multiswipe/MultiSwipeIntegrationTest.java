@@ -1133,6 +1133,74 @@ public class MultiSwipeIntegrationTest {
         assertEquals(2L, swipeCount);
     }
 
+    @Test
+    public void pendingLeadingSpacePreservedAcrossShiftTapInAutoSpaceBeforeWordMode() {
+        SettingsSnapshot settings = new SettingsSnapshot(
+                true, true, 800, 150, false, true, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
+        DecodePort decoder = (tokens, prev) -> Collections.singletonList(cand("Hallo", 1f));
+
+        performTwoFingerSwipe(1000L, settings, decoder);
+        assertEquals("Hallo", editor.text());
+
+        session.finalizeAutospace(true, true, editor, callbacks);
+        assertTrue(session.pendingLeadingSpaceBeforeNextWord);
+
+        // User taps Shift before typing a capitalized noun.
+        session.onActionDown(0, shiftX, shiftY, 2000L, settings, editor, callbacks);
+        session.onActionUp(2040L, settings, editor, decoder, callbacks);
+        assertTrue(session.pendingLeadingSpaceBeforeNextWord);
+
+        // Next letter tap must insert the pending leading space -> "Hallo ".
+        session.onActionDown(0, letterAX, letterAY, 2100L, settings, editor, callbacks);
+        assertEquals("Hallo ", editor.text());
+    }
+
+    @Test
+    public void backspaceHoldCancelResetsTrailAccentAndTopBarBlanking() {
+        SettingsSnapshot settings = new SettingsSnapshot(
+                true, true, 800, 150, false, false, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
+        DecodePort decoder = (tokens, prev) -> Collections.singletonList(cand("Hallo", 1f));
+
+        performTwoFingerSwipe(1000L, settings, decoder);
+        assertTrue(session.multiswipeWordActive);
+
+        // Backspace tap begins, then turns into a hold past BACKSPACE_HOLD_TIMEOUT_MS.
+        session.onActionDown(0, backspaceX, backspaceY, 1200L, settings, editor, callbacks);
+        callbacks.lastTrailAccent = null;
+        callbacks.lastNativeTopBarBlank = null;
+        session.maybeCancelPendingBackspaceTap(backspaceX, backspaceY, 1200L + 300L, callbacks);
+
+        assertFalse(session.multiswipeWordActive);
+        assertFalse(session.multiswipeTakeoverActive);
+        assertEquals(Boolean.FALSE, callbacks.lastTrailAccent);
+        assertEquals(Boolean.FALSE, callbacks.lastNativeTopBarBlank);
+    }
+
+    @Test
+    public void multiStrokeCompoundWordAfterBackspaceStaysLowercaseAcrossAllStrokes() {
+        SettingsSnapshot settings = new SettingsSnapshot(
+                true, true, 800, 150, false, false, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
+        editor.stockType("Seiten ");
+
+        // Backspace deletes trailing space -> "Seiten", latching MS-13 compound attachment.
+        session.onActionDown(0, backspaceX, backspaceY, 1000L, settings, editor, callbacks);
+        editor.simulateBackspace();
+        session.onActionUp(1040L, settings, editor, (t, p) -> Collections.emptyList(), callbacks);
+
+        // Stroke 1 of MultiSwipe compound word ("lei") -> "Seitenlei".
+        DecodePort stroke1Decoder = (t, p) -> Collections.singletonList(cand("Lei", 1f));
+        performTwoFingerSwipe(1200L, settings, stroke1Decoder);
+        assertEquals("Seitenlei", editor.text());
+
+        // Stroke 2 continuing the same MultiSwipe word ("Leiste") must stay lowercase -> "Seitenleiste".
+        DecodePort stroke2Decoder = (t, p) -> Collections.singletonList(cand("Leiste", 1f));
+        performTwoFingerSwipe(1400L, settings, stroke2Decoder);
+        assertEquals("Seitenleiste", editor.text());
+    }
+
     private boolean performBackspaceTap(
             long downMs,
             SettingsSnapshot settings,
