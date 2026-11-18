@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -219,7 +220,68 @@ public final class GboardMultiSwipeRuntime {
         }
     }
 
+    private static final String PREFS_NAME = "gboard_multiswipe_runtime_hints";
+    private static final String PREF_UMLAUT_HINT_PREFIX = "umlaut_hint_";
+    private static final Map<String, Boolean> UMLAUT_HINTS = new ConcurrentHashMap<>();
+
     private GboardMultiSwipeRuntime() {}
+
+    /**
+     * Preloads the active language dictionary in the background as soon as a SoftKeyboardView
+     * is inflated or becomes visible, avoiding a blocking load on the first two-finger swipe.
+     */
+    public static void onKeyboardViewReady(Object viewObj) {
+        if (!(viewObj instanceof View)) return;
+        try {
+            Context context = ((View) viewObj).getContext();
+            if (context == null) return;
+            boolean enabled = GboardMultiSwipeSettings.readEnabled(context);
+            multiswipeEnabledCached = enabled;
+            if (!enabled) {
+                return;
+            }
+            String activeLang = GboardMultiSwipeDictionaryManager.detectActiveLanguage(context);
+            boolean hasDedicatedUmlauts = readUmlautHint(context, activeLang);
+            GboardMultiSwipeDictionaryManager.getOrScheduleLoad(
+                    context, activeLang, hasDedicatedUmlauts);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static boolean readUmlautHint(Context context, String lang) {
+        String key = GboardMultiSwipeDictionaryManager.normalizeLanguageKey(lang);
+        Boolean cached = UMLAUT_HINTS.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        if (context != null) {
+            try {
+                boolean stored = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .getBoolean(PREF_UMLAUT_HINT_PREFIX + key, false);
+                UMLAUT_HINTS.put(key, stored);
+                return stored;
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
+    }
+
+    private static void recordUmlautHint(Context context, String lang, boolean hasDedicatedUmlauts) {
+        String key = GboardMultiSwipeDictionaryManager.normalizeLanguageKey(lang);
+        Boolean prev = UMLAUT_HINTS.put(key, hasDedicatedUmlauts);
+        if (prev != null && prev == hasDedicatedUmlauts) {
+            return;
+        }
+        if (context != null) {
+            try {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean(PREF_UMLAUT_HINT_PREFIX + key, hasDedicatedUmlauts)
+                        .apply();
+            } catch (Throwable ignored) {
+            }
+        }
+    }
 
     /**
      * Cancels any pending MultiSwipe autospace timer and clears the active word buffer when the
@@ -298,6 +360,9 @@ public final class GboardMultiSwipeRuntime {
 
             String activeLang = GboardMultiSwipeDictionaryManager.detectActiveLanguage(context);
             if (context != null) {
+                if (session.geometry.isValid() && session.geometryFromNativeLayout) {
+                    recordUmlautHint(context, activeLang, session.geometry.hasDedicatedUmlauts());
+                }
                 GboardMultiSwipeDictionaryManager.getOrScheduleLoad(
                         context, activeLang, session.geometry.hasDedicatedUmlauts());
             }

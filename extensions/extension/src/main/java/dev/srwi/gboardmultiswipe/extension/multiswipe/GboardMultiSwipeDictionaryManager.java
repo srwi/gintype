@@ -18,8 +18,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
 
 /**
  * Manages MultiSwipe prefix Tries and BigramTables extracted at runtime directly from
@@ -80,10 +82,11 @@ public final class GboardMultiSwipeDictionaryManager {
             "com.google.android.apps.inputmethod.libs.delight5.Delight5Facilitator";
 
     private static final Map<String, LanguagePack> PACKS = new ConcurrentHashMap<>();
-    private static final Map<String, Boolean> LOADING = new ConcurrentHashMap<>();
+    private static final Map<String, FutureTask<LanguagePack>> IN_FLIGHT = new ConcurrentHashMap<>();
     private static final Map<String, Long> LAST_MISS_MS = new ConcurrentHashMap<>();
     private static final Map<String, Long> LAST_REFRESH_PROBE_MS = new ConcurrentHashMap<>();
     private static final Map<String, Integer> COMMIT_COUNTS = new ConcurrentHashMap<>();
+    private static final Object REFLECTION_LOCK = new Object();
     private static final ExecutorService LOADER_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "GboardMultiSwipeDictLoader");
         t.setDaemon(true);
@@ -130,22 +133,21 @@ public final class GboardMultiSwipeDictionaryManager {
         LanguagePack existing = PACKS.get(key);
         long now = System.currentTimeMillis();
 
-        if (existing != null) {
-            boolean needsRefresh = existing.hasDedicatedUmlauts != hasDedicatedUmlauts;
-            if (!needsRefresh) {
+        if (existing != null && existing.hasDedicatedUmlauts == hasDedicatedUmlauts) {
+            if (context != null) {
                 Long lastProbe = LAST_REFRESH_PROBE_MS.get(key);
                 if (lastProbe == null || now - lastProbe >= REFRESH_PROBE_INTERVAL_MS) {
                     LAST_REFRESH_PROBE_MS.put(key, now);
-                    File liveLm = resolveLmFile(context, key);
-                    if (liveLm != null && !existing.matches(liveLm, hasDedicatedUmlauts)) {
-                        needsRefresh = true;
-                    }
+                    Context appContext = context.getApplicationContext() != null
+                            ? context.getApplicationContext()
+                            : context;
+                    scheduleLoadTask(appContext, key, hasDedicatedUmlauts, true);
                 }
             }
-            if (!needsRefresh) {
-                return existing;
-            }
-        } else {
+            return existing;
+        }
+
+        if (existing == null) {
             Long lastMiss = LAST_MISS_MS.get(key);
             if (lastMiss != null && now - lastMiss < MISS_RETRY_COOLDOWN_MS) {
                 return null;
@@ -154,30 +156,10 @@ public final class GboardMultiSwipeDictionaryManager {
 
         if (context == null) return existing;
 
-        final Context appContext = context.getApplicationContext() != null
+        Context appContext = context.getApplicationContext() != null
                 ? context.getApplicationContext()
                 : context;
-        if (Boolean.TRUE.equals(LOADING.putIfAbsent(key, Boolean.TRUE))) {
-            return existing;
-        }
-
-        LOADER_EXECUTOR.execute(() -> {
-            try {
-                LanguagePack loaded = buildLanguagePack(appContext, key, hasDedicatedUmlauts);
-                if (loaded != null) {
-                    PACKS.put(key, loaded);
-                    LAST_MISS_MS.remove(key);
-                    LAST_REFRESH_PROBE_MS.put(key, System.currentTimeMillis());
-                } else {
-                    LAST_MISS_MS.put(key, System.currentTimeMillis());
-                }
-            } catch (Throwable t) {
-                LAST_MISS_MS.put(key, System.currentTimeMillis());
-                Log.w(TAG, "Async Gboard LM load failed for " + key, t);
-            } finally {
-                LOADING.remove(key);
-            }
-        });
+        scheduleLoadTask(appContext, key, hasDedicatedUmlauts, false);
         return existing;
     }
 
@@ -203,27 +185,77 @@ public final class GboardMultiSwipeDictionaryManager {
             return null;
         }
 
-        synchronized (GboardMultiSwipeDictionaryManager.class) {
-            existing = PACKS.get(key);
-            if (existing != null && existing.hasDedicatedUmlauts == hasDedicatedUmlauts) {
-                return existing;
+        Context appContext = context.getApplicationContext() != null
+                ? context.getApplicationContext()
+                : context;
+        FutureTask<LanguagePack> task = scheduleLoadTask(appContext, key, hasDedicatedUmlauts, false);
+        try {
+            LanguagePack loaded = task.get();
+            if (loaded != null) {
+                return loaded;
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            Log.w(TAG, "Blocking Gboard LM load failed for " + key, e.getCause());
+        }
+        LanguagePack current = PACKS.get(key);
+        if (current != null && current.hasDedicatedUmlauts == hasDedicatedUmlauts) {
+            return current;
+        }
+        return existing;
+    }
+
+    private static FutureTask<LanguagePack> scheduleLoadTask(
+            Context appContext,
+            String key,
+            boolean hasDedicatedUmlauts,
+            boolean onlyIfFileChanged
+    ) {
+        String requestKey = key + "|" + (hasDedicatedUmlauts ? '1' : '0');
+        FutureTask<LanguagePack> existingTask = IN_FLIGHT.get(requestKey);
+        if (existingTask != null) {
+            return existingTask;
+        }
+
+        final FutureTask<LanguagePack>[] holder = new FutureTask[1];
+        FutureTask<LanguagePack> task = new FutureTask<>(() -> {
             try {
-                LanguagePack pack = buildLanguagePack(context, key, hasDedicatedUmlauts);
-                if (pack != null) {
-                    PACKS.put(key, pack);
+                LanguagePack current = PACKS.get(key);
+                if (onlyIfFileChanged && current != null && current.hasDedicatedUmlauts == hasDedicatedUmlauts) {
+                    File liveLm = resolveLmFile(appContext, key);
+                    if (liveLm == null || current.matches(liveLm, hasDedicatedUmlauts)) {
+                        return current;
+                    }
+                } else if (!onlyIfFileChanged && current != null && current.hasDedicatedUmlauts == hasDedicatedUmlauts) {
+                    return current;
+                }
+
+                LanguagePack loaded = buildLanguagePack(appContext, key, hasDedicatedUmlauts);
+                if (loaded != null) {
+                    PACKS.put(key, loaded);
                     LAST_MISS_MS.remove(key);
                     LAST_REFRESH_PROBE_MS.put(key, System.currentTimeMillis());
-                    return pack;
+                    return loaded;
                 }
                 LAST_MISS_MS.put(key, System.currentTimeMillis());
-                return existing;
+                return PACKS.get(key);
             } catch (Throwable t) {
                 LAST_MISS_MS.put(key, System.currentTimeMillis());
-                Log.w(TAG, "Blocking Gboard LM load failed for " + key, t);
-                return existing;
+                Log.w(TAG, "Gboard LM load failed for " + key, t);
+                return PACKS.get(key);
+            } finally {
+                IN_FLIGHT.remove(requestKey, holder[0]);
             }
+        });
+        holder[0] = task;
+
+        FutureTask<LanguagePack> raced = IN_FLIGHT.putIfAbsent(requestKey, task);
+        if (raced != null) {
+            return raced;
         }
+        LOADER_EXECUTOR.execute(task);
+        return task;
     }
 
     private static LanguagePack buildLanguagePack(
@@ -603,7 +635,7 @@ public final class GboardMultiSwipeDictionaryManager {
 
     private static void probeFacilitatorReflection(Context context) {
         if (reflectionProbed) return;
-        synchronized (GboardMultiSwipeDictionaryManager.class) {
+        synchronized (REFLECTION_LOCK) {
             if (reflectionProbed) return;
             try {
                 ClassLoader cl = context != null

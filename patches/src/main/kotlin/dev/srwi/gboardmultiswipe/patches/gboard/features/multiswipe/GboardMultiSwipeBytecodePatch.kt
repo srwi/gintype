@@ -1,6 +1,7 @@
 package dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe
 
 import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
+import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
@@ -16,7 +17,10 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.addHelperMethodIfMissing
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.gboardPatchesExtensionCarrierPatch
+import dev.srwi.gboardmultiswipe.patches.gboard.shared.instructionIndices
+import dev.srwi.gboardmultiswipe.patches.gboard.shared.isMethodReference
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.mutableClass
+import dev.srwi.gboardmultiswipe.patches.gboard.shared.runtimeabi.RuntimeAbiCatalog
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.runtimeabi.RuntimeCallEmitter
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.runtimeabi.RuntimeCallId
 import dev.srwi.gboardmultiswipe.patches.shared.Constants.COMPATIBILITY_GBOARD
@@ -29,6 +33,8 @@ private const val BASIC_MOTION_EVENT_HANDLER_CLASS =
     "Lcom/google/android/libraries/inputmethod/motioneventhandler/BasicMotionEventHandler;"
 private const val SOFT_KEY_VIEW_CLASS =
     "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyView;"
+private const val SOFT_KEYBOARD_VIEW_CLASS =
+    "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;"
 private const val SOFT_KEY_DEF_CLASS =
     "Lcom/google/android/libraries/inputmethod/metadata/SoftKeyDef;"
 
@@ -429,5 +435,46 @@ internal val gboardMultiSwipeBytecodePatch = bytecodePatch(
                 nop
             """.trimIndent(),
         )
+
+        // Preload active language dictionary when SoftKeyboardView is inflated or attached so
+        // the first two-finger swipe does not stall waiting for .lm parsing.
+        val softKeyboardViewClass = mutableClass(SOFT_KEYBOARD_VIEW_CLASS)
+        val preloadAbi = RuntimeAbiCatalog.abi(RuntimeCallId.MULTISWIPE_RUNTIME_ON_KEYBOARD_VIEW_READY)
+        val preloadInvoke = RuntimeCallEmitter.invoke(
+            RuntimeCallId.MULTISWIPE_RUNTIME_ON_KEYBOARD_VIEW_READY,
+            "p0",
+        )
+        val onFinishInflateMethod = softKeyboardViewClass.methods.firstOrNull {
+            it.name == "onFinishInflate" &&
+                it.returnType == "V" &&
+                it.parameterTypes.isEmpty()
+        } ?: throw PatchException(
+            "Could not find onFinishInflate() in $SOFT_KEYBOARD_VIEW_CLASS",
+        )
+        listOfNotNull(
+            onFinishInflateMethod,
+            softKeyboardViewClass.methods.firstOrNull {
+                it.name == "onAttachedToWindow" &&
+                    it.returnType == "V" &&
+                    it.parameterTypes.isEmpty()
+            },
+        ).forEach { targetMethod ->
+            val targetInsns = targetMethod.implementation?.instructions
+                ?: error("No instructions in ${targetMethod.definingClass}->${targetMethod.name}")
+            val returnIndices = targetMethod.instructionIndices("RETURN_VOID")
+            check(returnIndices.isNotEmpty()) {
+                "No return-void instruction in ${targetMethod.definingClass}->${targetMethod.name}"
+            }
+            val existing = targetInsns.count { it.isMethodReference(preloadAbi.reference) }
+            if (existing == 0) {
+                returnIndices.asReversed().forEach { retIdx ->
+                    targetMethod.addInstructions(retIdx, preloadInvoke)
+                }
+            } else {
+                check(existing == returnIndices.size) {
+                    "Expected ${targetMethod.definingClass}->${targetMethod.name} to match ${returnIndices.size} preload hooks, found $existing"
+                }
+            }
+        }
     }
 }

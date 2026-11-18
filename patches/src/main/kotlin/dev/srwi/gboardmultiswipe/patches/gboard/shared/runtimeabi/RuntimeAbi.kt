@@ -5,6 +5,7 @@ internal enum class RuntimeCallId(internal val encodedAbi: String) {
     THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED("Ldev/srwi/gboardmultiswipe/extension/thicctopbar/GboardThiccTopBarRuntime;->onCandidatesCleared(Ljava/lang/Object;)V"),
     THICC_TOP_BAR_RUNTIME_ON_SOFT_KEYBOARD_VIEW_INFLATED("Ldev/srwi/gboardmultiswipe/extension/thicctopbar/GboardThiccTopBarRuntime;->onSoftKeyboardViewInflated(Ljava/lang/Object;)V"),
     THICC_TOP_BAR_RUNTIME_SCALE_HEADER_TARGET_HEIGHT("Ldev/srwi/gboardmultiswipe/extension/thicctopbar/GboardThiccTopBarRuntime;->scaleHeaderTargetHeight(Ljava/lang/Object;I)I"),
+    MULTISWIPE_RUNTIME_ON_KEYBOARD_VIEW_READY("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->onKeyboardViewReady(Ljava/lang/Object;)V"),
     MULTISWIPE_RUNTIME_ON_GESTURE_EVENT_ENTRY("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
     MULTISWIPE_RUNTIME_SHOULD_START_GESTURE("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldStartGesture(Ljava/lang/Object;Z)Z"),
     MULTISWIPE_RUNTIME_SHOULD_INTERCEPT_GESTURE_DISPATCH("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldInterceptGestureDispatch(Ljava/lang/Object;)Z"),
