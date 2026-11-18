@@ -865,6 +865,19 @@ final class MultiSwipeWordSession {
         return containsSwipeToken(out) ? out : null;
     }
 
+    /**
+     * Returns true when an uncommitted tap prefix is currently in the editor and will be replaced
+     * in-place by this MultiSwipe gesture (e.g., Tap+Swipe).
+     */
+    boolean hasPendingTapPrefixInEditor() {
+        if (promotedTapPrefix != null && !promotedTapPrefix.isEmpty()) {
+            return true;
+        }
+        return !multiswipeWordActive
+                && !sawNonLetterThisSession
+                && (!singleTouchCombineBuffer.tokens.isEmpty() || !passiveTapBuffer.tokens.isEmpty());
+    }
+
     String formatWordForCurrentContext(String word) {
         if (word == null || word.isEmpty()) {
             return word;

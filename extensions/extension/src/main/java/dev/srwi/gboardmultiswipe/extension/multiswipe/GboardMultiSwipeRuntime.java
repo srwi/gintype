@@ -759,6 +759,7 @@ public final class GboardMultiSwipeRuntime {
         session.lastLiveDecodeDispatchMs = eventTimeMs;
         final int gen = session.liveDecodeGeneration.get();
         final String prevWord = session.core.lastCommittedWord;
+        final boolean replacingTapPrefix = session.core.hasPendingTapPrefixInEditor();
         final MultiSwipeWordSession coreRef = session.core;
         final MultiSwipeGeometry geomRef = session.geometry;
         LIVE_PREVIEW_EXECUTOR.execute(() -> {
@@ -782,7 +783,7 @@ public final class GboardMultiSwipeRuntime {
                 }
                 String formatted = coreRef.formatWordForCurrentContext(candidates.get(0).word);
                 if (formatted != null && !formatted.isEmpty()) {
-                    GboardThiccTopBarRuntime.updateLiveGuess(formatted);
+                    GboardThiccTopBarRuntime.updateLiveGuess(formatted, replacingTapPrefix);
                 }
             } catch (Throwable t) {
                 Log.w(TAG, "livePreviewDecode error: " + t.getMessage());

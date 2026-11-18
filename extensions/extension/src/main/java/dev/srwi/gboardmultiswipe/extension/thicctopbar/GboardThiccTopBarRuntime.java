@@ -336,9 +336,20 @@ public final class GboardThiccTopBarRuntime {
      * active wheel (when enabled) or the native top bar overlay (when Thicc Top Bar is disabled).
      */
     public static void updateLiveGuess(String word) {
+        updateLiveGuess(word, false);
+    }
+
+    /**
+     * Displays a centered intermediate MultiSwipe guess in either Thicc Top Bar's right-hand
+     * active wheel (when enabled) or the native top bar overlay (when Thicc Top Bar is disabled).
+     *
+     * @param excludePendingEditorWord true only when an uncommitted tap prefix in the editor
+     *                                 (e.g. Tap+Swipe) will be replaced in-place by this guess.
+     */
+    public static void updateLiveGuess(String word, boolean excludePendingEditorWord) {
         Handler handler = getMainHandler();
         if (Looper.myLooper() != Looper.getMainLooper()) {
-            handler.post(() -> updateLiveGuess(word));
+            handler.post(() -> updateLiveGuess(word, excludePendingEditorWord));
             return;
         }
         ViewGroup holderView = lastHolderView;
@@ -346,13 +357,14 @@ public final class GboardThiccTopBarRuntime {
             return;
         }
         if (GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
-            updateThiccTopBarLiveGuess(holderView, word);
+            updateThiccTopBarLiveGuess(holderView, word, excludePendingEditorWord);
         } else {
             updateNativeTopBarLiveGuess(word);
         }
     }
 
-    private static void updateThiccTopBarLiveGuess(ViewGroup holderView, String word) {
+    private static void updateThiccTopBarLiveGuess(
+            ViewGroup holderView, String word, boolean excludePendingEditorWord) {
         try {
             if (ThiccTopBarGboardReflector.isDictationActive(holderView)) {
                 return;
@@ -367,11 +379,13 @@ public final class GboardThiccTopBarRuntime {
                     || ThiccTopBarTextHelper.isInputEmpty(holderView)) {
                 SENTENCE_BUFFER.clear();
             } else {
-                // Exclude any uncommitted/combined tap prefix currently in the editor (e.g. Tap+Swipe)
-                // so it is replaced in-place by the live guess instead of being pushed into history.
-                String pendingEditorWord = ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView)
-                        ? null
-                        : ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
+                // Only exclude an uncommitted tap prefix (e.g. MultiSwipe Tap+Swipe) that will be
+                // replaced in-place; a previously committed/swiped word without a trailing space
+                // must remain in history during a stock or non-combining swipe.
+                String pendingEditorWord = (excludePendingEditorWord
+                        && !ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView))
+                        ? ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false)
+                        : null;
                 ThiccTopBarTextHelper.syncSentenceBufferFromText(
                         holderView, pendingEditorWord, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
             }
@@ -736,7 +750,7 @@ public final class GboardThiccTopBarRuntime {
                         CandidateItem only = items.get(0);
                         if (only != null && !only.isRaw && !only.isPrediction
                                 && only.text != null && !only.text.trim().isEmpty()) {
-                            updateThiccTopBarLiveGuess(holderView, only.text.trim());
+                            updateThiccTopBarLiveGuess(holderView, only.text.trim(), false);
                             return;
                         }
                     }
