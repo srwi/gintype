@@ -866,11 +866,17 @@ final class MultiSwipeWordSession {
     }
 
     /**
-     * Returns true when an uncommitted tap prefix is currently in the editor and will be replaced
-     * in-place by this MultiSwipe gesture (e.g., Tap+Swipe).
+     * Returns true when an uncommitted tap prefix or active MultiSwipe composing word is currently
+     * in the editor and will be replaced in-place by this MultiSwipe gesture (e.g., Tap+Swipe or
+     * continuing a MultiSwipe word within the autospace/combine window).
      */
     boolean hasPendingTapPrefixInEditor() {
         if (promotedTapPrefix != null && !promotedTapPrefix.isEmpty()) {
+            return true;
+        }
+        if (multiswipeWordActive
+                && currentComposingWord != null
+                && !currentComposingWord.isEmpty()) {
             return true;
         }
         return !multiswipeWordActive

@@ -1247,6 +1247,44 @@ public class MultiSwipeIntegrationTest {
         assertEquals("Hallo, Welt", editor.text());
     }
 
+    @Test
+    public void livePreviewMarksPendingEditorWordDuringActiveMultiSwipeContinuation() {
+        SettingsSnapshot settings = new SettingsSnapshot(
+                true, true, 300, 150, false, true, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
+        editor.stockType("Hello ");
+        DecodePort firstDecoder = (tokens, prev) -> Collections.singletonList(cand("could", 1f));
+
+        // First MultiSwipe stroke: no pending word in editor yet
+        session.onActionDown(0, letterAX, letterAY, 1000L, settings, editor, callbacks);
+        session.onPointerDown(1, letterLX, letterLY, 1020L);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1040L, session.geometry);
+        assertFalse(session.hasPendingTapPrefixInEditor());
+        session.onPointerUp(0, letterSX, letterSY, 1050L, true, callbacks);
+        session.onActionUp(1070L, settings, editor, firstDecoder, callbacks);
+        assertEquals("Hello could", editor.text());
+
+        // Second stroke within autospace window continues "could" in-place: live preview MUST exclude it
+        session.onActionDown(0, letterAX, letterAY, 1180L, settings, editor, callbacks);
+        session.onPointerDown(1, letterLX, letterLY, 1200L);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1220L, session.geometry);
+        assertTrue(session.multiswipeWordActive);
+        assertTrue(session.hasPendingTapPrefixInEditor());
+
+        DecodePort secondDecoder = (tokens, prev) -> Collections.singletonList(cand("condos", 1f));
+        session.onPointerUp(0, letterSX, letterSY, 1230L, true, callbacks);
+        session.onActionUp(1250L, settings, editor, secondDecoder, callbacks);
+        assertEquals("Hello condos", editor.text());
+
+        // After autospace finalizes and a new word starts, live preview MUST NOT exclude the previous word
+        session.finalizeAutospace(true, editor, callbacks);
+        session.onActionDown(0, letterAX, letterAY, 1700L, settings, editor, callbacks);
+        session.onPointerDown(1, letterLX, letterLY, 1720L);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, 1740L, session.geometry);
+        assertFalse(session.multiswipeWordActive);
+        assertFalse(session.hasPendingTapPrefixInEditor());
+    }
+
     private boolean performBackspaceTap(
             long downMs,
             SettingsSnapshot settings,
