@@ -432,7 +432,33 @@ public final class ThiccTopBarTextHelper {
             ThiccTopBarSentenceBuffer buffer,
             Map<String, List<String>> alternativesCache
     ) {
-        if (ic == null || buffer == null) return;
+        syncSentenceBufferWithSplit(ic, currentWord, false, buffer, alternativesCache);
+    }
+
+    public static int syncSentenceBufferWithSplit(
+            View view,
+            String currentWord,
+            boolean isLiveGuess,
+            ThiccTopBarSentenceBuffer buffer,
+            Map<String, List<String>> alternativesCache
+    ) {
+        InputConnection ic = getInputConnection(view);
+        return syncSentenceBufferWithSplit(ic, currentWord, isLiveGuess, buffer, alternativesCache);
+    }
+
+    /**
+     * Synchronizes {@code buffer} with the current paragraph around the cursor, excluding any
+     * active word currently being edited/replaced and returning how many buffered entries precede
+     * the active column (so words after the cursor remain in-place to its right).
+     */
+    public static int syncSentenceBufferWithSplit(
+            InputConnection ic,
+            String currentWord,
+            boolean isLiveGuess,
+            ThiccTopBarSentenceBuffer buffer,
+            Map<String, List<String>> alternativesCache
+    ) {
+        if (ic == null || buffer == null) return 0;
         try {
             CharSequence csBefore = ic.getTextBeforeCursor(2000, 0);
             CharSequence csSel = ic.getSelectedText(0);
@@ -442,90 +468,89 @@ public final class ThiccTopBarTextHelper {
             String sel = csSel != null ? csSel.toString() : "";
             String after = csAfter != null ? csAfter.toString() : "";
 
-            boolean hasActiveWord = (currentWord != null && !currentWord.isEmpty());
-            boolean hasAfterOnSameLine = hasTextAfterCursorOnSameLine(ic);
-
-            String targetText;
-            if (hasActiveWord && hasAfterOnSameLine) {
-                // Active word being composed in the middle of a line:
-                // keep only preceding words in history so currentWord stays anchored at the right.
-                int sentStart = 0;
-                for (int i = before.length() - 1; i >= 0; i--) {
-                    char c = before.charAt(i);
-                    if (c == '\n' || c == '\r') {
-                        sentStart = i + 1;
-                        break;
-                    }
-                }
-                targetText = before.substring(sentStart).trim();
-            } else {
-                String fullText = before + sel + after;
-                if (fullText.isEmpty()) {
-                    buffer.clear();
-                    return;
-                }
-                int cursorOffset = before.length();
-                int sentStart = 0;
-                for (int i = cursorOffset - 1; i >= 0; i--) {
-                    char c = fullText.charAt(i);
-                    if (c == '\n' || c == '\r') {
-                        sentStart = i + 1;
-                        break;
-                    }
-                }
-                int sentEnd = fullText.length();
-                for (int i = cursorOffset; i < fullText.length(); i++) {
-                    char c = fullText.charAt(i);
-                    if (c == '\n' || c == '\r') {
-                        sentEnd = i;
-                        break;
-                    }
-                }
-                targetText = fullText.substring(sentStart, sentEnd).trim();
+            String fullText = before + sel + after;
+            if (fullText.isEmpty()) {
+                buffer.clear();
+                return 0;
             }
-
+            int cursorOffset = before.length();
+            int sentStart = 0;
+            for (int i = cursorOffset - 1; i >= 0; i--) {
+                char c = fullText.charAt(i);
+                if (c == '\n' || c == '\r') {
+                    sentStart = i + 1;
+                    break;
+                }
+            }
+            int sentEnd = fullText.length();
+            for (int i = cursorOffset; i < fullText.length(); i++) {
+                char c = fullText.charAt(i);
+                if (c == '\n' || c == '\r') {
+                    sentEnd = i;
+                    break;
+                }
+            }
+            String targetText = fullText.substring(sentStart, sentEnd).trim();
             if (targetText.isEmpty()) {
                 buffer.clear();
-                return;
+                return 0;
             }
 
-            List<TokenParts> allTokens = tokenizeSentence(targetText);
-            List<TokenParts> validTokens = new ArrayList<>();
+            List<TokenParts> validTokens = tokenizeValidTokens(targetText);
+            if (validTokens.isEmpty()) {
+                buffer.clear();
+                return 0;
+            }
 
-            for (TokenParts parts : allTokens) {
-                if (parts.hasWord()) {
-                    validTokens.add(parts);
-                } else if (!validTokens.isEmpty() && isTrailingPunctuationOnly(parts.prefix)) {
-                    // Pure trailing punctuation mark typed after space (e.g. "Hallo .", "Hallo ,", "Hallo !")
-                    int lastIdx = validTokens.size() - 1;
-                    TokenParts prev = validTokens.get(lastIdx);
-                    String combinedSuffix = prev.suffix + parts.prefix;
-                    validTokens.set(lastIdx, new TokenParts(prev.prefix, prev.word, combinedSuffix, prev.prefix + prev.word + combinedSuffix));
+            String paraBeforeCursor = before.substring(Math.min(sentStart, before.length())).trim();
+            List<TokenParts> beforeTokens = paraBeforeCursor.isEmpty()
+                    ? Collections.emptyList()
+                    : tokenizeValidTokens(paraBeforeCursor);
+
+            boolean hasActiveWord = (currentWord != null && !currentWord.isEmpty());
+            int excludeTokenIndex = -1;
+            int splitInValidTokens = validTokens.size();
+
+            if (hasActiveWord) {
+                int idx = beforeTokens.size() - 1;
+                if (idx >= 0 && idx < validTokens.size()) {
+                    excludeTokenIndex = idx;
+                    splitInValidTokens = idx;
+                }
+            } else if (isLiveGuess) {
+                if (!sel.isEmpty()) {
+                    int idx = beforeTokens.size();
+                    if (idx >= 0 && idx < validTokens.size()) {
+                        excludeTokenIndex = idx;
+                        splitInValidTokens = idx;
+                    }
+                } else {
+                    splitInValidTokens = Math.min(beforeTokens.size(), validTokens.size());
                 }
             }
 
-            if (validTokens.isEmpty()) {
-                buffer.clear();
-                return;
+            List<TokenParts> historyTokens = new ArrayList<>(validTokens.size());
+            int splitInHistory = 0;
+            for (int i = 0; i < validTokens.size(); i++) {
+                if (i == excludeTokenIndex) {
+                    continue;
+                }
+                if (i < splitInValidTokens) {
+                    splitInHistory++;
+                }
+                historyTokens.add(validTokens.get(i));
             }
 
-            int historyWordCount = hasActiveWord ? validTokens.size() - 1 : validTokens.size();
+            int historyWordCount = historyTokens.size();
             int windowStart = 0;
             int windowEnd = historyWordCount;
 
             if (historyWordCount > ThiccTopBarSentenceBuffer.MAX_WINDOW_SIZE) {
-                int cursorWordIdx = historyWordCount - 1;
-                if (!hasActiveWord) {
-                    int paraStartInBefore = 0;
-                    for (int i = before.length() - 1; i >= 0; i--) {
-                        char c = before.charAt(i);
-                        if (c == '\n' || c == '\r') {
-                            paraStartInBefore = i + 1;
-                            break;
-                        }
-                    }
-                    String paraBeforeCursor = before.substring(paraStartInBefore);
-                    int wordsBefore = collectWordSpans(paraBeforeCursor).size();
+                int cursorWordIdx;
+                if (hasActiveWord || isLiveGuess) {
+                    cursorWordIdx = Math.max(0, Math.min(historyWordCount - 1, splitInHistory > 0 ? splitInHistory - 1 : 0));
+                } else {
+                    int wordsBefore = collectWordSpans(before.substring(Math.min(sentStart, before.length()))).size();
                     cursorWordIdx = Math.max(0, Math.min(historyWordCount - 1, wordsBefore - (sel.isEmpty() && wordsBefore > 0 ? 1 : 0)));
                     if (!sel.isEmpty()) {
                         cursorWordIdx = Math.max(0, Math.min(historyWordCount - 1, wordsBefore));
@@ -551,7 +576,7 @@ public final class ThiccTopBarTextHelper {
             buffer.clear();
             buffer.setWindowStartWordIndex(windowStart);
             for (int i = windowStart; i < windowEnd; i++) {
-                TokenParts parts = validTokens.get(i);
+                TokenParts parts = historyTokens.get(i);
                 String baseWord = parts.word;
                 String prefix = parts.prefix;
                 String suffix = parts.suffix;
@@ -586,9 +611,28 @@ public final class ThiccTopBarTextHelper {
 
                 buffer.addWord(parts.fullToken, formattedAlts, selIdx);
             }
+            return Math.max(0, Math.min(windowEnd - windowStart, splitInHistory - windowStart));
         } catch (Throwable t) {
             logW(TAG, "syncSentenceBufferFromText error: " + t.getMessage());
+            return buffer.getEntries().size();
         }
+    }
+
+    private static List<TokenParts> tokenizeValidTokens(String text) {
+        List<TokenParts> allTokens = tokenizeSentence(text);
+        List<TokenParts> validTokens = new ArrayList<>(allTokens.size());
+        for (TokenParts parts : allTokens) {
+            if (parts.hasWord()) {
+                validTokens.add(parts);
+            } else if (!validTokens.isEmpty() && isTrailingPunctuationOnly(parts.prefix)) {
+                // Pure trailing punctuation mark typed after space (e.g. "Hallo .", "Hallo ,", "Hallo !")
+                int lastIdx = validTokens.size() - 1;
+                TokenParts prev = validTokens.get(lastIdx);
+                String combinedSuffix = prev.suffix + parts.prefix;
+                validTokens.set(lastIdx, new TokenParts(prev.prefix, prev.word, combinedSuffix, prev.prefix + prev.word + combinedSuffix));
+            }
+        }
+        return validTokens;
     }
 
     public static boolean replaceActiveWordInTextField(View view, String newWord) {

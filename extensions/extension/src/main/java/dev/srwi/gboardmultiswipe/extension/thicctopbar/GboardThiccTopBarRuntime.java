@@ -363,6 +363,26 @@ public final class GboardThiccTopBarRuntime {
         }
     }
 
+    private static void updateMatrixWithSplit(
+            ThiccTopBarView barView,
+            int historyBeforeCount,
+            List<String> currentAlternatives,
+            int preferredSelected,
+            ThiccTopBarView.OnCommitCallback onCommit,
+            ThiccTopBarView.OnActiveWordSwapCallback onActiveSwap,
+            ThiccTopBarView.OnHistoryWordReplaceCallback onHistoryReplace,
+            ThiccTopBarView.OnHistoryWordClickCallback onHistoryClick
+    ) {
+        List<ThiccTopBarSentenceBuffer.WordEntry> allEntries = SENTENCE_BUFFER.getEntries();
+        int split = Math.max(0, Math.min(allEntries.size(), historyBeforeCount));
+        List<ThiccTopBarSentenceBuffer.WordEntry> before = allEntries.subList(0, split);
+        List<ThiccTopBarSentenceBuffer.WordEntry> after = (split < allEntries.size())
+                ? allEntries.subList(split, allEntries.size())
+                : Collections.emptyList();
+        barView.updateMatrix(before, currentAlternatives, preferredSelected, after,
+                onCommit, onActiveSwap, onHistoryReplace, onHistoryClick);
+    }
+
     private static void updateThiccTopBarLiveGuess(
             ViewGroup holderView, String word, boolean excludePendingEditorWord) {
         try {
@@ -370,11 +390,12 @@ public final class GboardThiccTopBarRuntime {
                 return;
             }
             ThiccTopBarView barView = getOrCreateBarView(holderView);
-            if (barView == null || isHistorySelectionSessionActive(holderView, barView)) {
+            if (barView == null) {
                 return;
             }
             thiccTopBarLiveGuessActive = true;
             cancelLiveGuessFallback();
+            int historyBeforeCount = 0;
             if (ThiccTopBarTextHelper.isSentenceEnded(holderView)
                     || ThiccTopBarTextHelper.isInputEmpty(holderView)) {
                 SENTENCE_BUFFER.clear();
@@ -382,17 +403,17 @@ public final class GboardThiccTopBarRuntime {
                 // Only exclude an uncommitted tap prefix (e.g. MultiSwipe Tap+Swipe) that will be
                 // replaced in-place; a previously committed/swiped word without a trailing space
                 // must remain in history during a stock or non-combining swipe.
-                String pendingEditorWord = (excludePendingEditorWord
-                        && !ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView))
+                String pendingEditorWord = excludePendingEditorWord
                         ? ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false)
                         : null;
-                ThiccTopBarTextHelper.syncSentenceBufferFromText(
-                        holderView, pendingEditorWord, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+                historyBeforeCount = ThiccTopBarTextHelper.syncSentenceBufferWithSplit(
+                        holderView, pendingEditorWord, true, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
             }
             ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
             ViewGroup attachTarget = parent != null ? parent : holderView;
-            barView.updateMatrix(
-                    SENTENCE_BUFFER.getEntries(),
+            updateMatrixWithSplit(
+                    barView,
+                    historyBeforeCount,
                     Collections.singletonList(word),
                     0,
                     null,
@@ -717,7 +738,10 @@ public final class GboardThiccTopBarRuntime {
                     return;
                 }
 
-                if (isHistorySelectionSessionActive(holderView, barView)) {
+                boolean isSingleLiveSwipeCandidate = items != null && items.size() == 1
+                        && items.get(0) != null && !items.get(0).isRaw && !items.get(0).isPrediction
+                        && items.get(0).text != null && !items.get(0).text.trim().isEmpty();
+                if (!isSingleLiveSwipeCandidate && isHistorySelectionSessionActive(holderView, barView)) {
                     barView.setVisibility(View.VISIBLE);
                     ThiccTopBarGboardReflector.applyKeyboardBackground(barView, holderView);
                     ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, true);
@@ -810,15 +834,17 @@ public final class GboardThiccTopBarRuntime {
                     cacheAlternativeGroup(words, currentWord);
                 }
 
-                // Update sentence buffer with completed words strictly before current active word
-                ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, currentWord, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+                // Update sentence buffer with completed words, keeping words after the cursor in-place
+                int historyBeforeCount = ThiccTopBarTextHelper.syncSentenceBufferWithSplit(
+                        holderView, currentWord, false, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
 
                 lastComposingCandidates = new ArrayList<>(items);
                 final List<CandidateItem> finalItems = new ArrayList<>(items);
                 final List<String> currentWordsList = new ArrayList<>(words);
 
-                barView.updateMatrix(
-                        SENTENCE_BUFFER.getEntries(),
+                updateMatrixWithSplit(
+                        barView,
+                        historyBeforeCount,
                         words,
                         centerIndex,
                         // onCommit: Tapping active word center pill selects the word if already in editor, or commits
@@ -930,9 +956,11 @@ public final class GboardThiccTopBarRuntime {
                     int centerIdx = Math.max(0, findCaseInsensitiveIndex(words, activeWord));
                     words.set(centerIdx, activeWord);
                     final List<String> currentWordsList = new ArrayList<>(words);
-                    ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, activeWord, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
-                    barView.updateMatrix(
-                            SENTENCE_BUFFER.getEntries(),
+                    int historyBeforeCount = ThiccTopBarTextHelper.syncSentenceBufferWithSplit(
+                            holderView, activeWord, false, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+                    updateMatrixWithSplit(
+                            barView,
+                            historyBeforeCount,
                             words,
                             centerIdx,
                             (selectedIndex, word) -> {
@@ -1829,9 +1857,11 @@ public final class GboardThiccTopBarRuntime {
                 cacheAlternativeGroup(words, activeWord);
                 final List<String> currentWordsList = new ArrayList<>(words);
 
-                ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, activeWord, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
-                barView.updateMatrix(
-                        SENTENCE_BUFFER.getEntries(),
+                int historyBeforeCount = ThiccTopBarTextHelper.syncSentenceBufferWithSplit(
+                        holderView, activeWord, false, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+                updateMatrixWithSplit(
+                        barView,
+                        historyBeforeCount,
                         words,
                         centerIdx,
                         (selectedIndex, word) -> {

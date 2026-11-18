@@ -1000,12 +1000,26 @@ public final class ThiccTopBarTextHelperTest {
         Assert.assertEquals("Hallo", bufInsideWord.getEntries().get(0).committedWord);
         Assert.assertEquals("heute", bufInsideWord.getEntries().get(2).committedWord);
 
-        // Active word being typed mid-line ("Hallo neue| Welt heute"): history holds preceding word ("Hallo")
+        // Active word being typed mid-line ("Hallo neue| Welt heute"): keeps preceding & following words with split=1
         ThiccTopBarSentenceBuffer bufActiveMidLine = new ThiccTopBarSentenceBuffer();
         TestInputConnection icActiveMidLine = new TestInputConnection("Hallo neue Welt heute", 10, 10);
-        ThiccTopBarTextHelper.syncSentenceBufferFromText(icActiveMidLine, "neue", bufActiveMidLine, cache);
-        Assert.assertEquals(1, bufActiveMidLine.getEntries().size());
+        int splitActiveMidLine = ThiccTopBarTextHelper.syncSentenceBufferWithSplit(
+                icActiveMidLine, "neue", false, bufActiveMidLine, cache);
+        Assert.assertEquals(1, splitActiveMidLine);
+        Assert.assertEquals(3, bufActiveMidLine.getEntries().size());
         Assert.assertEquals("Hallo", bufActiveMidLine.getEntries().get(0).committedWord);
+        Assert.assertEquals("Welt", bufActiveMidLine.getEntries().get(1).committedWord);
+        Assert.assertEquals("heute", bufActiveMidLine.getEntries().get(2).committedWord);
+
+        // Live swipe guess replacing a selected mid-sentence word ("Hallo [Welt] heute"): keeps "Hallo" before & "heute" after
+        ThiccTopBarSentenceBuffer bufLiveMidLine = new ThiccTopBarSentenceBuffer();
+        TestInputConnection icLiveMidLine = new TestInputConnection("Hallo Welt heute", 6, 10);
+        int splitLiveMidLine = ThiccTopBarTextHelper.syncSentenceBufferWithSplit(
+                icLiveMidLine, null, true, bufLiveMidLine, cache);
+        Assert.assertEquals(1, splitLiveMidLine);
+        Assert.assertEquals(2, bufLiveMidLine.getEntries().size());
+        Assert.assertEquals("Hallo", bufLiveMidLine.getEntries().get(0).committedWord);
+        Assert.assertEquals("heute", bufLiveMidLine.getEntries().get(1).committedWord);
 
         // Cursor after newline at start of second paragraph ("Alter Satz.\n|Hallo Welt heute")
         ThiccTopBarSentenceBuffer bufSecondPara = new ThiccTopBarSentenceBuffer();
