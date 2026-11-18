@@ -64,6 +64,8 @@ public class ThiccTopBarView extends HorizontalScrollView {
     private final VerticalWordWheelView currentWheelView;
     private final List<VerticalWordWheelView> historyWheels = new ArrayList<>();
     private final List<String> displayedColumnWords = new ArrayList<>();
+    private OnHistoryWordReplaceCallback activeHistoryReplaceCallback;
+    private OnHistoryWordClickCallback activeHistoryClickCallback;
     private int selectedHistoryIndex = -1;
     private float scaleFactor = GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE;
     private float swipeSensitivity = GboardThiccTopBarSettings.DEFAULT_SWIPE_SENSITIVITY;
@@ -228,6 +230,8 @@ public class ThiccTopBarView extends HorizontalScrollView {
                              OnActiveWordSwapCallback onActiveSwap,
                              OnHistoryWordReplaceCallback onHistoryReplace,
                              OnHistoryWordClickCallback onHistoryClick) {
+        this.activeHistoryReplaceCallback = onHistoryReplace;
+        this.activeHistoryClickCallback = onHistoryClick;
         final boolean wasVisible = (getVisibility() == View.VISIBLE);
         final List<String> prevWords = wasVisible
                 ? new ArrayList<>(displayedColumnWords)
@@ -322,6 +326,8 @@ public class ThiccTopBarView extends HorizontalScrollView {
     public void updateHistoryOnly(List<ThiccTopBarSentenceBuffer.WordEntry> history,
                                   OnHistoryWordReplaceCallback onHistoryReplace,
                                   OnHistoryWordClickCallback onHistoryClick) {
+        this.activeHistoryReplaceCallback = onHistoryReplace;
+        this.activeHistoryClickCallback = onHistoryClick;
         final boolean wasVisible = (getVisibility() == View.VISIBLE);
         final List<String> prevWords = wasVisible
                 ? new ArrayList<>(displayedColumnWords)
@@ -375,8 +381,8 @@ public class ThiccTopBarView extends HorizontalScrollView {
             // Tapping anywhere in the history column marks/selects that word in text field
             historyWheel.setOnCenterClickListener((idx, word) -> {
                 selectHistoryWord(historyColIndex);
-                if (onHistoryClick != null) {
-                    onHistoryClick.onHistoryWordClicked(historyColIndex, word);
+                if (activeHistoryClickCallback != null) {
+                    activeHistoryClickCallback.onHistoryWordClicked(historyColIndex, word);
                 }
             });
 
@@ -385,8 +391,8 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 String oldWord = entry.getSelectedWord();
                 entry.selectedIndex = newIndex;
                 entry.committedWord = newWord;
-                if (onHistoryReplace != null && oldWord != null && !oldWord.equals(newWord)) {
-                    onHistoryReplace.onHistoryWordReplaced(historyColIndex, oldWord, newWord);
+                if (activeHistoryReplaceCallback != null && oldWord != null && !oldWord.equals(newWord)) {
+                    activeHistoryReplaceCallback.onHistoryWordReplaced(historyColIndex, oldWord, newWord);
                 }
             });
 
