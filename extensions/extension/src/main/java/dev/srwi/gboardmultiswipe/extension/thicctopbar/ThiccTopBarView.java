@@ -245,7 +245,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 && matchesHistoryColumns(history)) {
             currentWheelView.setAlpha(1.0f);
             currentWheelView.setIsActiveWord(true);
-            currentWheelView.setAlternatives(currentAlternatives, preferredSelected);
+            currentWheelView.setAlternatives(currentAlternatives, preferredSelected, true);
             currentWheelView.setOnWordActionListener((newIndex, newWord) -> {
                 if (onActiveSwap != null) {
                     onActiveSwap.onActiveWordSwapped(newIndex, newWord);
