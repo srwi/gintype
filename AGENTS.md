@@ -21,7 +21,7 @@ This document provides portable instructions for developers, CI pipelines, and A
 - **Coexistence**: Can be applied alone or combined with other Morphe/ReVanced patch bundles without settings collisions or provider crashes (enable `Package Rename` in at most one bundle).
 - **Language**: English only (all code, resource strings, tests, commit messages, and documentation).
 - **Module Guides**: See [`patches/AGENTS.md`](patches/AGENTS.md) for patch registry, target bindings compiler, and Runtime ABI contracts, and [`extensions/AGENTS.md`](extensions/AGENTS.md) for MultiSwipe/Kinetica runtime hooks, Thicc Top Bar reflection, and settings codegen.
-- **Behavioral Specifications**: [`docs/multiswipe-integration.md`](docs/multiswipe-integration.md) is the authoritative behavioral specification for how MultiSwipe integrates into Gboard (`MS-01`–`MS-19`). All code and tests for MultiSwipe integration MUST conform to this document.
+- **Behavioral Specifications**: [`docs/multiswipe-integration.md`](docs/multiswipe-integration.md) is the authoritative behavioral specification for how MultiSwipe integrates into Gboard (`MS-01`–`MS-21`). All code and tests for MultiSwipe integration MUST conform to this document.
 
 ---
 

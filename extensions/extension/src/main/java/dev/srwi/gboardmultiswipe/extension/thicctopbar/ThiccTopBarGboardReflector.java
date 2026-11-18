@@ -163,6 +163,11 @@ public final class ThiccTopBarGboardReflector {
         return dark ? 0xFFFFFF : (resolveNormalAccentColor(context, false) & 0x00ffffff);
     }
 
+    private static final Object SAMPLE_LOCK = new Object();
+    private static final int SAMPLE_SCRATCH_SIZE = 8;
+    private static Bitmap sampleScratchBitmap;
+    private static Canvas sampleScratchCanvas;
+
     static int sampleDrawableCenterRgb(Drawable d) {
         if (d == null) return -1;
         try {
@@ -173,19 +178,27 @@ public final class ThiccTopBarGboardReflector {
                 }
                 return -1;
             }
-            int w = Math.max(1, Math.min(8, d.getBounds().width() > 0 ? d.getBounds().width() : d.getIntrinsicWidth()));
-            int h = Math.max(1, Math.min(8, d.getBounds().height() > 0 ? d.getBounds().height() : d.getIntrinsicHeight()));
-            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bmp);
-            int origL = d.getBounds().left;
-            int origT = d.getBounds().top;
-            int origR = d.getBounds().right;
-            int origB = d.getBounds().bottom;
-            d.setBounds(0, 0, w, h);
-            d.draw(canvas);
-            d.setBounds(origL, origT, origR, origB);
-            int pixel = bmp.getPixel(w / 2, h / 2);
-            bmp.recycle();
+            int w = Math.max(1, Math.min(SAMPLE_SCRATCH_SIZE,
+                    d.getBounds().width() > 0 ? d.getBounds().width() : d.getIntrinsicWidth()));
+            int h = Math.max(1, Math.min(SAMPLE_SCRATCH_SIZE,
+                    d.getBounds().height() > 0 ? d.getBounds().height() : d.getIntrinsicHeight()));
+            int pixel;
+            synchronized (SAMPLE_LOCK) {
+                if (sampleScratchBitmap == null || sampleScratchBitmap.isRecycled()) {
+                    sampleScratchBitmap = Bitmap.createBitmap(
+                            SAMPLE_SCRATCH_SIZE, SAMPLE_SCRATCH_SIZE, Bitmap.Config.ARGB_8888);
+                    sampleScratchCanvas = new Canvas(sampleScratchBitmap);
+                }
+                sampleScratchCanvas.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR);
+                int origL = d.getBounds().left;
+                int origT = d.getBounds().top;
+                int origR = d.getBounds().right;
+                int origB = d.getBounds().bottom;
+                d.setBounds(0, 0, w, h);
+                d.draw(sampleScratchCanvas);
+                d.setBounds(origL, origT, origR, origB);
+                pixel = sampleScratchBitmap.getPixel(w / 2, h / 2);
+            }
             if (((pixel >>> 24) & 0xff) >= 128) {
                 return pixel & 0x00ffffff;
             }
@@ -250,6 +263,90 @@ public final class ThiccTopBarGboardReflector {
         return 0.299f * r + 0.587f * g + 0.114f * b;
     }
 
+    private static final class HolderMethodCache {
+        final Class<?> holderClass;
+        final Method slotCountMethod;
+        final Method softKeyAtSlotMethod;
+        final Method candidateAtSlotMethod;
+        final Method extractFromKeyMethod;
+        final Method declaredCountMethodA;
+
+        HolderMethodCache(
+                Class<?> holderClass,
+                Method slotCountMethod,
+                Method softKeyAtSlotMethod,
+                Method candidateAtSlotMethod,
+                Method extractFromKeyMethod,
+                Method declaredCountMethodA
+        ) {
+            this.holderClass = holderClass;
+            this.slotCountMethod = slotCountMethod;
+            this.softKeyAtSlotMethod = softKeyAtSlotMethod;
+            this.candidateAtSlotMethod = candidateAtSlotMethod;
+            this.extractFromKeyMethod = extractFromKeyMethod;
+            this.declaredCountMethodA = declaredCountMethodA;
+        }
+    }
+
+    private static volatile HolderMethodCache cachedHolderMethods;
+
+    private static HolderMethodCache resolveHolderMethods(Class<?> holderClass) {
+        HolderMethodCache cached = cachedHolderMethods;
+        if (cached != null && cached.holderClass == holderClass) {
+            return cached;
+        }
+        Method slotCountMethod = null;
+        Method softKeyAtSlotMethod = null;
+        Method candidateAtSlotMethod = null;
+        Method extractFromKeyMethod = null;
+        Method declaredCountMethodA = null;
+
+        // Search by signature to survive obfuscation changes in new Gboard versions
+        for (Method m : holderClass.getMethods()) {
+            if (m.getParameterCount() == 0 && m.getReturnType() == int.class && ("a".equals(m.getName()) || slotCountMethod == null)) {
+                slotCountMethod = m;
+            } else if (m.getParameterCount() == 1 && m.getParameterTypes()[0] == int.class && View.class.isAssignableFrom(m.getReturnType())) {
+                softKeyAtSlotMethod = m;
+            } else if (m.getParameterCount() == 1 && "z".equals(m.getName())) {
+                extractFromKeyMethod = m;
+            }
+        }
+
+        try {
+            // Gboard slot candidate getter (often named 'R' taking int)
+            candidateAtSlotMethod = holderClass.getDeclaredMethod("R", int.class);
+            candidateAtSlotMethod.setAccessible(true);
+        } catch (Throwable ignored) {
+            for (Method m : holderClass.getDeclaredMethods()) {
+                if (m.getParameterCount() == 1 && m.getParameterTypes()[0] == int.class
+                        && m.getReturnType() != void.class && !View.class.isAssignableFrom(m.getReturnType())) {
+                    m.setAccessible(true);
+                    candidateAtSlotMethod = m;
+                    break;
+                }
+            }
+        }
+
+        try {
+            Method mA = holderClass.getDeclaredMethod("a");
+            if (mA.getReturnType() == int.class) {
+                mA.setAccessible(true);
+                declaredCountMethodA = mA;
+            }
+        } catch (Throwable ignored) {
+        }
+
+        HolderMethodCache created = new HolderMethodCache(
+                holderClass,
+                slotCountMethod,
+                softKeyAtSlotMethod,
+                candidateAtSlotMethod,
+                extractFromKeyMethod,
+                declaredCountMethodA);
+        cachedHolderMethods = created;
+        return created;
+    }
+
     /**
      * Extracts candidates directly from the holder view's slots (0, 1, 2) where
      * Gboard has assigned them. Falls back to candidateListObj if slots are empty.
@@ -259,36 +356,11 @@ public final class ThiccTopBarGboardReflector {
         List<GboardThiccTopBarRuntime.CandidateItem> items = new ArrayList<>();
 
         try {
-            Method slotCountMethod = null;
-            Method softKeyAtSlotMethod = null;
-            Method candidateAtSlotMethod = null;
-            Method extractFromKeyMethod = null;
-
-            // Search by signature to survive obfuscation changes in new Gboard versions
-            for (Method m : holderView.getClass().getMethods()) {
-                if (m.getParameterCount() == 0 && m.getReturnType() == int.class && ("a".equals(m.getName()) || slotCountMethod == null)) {
-                    slotCountMethod = m;
-                } else if (m.getParameterCount() == 1 && m.getParameterTypes()[0] == int.class && View.class.isAssignableFrom(m.getReturnType())) {
-                    softKeyAtSlotMethod = m;
-                } else if (m.getParameterCount() == 1 && "z".equals(m.getName())) {
-                    extractFromKeyMethod = m;
-                }
-            }
-
-            try {
-                // Gboard slot candidate getter (often named 'R' taking int)
-                candidateAtSlotMethod = holderView.getClass().getDeclaredMethod("R", int.class);
-                candidateAtSlotMethod.setAccessible(true);
-            } catch (Throwable ignored) {
-                for (Method m : holderView.getClass().getDeclaredMethods()) {
-                    if (m.getParameterCount() == 1 && m.getParameterTypes()[0] == int.class
-                            && m.getReturnType() != void.class && !View.class.isAssignableFrom(m.getReturnType())) {
-                        m.setAccessible(true);
-                        candidateAtSlotMethod = m;
-                        break;
-                    }
-                }
-            }
+            HolderMethodCache methods = resolveHolderMethods(holderView.getClass());
+            Method slotCountMethod = methods.slotCountMethod;
+            Method softKeyAtSlotMethod = methods.softKeyAtSlotMethod;
+            Method candidateAtSlotMethod = methods.candidateAtSlotMethod;
+            Method extractFromKeyMethod = methods.extractFromKeyMethod;
 
             int count = 0;
             if (slotCountMethod != null) {
@@ -825,9 +897,8 @@ public final class ThiccTopBarGboardReflector {
             return -1;
         }
         try {
-            Method countMethod = holderView.getClass().getDeclaredMethod("a");
-            if (countMethod.getReturnType() == int.class) {
-                countMethod.setAccessible(true);
+            Method countMethod = resolveHolderMethods(holderView.getClass()).declaredCountMethodA;
+            if (countMethod != null) {
                 Object result = countMethod.invoke(holderView);
                 if (result instanceof Integer count) {
                     return count;

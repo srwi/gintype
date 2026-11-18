@@ -1201,6 +1201,40 @@ public class MultiSwipeIntegrationTest {
         assertEquals("Seitenleiste", editor.text());
     }
 
+    @Test
+    public void tapToMultiSwipeOffWithSingleTouchCombineOnDoesNotMergePureTaps() {
+        // singleTouchCombineDelayMs = 150ms (ON), tapToMultiSwipeDelayMs = 0ms (OFF)
+        SettingsSnapshot settings = new SettingsSnapshot(
+                true, true, 800, 150, false, false, 0,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
+        List<Integer> decodedTokenCounts = new ArrayList<>();
+        DecodePort decoder = (tokens, prev) -> {
+            decodedTokenCounts.add(tokens.size());
+            return Collections.singletonList(cand("sicher", 1f));
+        };
+
+        KeySpec s = key('s');
+        KeySpec o = key('o');
+        session.onActionDown(0, s.centerX, s.centerY, 1000L, settings, editor, callbacks);
+        session.onActionUp(1030L, settings, editor, decoder, callbacks);
+        editor.stockType("s");
+
+        session.onActionDown(0, o.centerX, o.centerY, 1070L, settings, editor, callbacks);
+        session.onActionUp(1100L, settings, editor, decoder, callbacks);
+        editor.stockType("o");
+
+        // 2-finger MultiSwipe within 80ms (< 150ms) must NOT absorb "so" when tapToMultiSwipe is OFF.
+        session.onActionDown(0, letterSX, letterSY, 1180L, settings, editor, callbacks);
+        session.onPointerDown(1, letterLX, letterLY, 1200L);
+        session.activePointers.get(0).addPoint(letterLX, letterLY, 1220L, session.geometry);
+        session.onPointerUp(0, letterLX, letterLY, 1230L, true, callbacks);
+        session.onActionUp(1250L, settings, editor, decoder, callbacks);
+
+        assertEquals(1, decodedTokenCounts.size());
+        assertEquals(2, (int) decodedTokenCounts.get(0));
+        assertEquals("so sicher", editor.text());
+    }
+
     private boolean performBackspaceTap(
             long downMs,
             SettingsSnapshot settings,

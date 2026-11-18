@@ -24,7 +24,7 @@ extensions/extension/src/main/
 ## 2. Feature Subsystems
 
 ### MultiSwipe (`multiswipe/`)
-- **Behavioral Specification**: See [`docs/multiswipe-integration.md`](../docs/multiswipe-integration.md) (`MS-01`–`MS-19`) for the authoritative Gboard integration rules and test traceability matrix. Any code change that alters a defined `MS-*` rule requires **explicit user confirmation** and synchronized updates to the spec and tests.
+- **Behavioral Specification**: See [`docs/multiswipe-integration.md`](../docs/multiswipe-integration.md) (`MS-01`–`MS-21`) for the authoritative Gboard integration rules and test traceability matrix. Any code change that alters a defined `MS-*` rule requires **explicit user confirmation** and synchronized updates to the spec and tests.
 - **Runtime Hooks (`GboardMultiSwipeRuntime.java`)**:
   - Coordinates with bytecode hooks in `MotionEventHandlerManager`, `AbstractGestureMotionEventHandler`, and `BasicMotionEventHandler` to intercept two-finger touchdown (`ACTION_POINTER_DOWN`) before Gboard's chording lock cancels gesture tracking.
   - Extracts exact subpixel key centers, bounds, and `SoftKeyView` labels from Gboard's native geometry field (`Ltjz;` via reflection) with zero static grid guesswork.

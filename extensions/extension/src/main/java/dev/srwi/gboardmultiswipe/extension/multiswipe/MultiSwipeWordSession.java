@@ -631,10 +631,19 @@ final class MultiSwipeWordSession {
         }
 
         boolean canPromoteWith(List<MultiSwipeInputToken> completedTokens, boolean sawNonLetter) {
+            return canPromoteWith(completedTokens, sawNonLetter, true);
+        }
+
+        boolean canPromoteWith(
+                List<MultiSwipeInputToken> completedTokens,
+                boolean sawNonLetter,
+                boolean allowTapOnlyPrefix
+        ) {
             if (sawNonLetter || tokens.isEmpty() || completedTokens == null || completedTokens.isEmpty()) {
                 return false;
             }
             if (hasSwipeToken) return true;
+            if (!allowTapOnlyPrefix) return false;
             for (int i = 0; i < completedTokens.size(); i++) {
                 if (completedTokens.get(i).kind == MultiSwipeInputToken.Kind.SWIPE) {
                     return true;
@@ -1209,11 +1218,13 @@ final class MultiSwipeWordSession {
             callbacks.onClearTrailManagerActive();
         }
 
+        boolean allowTapOnlySingleCombine = !settings.autoSpaceEnabled || settings.tapToMultiSwipeDelayMs > 0;
         boolean promoteMultiTouchPassive = !multiswipeWordActive
                 && passiveTapBuffer.canPromoteMultiTouchSwipe(completedTokens);
         boolean promoteSingleTouchCombine = !multiswipeWordActive
                 && (!settings.autoSpaceEnabled || settings.singleTouchCombineDelayMs > 0)
-                && singleTouchCombineBuffer.canPromoteWith(completedTokens, sawNonLetterThisSession);
+                && singleTouchCombineBuffer.canPromoteWith(
+                        completedTokens, sawNonLetterThisSession, allowTapOnlySingleCombine);
         boolean shouldDecodeNow = ((isMultiSwipeGesture || promoteMultiTouchPassive) && hasSwipe)
                 || promoteSingleTouchCombine;
 

@@ -10,7 +10,7 @@ This document is the **single source of truth** for how **MultiSwipe** integrate
 
 ## 1. Change Control & Review Policy
 
-1. **Authoritative Behavior Contract:** The rules (`MS-01` through `MS-19`) in this document define the intended runtime behavior of the MultiSwipe integration. Code and tests must conform to this specification.
+1. **Authoritative Behavior Contract:** The rules (`MS-01` through `MS-21`) in this document define the intended runtime behavior of the MultiSwipe integration. Code and tests must conform to this specification.
 2. **Explicit User Confirmation Required for Behavioral Changes:**
    - Whenever a proposed code change (feature, bugfix, refactor, or default/threshold adjustment) would **alter, add, remove, or contradict** any rule defined in this document, **the user must explicitly confirm the specification change** before the behavioral change is accepted.
    - Any agent or contributor proposing such a change must clearly identify which `MS-*` rule(s) are affected, describe the old vs. new behavior, and ask for explicit confirmation so previously defined behaviors are never broken accidentally.
@@ -144,10 +144,11 @@ flowchart TD
 
 #### `MS-09` — Sequential Single-Touch Combine Buffer
 - **Rule:** Sequential single-touch strokes combine into one MultiSwipe word if at least one stroke is a `SWIPE`, rolling back stock Gboard's intermediate text:
-  - **When `autoSpaceEnabled == true`:** Active only when `pref_multiswipe_single_touch_combine_delay_ms > 0` (default `150ms`, range `0..500ms`) and strokes are separated by `<= combineDelayMs`.
+  - **When `autoSpaceEnabled == true`:** Active only when `pref_multiswipe_single_touch_combine_delay_ms > 0` (slider range `50..500ms`, default `150ms`; boolean toggle `pref_multiswipe_single_touch_combine_enabled` yields `0ms` when disabled) and strokes are separated by `<= combineDelayMs`.
   - **When `autoSpaceEnabled == false`:** Timeout settings have no effect (`combineDelayMs` is ignored even if `0`); consecutive single-touch letter strokes remain combinable across arbitrarily long pauses until an explicit word boundary (Space, Enter, Backspace, punctuation, or cursor navigation). Even if a promoted continuation yields `0` Kinetica candidates, stock Gboard dispatch is suppressed so no unintended second Gboard word appears (`MS-03`).
 - **Guards:**
   - Never promotes pure tap-only sequences with zero swipes.
+  - When `autoSpaceEnabled == true` and `tapToMultiSwipeDelayMs == 0` (*"Continue tapped letters with a swipe"* disabled), `SingleTouchCombineBuffer` does **not** promote tap-only prefixes into a following swipe; it only promotes sequences that already contain at least one `SWIPE` token in the buffer.
   - Cleared immediately if the inter-stroke gap exceeds `combineDelayMs` (only when `autoSpaceEnabled == true`), `ACTION_DOWN` is outside the letter area, `sawNonLetterThisSession` is `true`, or the typed text since baseline ends with `' '` (e.g., stock Gboard committed `"Seiten "`), contains non-letter/non-space characters, or reflects cursor navigation (`isCombinePrefix` / `extractTypedPrefixSinceBaseline`).
   - Allows internal spaces within the prefix (e.g., `" Mi r"`) so multi-stroke split candidates can still roll back cleanly.
   - *Example (Auto-Space off):* Swipe `"ha"` → long pause → tap `'l'` → long pause → swipe `"lo"` → decodes `"hallo"`. Swipe `"ha"` → Space → swipe `"lo"` → Space clears buffer, producing `"ha lo"` via stock Gboard.
@@ -248,8 +249,8 @@ flowchart TD
 
 #### `MS-19` — Settings Persistence, UI Visibility, Clamping & Trace Diagnostics
 - **Rule:** All MultiSwipe settings persist in Gboard shared preferences with strict range sanitization, defaults reset, conditional timeout UI visibility, and opt-in JSONL telemetry:
-  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceBeforeWord=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineDelayMs=150` `[0..500]`, `tapToMultiSwipeDelayMs=750` `[0..2000]`, `spacebarTimerIndicator=false`, `wordReadyVibration=false`, `backspaceMode="whole_word"` (`{"whole_word", "last_input"}`), `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
-  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space before next word (Gboard style)`, `Auto-space delay`, `Single-finger combine timeout`, `Tap-to-MultiSwipe timeout`, `Spacebar timer indicator`, and `Vibrate when ready for new word` rows are hidden/disabled in the MultiSwipe settings screen because auto-space modes and timers do not apply when Auto-Space is off. The `Backspace behavior` row remains visible regardless of `autoSpaceEnabled`.
+  - **Defaults & Bounds:** `enabled=true`, `autoSpace=true`, `autoSpaceBeforeWord=true`, `autoSpaceDelayMs=300` `[0..2000]`, `singleTouchCombineEnabled=true`, `singleTouchCombineDelayMs=150` `[50..500]` (effective `0` when disabled), `tapToMultiSwipeEnabled=true`, `tapToMultiSwipeDelayMs=750` `[100..2000]` (effective `0` when disabled), `spacebarTimerIndicator=false`, `wordReadyVibration=false`, `backspaceMode="whole_word"` (`{"whole_word", "last_input"}`), `beamWidth=256` `[32..1024]`, `freqWeightFloor=0.25` `[0.05..1.0]`, `geoExponent=3.75` `[1.0..8.0]`, `beamFreqWeight=0.50` `[0.0..2.0]`, `traceLogging=false`.
+  - **UI Visibility:** When `autoSpaceEnabled == false`, the `Auto-space before next word (Gboard style)`, `Auto-space delay`, `Spacebar timer indicator`, and `Vibrate when ready for new word` rows are hidden/disabled in the MultiSwipe settings screen. `Single-finger combine timeout` and `Tap-to-MultiSwipe timeout` live in the `Gestures & Timing` section and are enabled based on `enabled && singleTouchCombineEnabled` and `enabled && tapToMultiSwipeEnabled`. The `Backspace behavior` row remains visible regardless of `autoSpaceEnabled`.
   - **Trace Logging:** Disabled by default. When enabled, emits `geom` (once per unique geometry hash), `word`, `pass` (skipped stock gestures), and `commit` JSONL records to logcat (`GboardMultiSwipeTrace`) and rolling `multiswipe_trace.jsonl` files, exportable by trailing minute window (`1..1440`, or `0` for all) while retaining referenced `geom` headers.
 - **Implementation:** `GboardMultiSwipeSettings`, `GboardMultiSwipeSettingsFeature`, `GboardMultiSwipeTraceLogger`.
 
@@ -304,7 +305,7 @@ flowchart TD
 
 ## 5. Notes & Residual Runtime-Only Boundaries
 
-All pure-JVM integration rules (`MS-01`–`MS-20`) are aligned and covered by automated tests. Only three Android-framework interactions remain runtime-verified on device rather than pure JVM:
+All pure-JVM integration rules (`MS-01`–`MS-21`) are aligned and covered by automated tests. Only three Android-framework interactions remain runtime-verified on device rather than pure JVM:
 - Android `GestureOverlayView` / `TrailManager` (`SparseArray`) visual drawing (`MS-07` index sanitization).
 - Android `UserDictionary.Words` `ContentResolver` IPC query (`MS-17`).
 - Android `ViewOverlay` / `ValueAnimator` spacebar timer indicator drawing (`MS-20`).
