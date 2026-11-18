@@ -169,9 +169,9 @@ flowchart TD
 ### D. Text Context, Spacing, Punctuation & Compound Attachment
 
 #### `MS-11` — Pre-Word Leading Space Insertion
-- **Rule:** When starting a new MultiSwipe word (`!leadingSpaceEvaluated`), if `autoSpaceEnabled == true` and the text immediately before the cursor at `ACTION_DOWN` ends with a letter or digit (`Character.isLetterOrDigit`), MultiSwipe commits a leading `" "` before the composing word unless suppressed by `MS-13`.
-- **Rationale:** Stock Gboard single-finger swipes and taps leave no trailing space after a word; without a leading space, `"es"` followed by MultiSwipe `"dir"` would become `"esdir"` instead of `"es dir"`.
-- **Details:** No leading space is inserted at the start of a field, after whitespace/newlines, after opening punctuation like `"("`, or when `autoSpaceEnabled == false`.
+- **Rule:** When starting a new MultiSwipe word (`!leadingSpaceEvaluated`), if `autoSpaceEnabled == true` and the text immediately before the cursor at `ACTION_DOWN` ends with a letter, digit (`Character.isLetterOrDigit`), or closing sentence punctuation (`.`, `,`, `!`, `?`, `;`, `:`), MultiSwipe commits a leading `" "` before the composing word unless suppressed by `MS-13`.
+- **Rationale:** Stock Gboard single-finger swipes and taps leave no trailing space after a word or punctuation; without a leading space, `"es"` or `"Hallo,"` followed by MultiSwipe `"dir"` / `"Welt"` would become `"esdir"` / `"Hallo,Welt"` instead of `"es dir"` / `"Hallo, Welt"`.
+- **Details:** No leading space is inserted at the start of a field, after whitespace/newlines, after opening/joining punctuation like `"("`, `"\""`, `"-"`, `"/"`, or when `autoSpaceEnabled == false`.
 - **Implementation:** `MultiSwipeWordSession.shouldPrependLeadingSpace`, `GboardMultiSwipeRuntime.shouldPrependLeadingSpace`.
 
 #### `MS-12` — Post-Word Autospace & Punctuation Retraction (`eatBefore`)

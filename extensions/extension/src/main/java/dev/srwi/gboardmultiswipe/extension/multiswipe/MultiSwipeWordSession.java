@@ -1990,12 +1990,16 @@ final class MultiSwipeWordSession {
         return s.substring(s.length() - TEXT_SNAPSHOT_CHARS);
     }
 
+    static boolean isSpaceAfterPunctuation(char c) {
+        return c == '.' || c == ',' || c == '!' || c == '?' || c == ';' || c == ':';
+    }
+
     static boolean shouldPrependLeadingSpace(String baselineBeforeText, boolean autoSpaceEnabled) {
         if (!autoSpaceEnabled || baselineBeforeText == null || baselineBeforeText.isEmpty()) {
             return false;
         }
         char last = baselineBeforeText.charAt(baselineBeforeText.length() - 1);
-        return Character.isLetterOrDigit(last);
+        return Character.isLetterOrDigit(last) || isSpaceAfterPunctuation(last);
     }
 
     /**

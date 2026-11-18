@@ -216,10 +216,19 @@ public class GboardMultiSwipeSettingsTest {
         assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo wie geht es", true));
         assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Mi r", true));
         assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Nummer 42", true));
+        assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo.", true));
+        assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo,", true));
+        assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo!", true));
+        assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo?", true));
+        assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo;", true));
+        assertTrue(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo:", true));
 
         assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo wie geht es ", true));
         assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo\n", true));
         assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("(", true));
+        assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("\"", true));
+        assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("E-", true));
+        assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("a/", true));
         assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("", true));
         assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace(null, true));
         assertFalse(GboardMultiSwipeRuntime.shouldPrependLeadingSpace("Hallo wie geht es", false));

@@ -1235,6 +1235,18 @@ public class MultiSwipeIntegrationTest {
         assertEquals("so sicher", editor.text());
     }
 
+    @Test
+    public void multiSwipeAfterClosingPunctuationPrependsLeadingSpace() {
+        SettingsSnapshot settings = new SettingsSnapshot(
+                true, true, 800, 150, false, true, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE);
+        editor.stockType("Hallo,");
+        DecodePort decoder = (tokens, prev) -> Collections.singletonList(cand("Welt", 1f));
+
+        performTwoFingerSwipe(1000L, settings, decoder);
+        assertEquals("Hallo, Welt", editor.text());
+    }
+
     private boolean performBackspaceTap(
             long downMs,
             SettingsSnapshot settings,
