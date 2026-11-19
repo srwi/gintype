@@ -2248,6 +2248,16 @@ public final class GboardMultiSwipeRuntime {
                 else if (n.contains("height")) nativeLayoutHeightArrField = f;
             }
         }
+        StringBuilder missing = new StringBuilder();
+        if (nativeLayoutKeysArrayField == null) appendMissingMember(missing, "keysArray");
+        if (nativeLayoutCenterXField == null) appendMissingMember(missing, "centerX(f)");
+        if (nativeLayoutCenterYField == null) appendMissingMember(missing, "centerY(g)");
+        if (nativeLayoutWidthArrField == null) appendMissingMember(missing, "widthArr(d)");
+        if (nativeLayoutHeightArrField == null) appendMissingMember(missing, "heightArr(e)");
+        if (missing.length() > 0) {
+            Log.w(TAG, "probeNativeLayoutClass(" + layoutCls.getSimpleName()
+                    + ") missing fields: " + missing);
+        }
     }
 
     private static void resolveNativeCoordinateArraysIfNeeded(Object nativeLayout, int count) {
@@ -2608,11 +2618,46 @@ public final class GboardMultiSwipeRuntime {
                     }
                     cur = cur.getSuperclass();
                 }
-            } catch (Throwable ignored) {
+                logMissingHandlerMembers(handlerClass);
+            } catch (Throwable t) {
+                Log.w(TAG, "probeHandlerFields(" + handlerClass.getSimpleName() + ") failed", t);
             } finally {
                 probedClasses.add(handlerClass);
             }
         }
+    }
+
+    private static void logMissingHandlerMembers(Class<?> handlerClass) {
+        StringBuilder missing = new StringBuilder();
+        if (contextField == null) appendMissingMember(missing, "context");
+        if (keyboardViewField == null) appendMissingMember(missing, "SoftKeyboardView");
+        if (gestureOverlayViewField == null) appendMissingMember(missing, "GestureOverlayView");
+        if (gestureActiveFlagField == null) appendMissingMember(missing, "gestureActiveFlag(v)");
+        if (letterStartedField == null) appendMissingMember(missing, "letterStarted(u)");
+        if (gestureResetField == null) appendMissingMember(missing, "gestureReset(Q)");
+        if (softKeyMapField == null) appendMissingMember(missing, "softKeyMap(d)");
+        if (trailManagerField == null) appendMissingMember(missing, "trailManager(U)");
+        if (trailManagerField != null) {
+            if (trailActiveBoolField == null) appendMissingMember(missing, "trailManager.a");
+            if (trailSparseArrayField == null) appendMissingMember(missing, "trailManager.b");
+            if (trailStartIndexArrayField == null) appendMissingMember(missing, "trailManager.c");
+            if (trailFadingListField == null) appendMissingMember(missing, "trailManager.e");
+            if (recyclePointsMethod == null) appendMissingMember(missing, "trailManager.e(List)");
+        }
+        if (hostBridgeField == null) appendMissingMember(missing, "hostBridge(p)");
+        if (hostBridgeField != null && claimOwnershipMethod == null) {
+            appendMissingMember(missing, "hostBridge.m()");
+        }
+        if (nativeLayoutDataField == null) appendMissingMember(missing, "nativeLayoutData");
+        if (missing.length() > 0) {
+            Log.w(TAG, "probeHandlerFields(" + handlerClass.getSimpleName()
+                    + ") missing members: " + missing);
+        }
+    }
+
+    private static void appendMissingMember(StringBuilder sb, String name) {
+        if (sb.length() > 0) sb.append(", ");
+        sb.append(name);
     }
 
     private static boolean looksLikeNativeLayoutData(Class<?> type) {

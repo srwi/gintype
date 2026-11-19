@@ -355,6 +355,28 @@ public final class ThiccTopBarGboardReflector {
                 extractFromKeyMethod,
                 declaredCountMethodA);
         cachedHolderMethods = created;
+        StringBuilder missing = new StringBuilder();
+        if (slotCountMethod == null) missing.append("slotCount");
+        if (softKeyAtSlotMethod == null) {
+            if (missing.length() > 0) missing.append(", ");
+            missing.append("softKeyAtSlot");
+        }
+        if (candidateAtSlotMethod == null) {
+            if (missing.length() > 0) missing.append(", ");
+            missing.append("candidateAtSlot");
+        }
+        if (extractFromKeyMethod == null) {
+            if (missing.length() > 0) missing.append(", ");
+            missing.append("extractFromKey(z)");
+        }
+        if (declaredCountMethodA == null) {
+            if (missing.length() > 0) missing.append(", ");
+            missing.append("declaredCount(a)");
+        }
+        if (missing.length() > 0) {
+            Log.w(TAG, "resolveHolderMethods(" + holderClass.getSimpleName()
+                    + ") missing methods: " + missing);
+        }
         return created;
     }
 
