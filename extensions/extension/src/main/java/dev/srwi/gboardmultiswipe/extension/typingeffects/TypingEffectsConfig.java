@@ -75,6 +75,7 @@ public final class TypingEffectsConfig {
     public final boolean shockwaveRingEnabled;
     public final boolean keyHighlightEnabled;
     public final boolean keyboardWarpEnabled;
+    public final boolean windEnabled;
     public final String colorPalette;
     public final String explosionStyle;
     public final String glitterStyle;
@@ -90,6 +91,8 @@ public final class TypingEffectsConfig {
     public final int keyHighlightDurationMs;
     public final int warpStrengthPercent;
     public final int warpRadiusDp;
+    public final int windIntensity;
+    public final int windSpreadDp;
 
     public TypingEffectsConfig(
             boolean enabled,
@@ -101,6 +104,7 @@ public final class TypingEffectsConfig {
             boolean shockwaveRingEnabled,
             boolean keyHighlightEnabled,
             boolean keyboardWarpEnabled,
+            boolean windEnabled,
             String colorPalette,
             String explosionStyle,
             String glitterStyle,
@@ -115,7 +119,9 @@ public final class TypingEffectsConfig {
             int particleSpeedPercent,
             int keyHighlightDurationMs,
             int warpStrengthPercent,
-            int warpRadiusDp) {
+            int warpRadiusDp,
+            int windIntensity,
+            int windSpreadDp) {
         this.enabled = enabled;
         this.rainbowTrailEnabled = rainbowTrailEnabled;
         this.trailGlowEnabled = trailGlowEnabled;
@@ -125,6 +131,7 @@ public final class TypingEffectsConfig {
         this.shockwaveRingEnabled = shockwaveRingEnabled;
         this.keyHighlightEnabled = keyHighlightEnabled;
         this.keyboardWarpEnabled = keyboardWarpEnabled;
+        this.windEnabled = windEnabled;
         this.colorPalette = normalizePalette(colorPalette);
         this.explosionStyle = normalizeExplosionStyle(explosionStyle);
         this.glitterStyle = normalizeGlitterStyle(glitterStyle);
@@ -140,6 +147,8 @@ public final class TypingEffectsConfig {
         this.keyHighlightDurationMs = keyHighlightDurationMs;
         this.warpStrengthPercent = warpStrengthPercent;
         this.warpRadiusDp = warpRadiusDp;
+        this.windIntensity = windIntensity;
+        this.windSpreadDp = windSpreadDp;
     }
 
     public static TypingEffectsConfig defaults() {
@@ -153,6 +162,7 @@ public final class TypingEffectsConfig {
                 GboardTypingEffectsSettings.DEFAULT_SHOCKWAVE_RING,
                 GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT,
                 GboardTypingEffectsSettings.DEFAULT_KEYBOARD_WARP,
+                GboardTypingEffectsSettings.DEFAULT_WIND,
                 GboardTypingEffectsSettings.DEFAULT_COLOR_PALETTE,
                 GboardTypingEffectsSettings.DEFAULT_EXPLOSION_STYLE,
                 GboardTypingEffectsSettings.DEFAULT_GLITTER_STYLE,
@@ -167,7 +177,9 @@ public final class TypingEffectsConfig {
                 GboardTypingEffectsSettings.DEFAULT_PARTICLE_SPEED_PERCENT,
                 GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_DURATION_MS,
                 GboardTypingEffectsSettings.DEFAULT_WARP_STRENGTH_PERCENT,
-                GboardTypingEffectsSettings.DEFAULT_WARP_RADIUS_DP);
+                GboardTypingEffectsSettings.DEFAULT_WARP_RADIUS_DP,
+                GboardTypingEffectsSettings.DEFAULT_WIND_INTENSITY,
+                GboardTypingEffectsSettings.DEFAULT_WIND_SPREAD_DP);
     }
 
     public boolean hasAnyVisualEffectEnabled() {
@@ -176,7 +188,8 @@ public final class TypingEffectsConfig {
                 || tapExplosionEnabled
                 || releaseExplosionEnabled
                 || keyHighlightEnabled
-                || keyboardWarpEnabled);
+                || keyboardWarpEnabled
+                || windEnabled);
     }
 
     public static String normalizePalette(String raw) {

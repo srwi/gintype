@@ -35,11 +35,12 @@ public class TypingEffectsEngineTest {
                 shockwaveRing,
                 keyHighlight,
                 false,
+                false,
                 palette,
                 explosionStyle,
                 glitterStyle,
                 keyHighlightStyle,
-                12, 360, 150, particleCount, 5, 100, 520, 100, 380, 100, 115);
+                12, 360, 150, particleCount, 5, 100, 520, 100, 380, 100, 115, 5, 68);
     }
 
     @Test
@@ -308,5 +309,30 @@ public class TypingEffectsEngineTest {
         assertTrue(engine.hasActiveWarp());
         assertFalse("Warp spring should finish cleanly after duration", engine.step(2000L));
         assertFalse(engine.hasActiveWarp());
+    }
+
+    @Test
+    public void swipeEmitsAmbientWindStreamsThatFlowAlongTrajectoryAndExpire() {
+        TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(19L));
+        engine.setConfig(TypingEffectsConfig.defaults());
+
+        engine.onPointerDown(0, 40f, 160f, 1000L);
+        engine.onPointerMove(0, 120f, 160f, 1016L);
+        engine.onPointerMove(0, 220f, 165f, 1032L);
+        engine.onPointerMove(0, 340f, 170f, 1048L);
+
+        assertFalse("Swiping should emit ambient wind streams", engine.getWindStreams().isEmpty());
+        TypingEffectsEngine.WindStream sample = engine.getWindStreams().get(0);
+        assertTrue("Wind should generally flow rightward with rightward swipe", sample.vx > 0f);
+
+        // Stepping builds curved ribbon points
+        engine.step(1064L);
+        engine.step(1080L);
+        assertTrue("Stepping should extend wind stream points", sample.pointCount >= 3);
+
+        // Release and advance past lifetime -> all wind streams expire cleanly
+        engine.onPointerUp(0, 340f, 170f, 1096L);
+        assertFalse(engine.step(3000L));
+        assertTrue(engine.getWindStreams().isEmpty());
     }
 }

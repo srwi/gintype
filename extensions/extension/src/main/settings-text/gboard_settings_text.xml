@@ -473,6 +473,9 @@
     <string name="gboard_patches_typing_effects_section_warp">
         <translation locale="en">Trampoline Keyboard Warp</translation>
         </string>
+    <string name="gboard_patches_typing_effects_section_wind">
+        <translation locale="en">Swipe Wind</translation>
+        </string>
     <string name="gboard_patches_typing_effects_enabled_title">
         <translation locale="en">Enable Typing Effects</translation>
         </string>
@@ -559,6 +562,24 @@
         </string>
     <string name="gboard_patches_typing_effects_warp_radius_summary">
         <translation locale="en">How far the trampoline wave spreads across surrounding keys</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_wind_title">
+        <translation locale="en">Swipe wind streams</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_wind_summary">
+        <translation locale="en">Flowing ambient air ribbons that loosely follow your swipe trajectory in a wide corridor</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_wind_intensity_title">
+        <translation locale="en">Wind intensity</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_wind_intensity_summary">
+        <translation locale="en">How many wind gusts appear and how vivid they look while swiping</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_wind_spread_title">
+        <translation locale="en">Wind spread radius</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_wind_spread_summary">
+        <translation locale="en">How wide around your swipe path the ambient wind ribbons flow</translation>
         </string>
     <string name="gboard_patches_typing_effects_palette_title">
         <translation locale="en">Color palette</translation>

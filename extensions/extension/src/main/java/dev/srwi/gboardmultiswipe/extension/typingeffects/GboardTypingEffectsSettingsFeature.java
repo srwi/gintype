@@ -34,6 +34,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private static final int KEY_HIGHLIGHT_DURATION_STEP_MS = 20;
     private static final int WARP_STRENGTH_STEP_PERCENT = 15;
     private static final int WARP_RADIUS_STEP_DP = 10;
+    private static final int WIND_INTENSITY_STEP = 1;
+    private static final int WIND_SPREAD_STEP_DP = 5;
 
     private interface IntFormatter {
         String format(int value);
@@ -52,6 +54,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private final String sectionParticlePhysics;
     private final String sectionKeyGlow;
     private final String sectionWarp;
+    private final String sectionWind;
     private final String enabledTitle;
     private final String enabledSummary;
     private final String rainbowTrailTitle;
@@ -70,6 +73,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private final String keyHighlightSummary;
     private final String keyboardWarpTitle;
     private final String keyboardWarpSummary;
+    private final String windTitle;
+    private final String windSummary;
     private final String paletteTitle;
     private final String paletteSummary;
     private final String[] paletteLabels;
@@ -108,6 +113,10 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private final String warpStrengthSummary;
     private final String warpRadiusTitle;
     private final String warpRadiusSummary;
+    private final String windIntensityTitle;
+    private final String windIntensitySummary;
+    private final String windSpreadTitle;
+    private final String windSpreadSummary;
     private final String defaultValueTemplate;
     private final String resetTitle;
     private final String resetSummary;
@@ -128,6 +137,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                 text(context, R.string.gboard_patches_typing_effects_section_particle_physics);
         sectionKeyGlow = text(context, R.string.gboard_patches_typing_effects_section_key_glow);
         sectionWarp = text(context, R.string.gboard_patches_typing_effects_section_warp);
+        sectionWind = text(context, R.string.gboard_patches_typing_effects_section_wind);
         enabledTitle = text(context, R.string.gboard_patches_typing_effects_enabled_title);
         enabledSummary = text(context, R.string.gboard_patches_typing_effects_enabled_summary);
         rainbowTrailTitle = text(context, R.string.gboard_patches_typing_effects_rainbow_trail_title);
@@ -154,6 +164,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                 text(context, R.string.gboard_patches_typing_effects_keyboard_warp_title);
         keyboardWarpSummary =
                 text(context, R.string.gboard_patches_typing_effects_keyboard_warp_summary);
+        windTitle = text(context, R.string.gboard_patches_typing_effects_wind_title);
+        windSummary = text(context, R.string.gboard_patches_typing_effects_wind_summary);
 
         paletteTitle = text(context, R.string.gboard_patches_typing_effects_palette_title);
         paletteSummary = text(context, R.string.gboard_patches_typing_effects_palette_summary);
@@ -259,6 +271,14 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                 text(context, R.string.gboard_patches_typing_effects_warp_radius_title);
         warpRadiusSummary =
                 text(context, R.string.gboard_patches_typing_effects_warp_radius_summary);
+        windIntensityTitle =
+                text(context, R.string.gboard_patches_typing_effects_wind_intensity_title);
+        windIntensitySummary =
+                text(context, R.string.gboard_patches_typing_effects_wind_intensity_summary);
+        windSpreadTitle =
+                text(context, R.string.gboard_patches_typing_effects_wind_spread_title);
+        windSpreadSummary =
+                text(context, R.string.gboard_patches_typing_effects_wind_spread_summary);
         defaultValueTemplate = text(context, R.string.gboard_patches_multiswipe_value_default);
         resetTitle = text(context, R.string.gboard_patches_typing_effects_reset_title);
         resetSummary = text(context, R.string.gboard_patches_typing_effects_reset_summary);
@@ -314,6 +334,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             boolean anyParticle = glitterActive || anyExplosion;
             boolean keyGlowActive = master && cfg.keyHighlightEnabled;
             boolean warpActive = master && cfg.keyboardWarpEnabled;
+            boolean windActive = master && cfg.windEnabled;
 
             // 1. General (Master toggle + global color theme & speed)
             List<GboardPatchesSettingsContract.Row> generalRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
@@ -630,7 +651,49 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_WARP_RADIUS_DP, "dp"),
                             v -> GboardTypingEffectsSettings.writeWarpRadiusDp(preferences, v))));
 
-            // 8. Reset to defaults
+            // 8. Swipe Wind (Toggle + intensity + spread radius)
+            List<GboardPatchesSettingsContract.Row> windRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
+            windRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    windTitle,
+                    windSummary,
+                    cfg.windEnabled,
+                    master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeWindEnabled(preferences, checked))));
+            windRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    windIntensityTitle,
+                    windIntensitySummary,
+                    formatUnit(cfg.windIntensity, GboardTypingEffectsSettings.DEFAULT_WIND_INTENSITY, "/10"),
+                    windActive,
+                    () -> showIntSliderDialog(
+                            host,
+                            windIntensityTitle,
+                            windIntensitySummary,
+                            GboardTypingEffectsSettings.MIN_WIND_INTENSITY,
+                            GboardTypingEffectsSettings.MAX_WIND_INTENSITY,
+                            WIND_INTENSITY_STEP,
+                            GboardTypingEffectsSettings.DEFAULT_WIND_INTENSITY,
+                            cfg.windIntensity,
+                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_WIND_INTENSITY, "/10"),
+                            v -> GboardTypingEffectsSettings.writeWindIntensity(preferences, v))));
+            windRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    windSpreadTitle,
+                    windSpreadSummary,
+                    formatUnit(cfg.windSpreadDp, GboardTypingEffectsSettings.DEFAULT_WIND_SPREAD_DP, "dp"),
+                    windActive,
+                    () -> showIntSliderDialog(
+                            host,
+                            windSpreadTitle,
+                            windSpreadSummary,
+                            GboardTypingEffectsSettings.MIN_WIND_SPREAD_DP,
+                            GboardTypingEffectsSettings.MAX_WIND_SPREAD_DP,
+                            WIND_SPREAD_STEP_DP,
+                            GboardTypingEffectsSettings.DEFAULT_WIND_SPREAD_DP,
+                            cfg.windSpreadDp,
+                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_WIND_SPREAD_DP, "dp"),
+                            v -> GboardTypingEffectsSettings.writeWindSpreadDp(preferences, v))));
+
+            // 9. Reset to defaults
             List<GboardPatchesSettingsContract.Row> resetRows = Collections.singletonList(
                     new GboardPatchesSettingsContract.DangerRow(
                             resetTitle,
@@ -654,6 +717,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             new GboardPatchesSettingsContract.Section(sectionGeneral, generalRows),
                             new GboardPatchesSettingsContract.Section(sectionTrail, trailRows),
                             new GboardPatchesSettingsContract.Section(sectionGlitter, glitterRows),
+                            new GboardPatchesSettingsContract.Section(sectionWind, windRows),
                             new GboardPatchesSettingsContract.Section(sectionExplosions, explosionRows),
                             new GboardPatchesSettingsContract.Section(sectionParticlePhysics, physicsRows),
                             new GboardPatchesSettingsContract.Section(sectionKeyGlow, keyGlowRows),

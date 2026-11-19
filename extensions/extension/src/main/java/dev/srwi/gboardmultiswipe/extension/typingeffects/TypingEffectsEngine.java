@@ -28,6 +28,8 @@ public final class TypingEffectsEngine {
     static final int MAX_KEY_HIGHLIGHTS = 36;
     static final int MAX_WARP_WELLS = 12;
     static final long WARP_SPRING_DURATION_MS = 340L;
+    static final int MAX_WIND_STREAMS = 34;
+    static final int MAX_WIND_POINTS = 18;
 
     public static final class TrailPoint {
         public float x;
@@ -101,24 +103,47 @@ public final class TypingEffectsEngine {
         long durationMs;
     }
 
+    public static final class WindStream {
+        public final float[] xs = new float[MAX_WIND_POINTS];
+        public final float[] ys = new float[MAX_WIND_POINTS];
+        public int pointCount;
+        public float headX;
+        public float headY;
+        public float vx;
+        public float vy;
+        public float wavePhase;
+        public float waveFreq;
+        public float waveAmpPx;
+        public float strokeWidthPx;
+        public int colorArgb;
+        public long bornMs;
+        public long lifetimeMs;
+        public int sourcePointerId;
+    }
+
     private static final class PointerState {
         final int pointerId;
         float downX;
         float downY;
         float lastX;
         float lastY;
+        long lastMoveMs;
+        float smoothDirX;
+        float smoothDirY;
         float totalDistancePx;
         float glitterDistanceCarryPx;
+        float windDistanceCarryPx;
         float colorPhaseOffset;
         boolean isSwipe;
         final TrailStroke stroke;
 
-        PointerState(int pointerId, float x, float y, float colorPhaseOffset) {
+        PointerState(int pointerId, float x, float y, long nowMs, float colorPhaseOffset) {
             this.pointerId = pointerId;
             this.downX = x;
             this.downY = y;
             this.lastX = x;
             this.lastY = y;
+            this.lastMoveMs = nowMs;
             this.colorPhaseOffset = colorPhaseOffset;
             this.stroke = new TrailStroke();
             this.stroke.active = true;
@@ -133,6 +158,7 @@ public final class TypingEffectsEngine {
     private final List<ShockwaveRing> rings = new ArrayList<ShockwaveRing>(8);
     private final List<KeyHighlight> keyHighlights = new ArrayList<KeyHighlight>(16);
     private final List<FadingWarpWell> fadingWarpWells = new ArrayList<FadingWarpWell>(8);
+    private final List<WindStream> windStreams = new ArrayList<WindStream>(24);
 
     private TypingEffectsConfig config = TypingEffectsConfig.defaults();
     private long lastStepMs = -1L;
@@ -169,7 +195,7 @@ public final class TypingEffectsEngine {
         float phaseOffset = pointerPhaseCounter;
         pointerPhaseCounter = (pointerPhaseCounter + 0.37f) % 1.0f;
 
-        PointerState state = new PointerState(pointerId, x, y, phaseOffset);
+        PointerState state = new PointerState(pointerId, x, y, nowMs, phaseOffset);
         state.stroke.points.add(new TrailPoint(x, y, nowMs, computeColorPhase(nowMs, phaseOffset)));
         activePointers.put(pointerId, state);
     }
@@ -197,6 +223,23 @@ public final class TypingEffectsEngine {
             state.isSwipe = true;
         }
 
+        // Update smoothed coarse swipe direction for ambient wind currents.
+        float dirX = dx / segDist;
+        float dirY = dy / segDist;
+        if (state.smoothDirX == 0f && state.smoothDirY == 0f) {
+            state.smoothDirX = dirX;
+            state.smoothDirY = dirY;
+        } else {
+            state.smoothDirX = state.smoothDirX * 0.72f + dirX * 0.28f;
+            state.smoothDirY = state.smoothDirY * 0.72f + dirY * 0.28f;
+            float norm = (float) Math.hypot(state.smoothDirX, state.smoothDirY);
+            if (norm > 0.001f) {
+                state.smoothDirX /= norm;
+                state.smoothDirY /= norm;
+            }
+        }
+        state.lastMoveMs = nowMs;
+
         float phase = computeColorPhase(nowMs, state.colorPhaseOffset + state.totalDistancePx / (360f * density));
 
         if (config.rainbowTrailEnabled) {
@@ -209,6 +252,10 @@ public final class TypingEffectsEngine {
 
         if (config.glitterEnabled && state.isSwipe) {
             emitGlitterAlongSegment(state, state.lastX, state.lastY, x, y, segDist, nowMs, phase);
+        }
+
+        if (config.windEnabled && state.isSwipe) {
+            emitWindAlongSegment(state, x, y, segDist, nowMs, phase);
         }
 
         state.lastX = x;
@@ -332,6 +379,7 @@ public final class TypingEffectsEngine {
         rings.clear();
         keyHighlights.clear();
         fadingWarpWells.clear();
+        windStreams.clear();
         lastStepMs = -1L;
     }
 
@@ -413,6 +461,54 @@ public final class TypingEffectsEngine {
             }
         }
 
+        // Advance and prune ambient wind streams.
+        Iterator<WindStream> windIt = windStreams.iterator();
+        while (windIt.hasNext()) {
+            WindStream ws = windIt.next();
+            if (nowMs - ws.bornMs >= ws.lifetimeMs) {
+                windIt.remove();
+                continue;
+            }
+            // Gently steer toward the source finger's coarse swipe direction (loose, breezy follow —
+            // never orbiting or tightly locked to the fingertip).
+            PointerState src = activePointers.get(ws.sourcePointerId);
+            if (src != null && (src.smoothDirX != 0f || src.smoothDirY != 0f)) {
+                float speed = (float) Math.hypot(ws.vx, ws.vy);
+                if (speed > 1f) {
+                    float steer = Math.min(0.18f, 2.8f * dtSec);
+                    float targetVx = src.smoothDirX * speed;
+                    float targetVy = src.smoothDirY * speed;
+                    ws.vx += (targetVx - ws.vx) * steer;
+                    ws.vy += (targetVy - ws.vy) * steer;
+                }
+            }
+            // Soft aerodynamic drag so wind gusts glide out gracefully after lift.
+            float drag = (float) Math.pow(0.968f, dtSec * 60f);
+            ws.vx *= drag;
+            ws.vy *= drag;
+            ws.wavePhase += ws.waveFreq * dtSec;
+
+            // Add gentle organic wave perpendicular to flow direction.
+            float speed = (float) Math.hypot(ws.vx, ws.vy);
+            float perpX = speed > 1f ? (-ws.vy / speed) : 0f;
+            float perpY = speed > 1f ? (ws.vx / speed) : 1f;
+            float waveVel = (float) Math.cos(ws.wavePhase) * ws.waveAmpPx * ws.waveFreq;
+
+            ws.headX += (ws.vx + perpX * waveVel) * dtSec;
+            ws.headY += (ws.vy + perpY * waveVel) * dtSec;
+
+            if (ws.pointCount < MAX_WIND_POINTS) {
+                ws.xs[ws.pointCount] = ws.headX;
+                ws.ys[ws.pointCount] = ws.headY;
+                ws.pointCount++;
+            } else {
+                System.arraycopy(ws.xs, 1, ws.xs, 0, MAX_WIND_POINTS - 1);
+                System.arraycopy(ws.ys, 1, ws.ys, 0, MAX_WIND_POINTS - 1);
+                ws.xs[MAX_WIND_POINTS - 1] = ws.headX;
+                ws.ys[MAX_WIND_POINTS - 1] = ws.headY;
+            }
+        }
+
         return hasActiveEffects();
     }
 
@@ -428,6 +524,7 @@ public final class TypingEffectsEngine {
                 || !rings.isEmpty()
                 || !fadingTrails.isEmpty()
                 || !keyHighlights.isEmpty()
+                || !windStreams.isEmpty()
                 || hasActiveWarp()) {
             return true;
         }
@@ -465,6 +562,10 @@ public final class TypingEffectsEngine {
 
     public List<KeyHighlight> getKeyHighlights() {
         return keyHighlights;
+    }
+
+    public List<WindStream> getWindStreams() {
+        return windStreams;
     }
 
     /**
@@ -569,6 +670,70 @@ public final class TypingEffectsEngine {
             }
         }
         return anyMoved;
+    }
+
+    private void emitWindAlongSegment(
+            PointerState state,
+            float fingerX,
+            float fingerY,
+            float segDist,
+            long nowMs,
+            float basePhase) {
+        if (state.smoothDirX == 0f && state.smoothDirY == 0f) {
+            return;
+        }
+        // Higher windIntensity -> spawn wind ribbons more frequently.
+        float spacingDp = Math.max(12f, 46f - config.windIntensity * 3.4f);
+        float spacingPx = spacingDp * density;
+        state.windDistanceCarryPx += segDist;
+
+        int spawned = 0;
+        float spreadPx = config.windSpreadDp * density;
+        float dirX = state.smoothDirX;
+        float dirY = state.smoothDirY;
+        float perpX = -dirY;
+        float perpY = dirX;
+
+        while (state.windDistanceCarryPx >= spacingPx && spawned < 3) {
+            state.windDistanceCarryPx -= spacingPx;
+            spawned++;
+
+            // Spawn in a wide corridor around (not directly on) the swipe path.
+            float sideSign = random.nextBoolean() ? 1f : -1f;
+            float lateralDist = spreadPx * (0.32f + random.nextFloat() * 0.88f) * sideSign;
+            float alongDist = spreadPx * (-0.45f + random.nextFloat() * 0.85f);
+            float startX = fingerX + perpX * lateralDist + dirX * alongDist;
+            float startY = fingerY + perpY * lateralDist + dirY * alongDist;
+
+            // Coarse flow roughly aligned with finger swipe direction (±18 deg organic breeze).
+            float baseAngle = (float) Math.atan2(dirY, dirX);
+            float angleJitter = (random.nextFloat() - 0.5f) * 0.62f;
+            float flowAngle = baseAngle + angleJitter;
+            float speedPx = (185f + random.nextFloat() * 195f) * density;
+
+            WindStream ws;
+            if (windStreams.size() >= MAX_WIND_STREAMS) {
+                ws = windStreams.remove(0);
+            } else {
+                ws = new WindStream();
+            }
+            ws.headX = startX;
+            ws.headY = startY;
+            ws.xs[0] = startX;
+            ws.ys[0] = startY;
+            ws.pointCount = 1;
+            ws.vx = (float) Math.cos(flowAngle) * speedPx;
+            ws.vy = (float) Math.sin(flowAngle) * speedPx;
+            ws.wavePhase = random.nextFloat() * 6.283f;
+            ws.waveFreq = 5.5f + random.nextFloat() * 5.0f;
+            ws.waveAmpPx = (5f + random.nextFloat() * 9f) * density;
+            ws.strokeWidthPx = (1.6f + random.nextFloat() * 2.0f) * density;
+            ws.colorArgb = config.sampleColor(basePhase + (random.nextFloat() - 0.5f) * 0.25f);
+            ws.bornMs = nowMs;
+            ws.lifetimeMs = 380L + Math.round(random.nextFloat() * 340f);
+            ws.sourcePointerId = state.pointerId;
+            windStreams.add(ws);
+        }
     }
 
     private void addFadingWarpWell(float x, float y, long nowMs) {

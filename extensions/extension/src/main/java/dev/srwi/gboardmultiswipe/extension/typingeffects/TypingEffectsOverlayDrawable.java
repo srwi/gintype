@@ -40,6 +40,8 @@ final class TypingEffectsOverlayDrawable extends Drawable {
     private final Paint keyFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint keyHaloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint keyBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint windGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint windCorePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path starPath = new Path();
     private final RectF confettiRect = new RectF();
     private final RectF keyRect = new RectF();
@@ -77,6 +79,14 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         keyFillPaint.setStyle(Paint.Style.FILL);
         keyHaloPaint.setStyle(Paint.Style.STROKE);
         keyBorderPaint.setStyle(Paint.Style.STROKE);
+
+        windGlowPaint.setStyle(Paint.Style.STROKE);
+        windGlowPaint.setStrokeCap(Paint.Cap.ROUND);
+        windGlowPaint.setStrokeJoin(Paint.Join.ROUND);
+
+        windCorePaint.setStyle(Paint.Style.STROKE);
+        windCorePaint.setStrokeCap(Paint.Cap.ROUND);
+        windCorePaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
     void releaseResources() {
@@ -109,6 +119,14 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         // 0b. Key Touch Glow (drawn directly when keyboard mat is not actively warped)
         if (!drewWarpedMat && cfg.keyHighlightEnabled) {
             drawAllKeyHighlights(canvas, cfg, nowMs, density);
+        }
+
+        // 0c. Ambient Swipe Wind Streams (silky air ribbons flowing around the swipe corridor)
+        if (cfg.windEnabled) {
+            List<TypingEffectsEngine.WindStream> winds = engine.getWindStreams();
+            for (int i = 0; i < winds.size(); i++) {
+                drawWindStream(canvas, winds.get(i), cfg, nowMs);
+            }
         }
 
         // 1. Rainbow / Palette Swipe Trails
@@ -312,6 +330,48 @@ final class TypingEffectsOverlayDrawable extends Drawable {
                             keyBorderPaint);
                 }
             }
+        }
+    }
+
+    private void drawWindStream(
+            Canvas canvas,
+            TypingEffectsEngine.WindStream ws,
+            TypingEffectsConfig cfg,
+            long nowMs) {
+        int n = ws.pointCount;
+        if (n < 2) return;
+
+        float lifeT = clamp01((nowMs - ws.bornMs) / (float) Math.max(1L, ws.lifetimeMs));
+        if (lifeT >= 1f) return;
+
+        // Smooth airy fade-in and long graceful fade-out.
+        float fadeIn = lifeT < 0.18f ? (lifeT / 0.18f) : 1f;
+        float fadeOut = lifeT > 0.50f ? clamp01(1f - (lifeT - 0.50f) / 0.50f) : 1f;
+        float intensityBoost = 0.65f + (cfg.windIntensity / 10f) * 0.55f;
+        float masterAlpha = fadeIn * fadeOut * fadeOut * intensityBoost;
+        if (masterAlpha <= 0.01f) return;
+
+        int coreColor = TypingEffectsConfig.blendTowardWhite(ws.colorArgb, 0.74f);
+        for (int i = 1; i < n; i++) {
+            // Double-ended taper: whisper-thin tail and tip, graceful body in the middle.
+            float posRatio = (float) i / (float) (n - 1);
+            float taper = (float) Math.sin(Math.PI * posRatio);
+            float segAlpha = masterAlpha * taper;
+            if (segAlpha <= 0.01f) continue;
+
+            float width = Math.max(0.9f, ws.strokeWidthPx * (0.35f + 0.65f * taper));
+
+            // Soft tinted air aura
+            windGlowPaint.setStrokeWidth(width * 2.4f);
+            windGlowPaint.setColor(TypingEffectsConfig.withAlpha(
+                    ws.colorArgb, Math.min(255, Math.round(58f * segAlpha))));
+            canvas.drawLine(ws.xs[i - 1], ws.ys[i - 1], ws.xs[i], ws.ys[i], windGlowPaint);
+
+            // Silky translucent white-tinted wind filament
+            windCorePaint.setStrokeWidth(width);
+            windCorePaint.setColor(TypingEffectsConfig.withAlpha(
+                    coreColor, Math.min(255, Math.round(168f * segAlpha))));
+            canvas.drawLine(ws.xs[i - 1], ws.ys[i - 1], ws.xs[i], ws.ys[i], windCorePaint);
         }
     }
 
