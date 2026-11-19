@@ -1,5 +1,6 @@
 package dev.srwi.gboardmultiswipe.extension.thicctopbar;
 
+import android.content.Context;
 import android.content.SharedPreferences;
 
 import org.junit.Assert;
@@ -15,6 +16,11 @@ public final class ThiccTopBarSettingsTest {
     public void defaultStateIsEnabled() {
         TestSharedPreferences prefs = new TestSharedPreferences();
         Assert.assertTrue(GboardThiccTopBarSettings.readEnabled(prefs));
+    }
+
+    @Test
+    public void readEnabledWithNullContextFailsClosed() {
+        Assert.assertFalse(GboardThiccTopBarSettings.readEnabled((Context) null));
     }
 
     @Test

@@ -240,6 +240,12 @@ public final class GboardMultiSwipeRuntime {
             if (!enabled) {
                 return;
             }
+            if (!GboardThiccTopBarSettings.readEnabled(context)) {
+                android.view.ViewGroup holder = ThiccTopBarGboardReflector.findCandidatesHolderView((View) viewObj);
+                if (holder != null) {
+                    GboardThiccTopBarRuntime.registerFallbackHolderView(holder);
+                }
+            }
             String activeLang = GboardMultiSwipeDictionaryManager.detectActiveLanguage(context);
             boolean hasDedicatedUmlauts = readUmlautHint(context, activeLang);
             GboardMultiSwipeDictionaryManager.getOrScheduleLoad(

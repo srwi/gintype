@@ -15,6 +15,7 @@ import android.view.inputmethod.InputConnection;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeRuntime;
+import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesFeatureAvailability;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -237,6 +238,22 @@ public final class GboardThiccTopBarRuntime {
      * MultiSwipe takeover when Thicc Top Bar is disabled, keeping the native top bar blank until
      * Gboard populates the decoded word alternatives (or a short safety timeout expires).
      */
+    /**
+     * Registers a candidates holder view discovered without Thicc Top Bar bytecode hooks
+     * (e.g. when only MultiSwipe is patched) so native top-bar live guesses and blanking work.
+     */
+    public static void registerFallbackHolderView(ViewGroup holderView) {
+        if (holderView == null) {
+            return;
+        }
+        if (lastHolderView == null
+                || !GboardPatchesFeatureAvailability.hasFeature(
+                        holderView.getContext(),
+                        GboardPatchesFeatureAvailability.FEATURE_THICC_TOP_BAR)) {
+            lastHolderView = holderView;
+        }
+    }
+
     public static void setNativeTopBarBlankForMultiSwipe(boolean blank) {
         Handler handler = getMainHandler();
         if (Looper.myLooper() != Looper.getMainLooper()) {

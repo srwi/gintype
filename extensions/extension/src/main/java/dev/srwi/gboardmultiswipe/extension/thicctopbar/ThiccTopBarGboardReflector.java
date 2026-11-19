@@ -73,23 +73,34 @@ public final class ThiccTopBarGboardReflector {
         }
     }
 
+    /** Finds Gboard's LatinFixedCountCandidatesHolderView inside the given view subtree. */
+    public static ViewGroup findCandidatesHolderView(View view) {
+        View found = findDescendantBySimpleName(view, "LatinFixedCountCandidatesHolderView", 6);
+        return found instanceof ViewGroup ? (ViewGroup) found : null;
+    }
+
     private static boolean hasDescendantSimpleName(View view, String simpleName, int maxDepth) {
+        return findDescendantBySimpleName(view, simpleName, maxDepth) != null;
+    }
+
+    private static View findDescendantBySimpleName(View view, String simpleName, int maxDepth) {
         if (view == null || maxDepth < 0) {
-            return false;
+            return null;
         }
         if (simpleName.equals(view.getClass().getSimpleName())) {
-            return true;
+            return view;
         }
         if (maxDepth == 0 || !(view instanceof ViewGroup)) {
-            return false;
+            return null;
         }
         ViewGroup group = (ViewGroup) view;
         for (int i = 0; i < group.getChildCount(); i++) {
-            if (hasDescendantSimpleName(group.getChildAt(i), simpleName, maxDepth - 1)) {
-                return true;
+            View match = findDescendantBySimpleName(group.getChildAt(i), simpleName, maxDepth - 1);
+            if (match != null) {
+                return match;
             }
         }
-        return false;
+        return null;
     }
     private static final String TAG = "ThiccTopBarGboardReflector";
 

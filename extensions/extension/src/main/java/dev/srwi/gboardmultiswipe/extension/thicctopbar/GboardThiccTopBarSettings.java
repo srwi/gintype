@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import dev.srwi.gboardmultiswipe.extension.flagsettings.GboardBooleanFlagSettings;
+import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesFeatureAvailability;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettings;
 
 public final class GboardThiccTopBarSettings {
@@ -31,7 +32,11 @@ public final class GboardThiccTopBarSettings {
     }
 
     public static boolean readEnabled(Context context) {
-        if (context == null) return DEFAULT_ENABLED;
+        if (context == null) return false;
+        if (!GboardPatchesFeatureAvailability.hasFeature(
+                context, GboardPatchesFeatureAvailability.FEATURE_THICC_TOP_BAR)) {
+            return false;
+        }
         try {
             SharedPreferences preferences = GboardPatchesSettings.preferencesOrNull(context);
             if (preferences == null) {
