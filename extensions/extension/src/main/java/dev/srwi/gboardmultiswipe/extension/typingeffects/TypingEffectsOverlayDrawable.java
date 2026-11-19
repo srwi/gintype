@@ -114,23 +114,25 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         // Smooth ease-out fade so the key stays radiant briefly, then dissolves like an RGB keycap.
         float alphaFactor = (1f - fadeT) * (1f - fadeT);
 
-        // Subtle elastic pop-in during the first 85ms of touch.
-        float popT = clamp01((nowMs - kh.firstTouchedMs) / 85f);
-        float popExpandPx = (1f - popT) * 2.2f * density;
+        // Subtle elastic pop-in during the first 75ms of touch, aligned directly to the key's
+        // real background pill outline.
+        float popT = clamp01((nowMs - kh.firstTouchedMs) / 75f);
+        float popExpandPx = (1f - popT) * 1.2f * density;
 
-        float insetX = Math.min(2.5f * density, (kh.right - kh.left) * 0.06f);
-        float insetY = Math.min(3.0f * density, (kh.bottom - kh.top) * 0.08f);
         keyRect.set(
-                kh.left + insetX - popExpandPx,
-                kh.top + insetY - popExpandPx,
-                kh.right - insetX + popExpandPx,
-                kh.bottom - insetY + popExpandPx);
+                kh.left - popExpandPx,
+                kh.top - popExpandPx,
+                kh.right + popExpandPx,
+                kh.bottom + popExpandPx);
 
         float width = keyRect.width();
         float height = keyRect.height();
         if (width <= 0f || height <= 0f) return;
 
-        float cornerRadius = Math.min(8f * density, Math.min(width, height) * 0.24f);
+        float maxRadius = Math.min(width, height) * 0.5f;
+        float cornerRadius = kh.cornerRadiusPx >= 0f
+                ? Math.min(maxRadius, kh.cornerRadiusPx + popExpandPx)
+                : Math.min(8f * density, Math.min(width, height) * 0.24f);
         int baseColor = kh.colorArgb;
         int brightColor = TypingEffectsConfig.blendTowardWhite(baseColor, 0.58f);
 

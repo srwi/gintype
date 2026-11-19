@@ -85,6 +85,7 @@ public final class TypingEffectsEngine {
         public float top;
         public float right;
         public float bottom;
+        public float cornerRadiusPx;
         public int colorArgb;
         public long firstTouchedMs;
         public long lastTouchedMs;
@@ -253,6 +254,17 @@ public final class TypingEffectsEngine {
             float right,
             float bottom,
             long nowMs) {
+        onKeyTouched(keyId, left, top, right, bottom, -1f, nowMs);
+    }
+
+    public void onKeyTouched(
+            int keyId,
+            float left,
+            float top,
+            float right,
+            float bottom,
+            float cornerRadiusPx,
+            long nowMs) {
         if (!config.enabled || !config.keyHighlightEnabled) {
             return;
         }
@@ -268,6 +280,7 @@ public final class TypingEffectsEngine {
                 existing.top = top;
                 existing.right = right;
                 existing.bottom = bottom;
+                existing.cornerRadiusPx = cornerRadiusPx;
                 existing.lastTouchedMs = nowMs;
                 existing.durationMs = durationMs;
                 return;
@@ -287,6 +300,7 @@ public final class TypingEffectsEngine {
         highlight.top = top;
         highlight.right = right;
         highlight.bottom = bottom;
+        highlight.cornerRadiusPx = cornerRadiusPx;
         highlight.colorArgb = config.sampleColor(phase);
         highlight.firstTouchedMs = nowMs;
         highlight.lastTouchedMs = nowMs;

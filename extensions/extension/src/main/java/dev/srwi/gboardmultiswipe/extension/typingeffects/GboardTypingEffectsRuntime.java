@@ -1,7 +1,11 @@
 package dev.srwi.gboardmultiswipe.extension.typingeffects;
 
 import android.content.Context;
+import android.graphics.Outline;
 import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -130,6 +134,9 @@ public final class GboardTypingEffectsRuntime {
         private final TypingEffectsEngine engine;
         private final TypingEffectsOverlayDrawable drawable;
         private final Rect tempKeyRect = new Rect();
+        private final Rect tempOutlineRect = new Rect();
+        private final RectF tempVisualRect = new RectF();
+        private final Outline tempOutline = new Outline();
         private boolean attached = false;
         private boolean animating = false;
         private int lastBoundsW = -1;
@@ -238,14 +245,125 @@ public final class GboardTypingEffectsRuntime {
             }
             View keyView = findSoftKeyAt(root, x, y, 0, 0, tempKeyRect);
             if (keyView != null) {
-                engine.onKeyTouched(
-                        System.identityHashCode(keyView),
-                        tempKeyRect.left,
-                        tempKeyRect.top,
-                        tempKeyRect.right,
-                        tempKeyRect.bottom,
-                        nowMs);
+                float cornerRadius = resolveKeyVisualBounds(root, keyView, tempVisualRect);
+                if (!tempVisualRect.isEmpty()) {
+                    engine.onKeyTouched(
+                            System.identityHashCode(keyView),
+                            tempVisualRect.left,
+                            tempVisualRect.top,
+                            tempVisualRect.right,
+                            tempVisualRect.bottom,
+                            cornerRadius,
+                            nowMs);
+                }
             }
+        }
+
+        /**
+         * Resolves the exact visible keycap pill bounds and corner radius (matching Gboard's
+         * actual key background Drawable Outline, just like {@code SpacebarTimerOverlay}).
+         */
+        private float resolveKeyVisualBounds(View root, View softKeyView, RectF outRect) {
+            View targetView = resolveKeyBackgroundView(softKeyView);
+            int w = targetView.getWidth();
+            int h = targetView.getHeight();
+            if (w <= 0 || h <= 0) {
+                outRect.setEmpty();
+                return -1f;
+            }
+
+            // Compute targetView's exact origin in root (SoftKeyboardView) coordinates.
+            float originX = 0f;
+            float originY = 0f;
+            View cur = targetView;
+            while (cur != null && cur != root) {
+                originX += cur.getX();
+                originY += cur.getY();
+                if (cur.getParent() instanceof View) {
+                    View parent = (View) cur.getParent();
+                    originX -= parent.getScrollX();
+                    originY -= parent.getScrollY();
+                    cur = parent;
+                } else {
+                    break;
+                }
+            }
+
+            float radius = -1f;
+            boolean foundOutline = false;
+            Drawable bg = targetView.getBackground();
+            if (bg != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try {
+                    tempOutline.setEmpty();
+                    bg.getOutline(tempOutline);
+                    if (tempOutline.getRect(tempOutlineRect) && !tempOutlineRect.isEmpty()) {
+                        outRect.set(
+                                originX + tempOutlineRect.left,
+                                originY + tempOutlineRect.top,
+                                originX + tempOutlineRect.right,
+                                originY + tempOutlineRect.bottom);
+                        radius = tempOutline.getRadius();
+                        foundOutline = true;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+
+            if (!foundOutline) {
+                if (bg != null) {
+                    outRect.set(
+                            originX + targetView.getPaddingLeft(),
+                            originY + targetView.getPaddingTop(),
+                            originX + w - targetView.getPaddingRight(),
+                            originY + h - targetView.getPaddingBottom());
+                } else {
+                    float density = engine.getDensity();
+                    float insetX = Math.min(w * 0.06f, 3f * density);
+                    float insetY = Math.min(h * 0.12f, 5f * density);
+                    outRect.set(
+                            originX + insetX,
+                            originY + insetY,
+                            originX + w - insetX,
+                            originY + h - insetY);
+                }
+            }
+
+            return radius;
+        }
+
+        private static View resolveKeyBackgroundView(View softKeyView) {
+            if (softKeyView.getBackground() != null) {
+                return softKeyView;
+            }
+            if (softKeyView instanceof ViewGroup) {
+                View bgChild = findBackgroundChildView(
+                        (ViewGroup) softKeyView, softKeyView.getWidth() * 0.55f);
+                if (bgChild != null) {
+                    return bgChild;
+                }
+            }
+            return softKeyView;
+        }
+
+        private static View findBackgroundChildView(ViewGroup group, float minWidth) {
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                if (child == null || child.getVisibility() != View.VISIBLE) {
+                    continue;
+                }
+                if (child.getBackground() != null
+                        && child.getWidth() >= minWidth
+                        && child.getHeight() > 0) {
+                    return child;
+                }
+                if (child instanceof ViewGroup) {
+                    View nested = findBackgroundChildView((ViewGroup) child, minWidth);
+                    if (nested != null) {
+                        return nested;
+                    }
+                }
+            }
+            return null;
         }
 
         private static View findSoftKeyAt(
