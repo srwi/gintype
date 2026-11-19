@@ -45,10 +45,13 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
 
     private final String title;
     private final String summary;
-    private final String sectionEffects;
-    private final String sectionStyle;
+    private final String sectionGeneral;
     private final String sectionTrail;
-    private final String sectionParticles;
+    private final String sectionGlitter;
+    private final String sectionExplosions;
+    private final String sectionParticlePhysics;
+    private final String sectionKeyGlow;
+    private final String sectionWarp;
     private final String enabledTitle;
     private final String enabledSummary;
     private final String rainbowTrailTitle;
@@ -117,10 +120,14 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     public GboardTypingEffectsSettingsFeature(Context context) {
         title = text(context, R.string.gboard_patches_typing_effects_title);
         summary = text(context, R.string.gboard_patches_typing_effects_summary);
-        sectionEffects = text(context, R.string.gboard_patches_typing_effects_section_effects);
-        sectionStyle = text(context, R.string.gboard_patches_typing_effects_section_style);
+        sectionGeneral = text(context, R.string.gboard_patches_typing_effects_section_effects);
         sectionTrail = text(context, R.string.gboard_patches_typing_effects_section_trail);
-        sectionParticles = text(context, R.string.gboard_patches_typing_effects_section_particles);
+        sectionGlitter = text(context, R.string.gboard_patches_typing_effects_section_style);
+        sectionExplosions = text(context, R.string.gboard_patches_typing_effects_section_particles);
+        sectionParticlePhysics =
+                text(context, R.string.gboard_patches_typing_effects_section_particle_physics);
+        sectionKeyGlow = text(context, R.string.gboard_patches_typing_effects_section_key_glow);
+        sectionWarp = text(context, R.string.gboard_patches_typing_effects_section_warp);
         enabledTitle = text(context, R.string.gboard_patches_typing_effects_enabled_title);
         enabledSummary = text(context, R.string.gboard_patches_typing_effects_enabled_summary);
         rainbowTrailTitle = text(context, R.string.gboard_patches_typing_effects_rainbow_trail_title);
@@ -301,78 +308,23 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             TypingEffectsConfig cfg = GboardTypingEffectsSettings.readConfig(preferences);
 
             boolean master = cfg.enabled;
+            boolean trailActive = master && cfg.rainbowTrailEnabled;
+            boolean glitterActive = master && cfg.glitterEnabled;
             boolean anyExplosion = master && (cfg.tapExplosionEnabled || cfg.releaseExplosionEnabled);
-            boolean anyParticle = master && (cfg.glitterEnabled || cfg.tapExplosionEnabled || cfg.releaseExplosionEnabled);
+            boolean anyParticle = glitterActive || anyExplosion;
+            boolean keyGlowActive = master && cfg.keyHighlightEnabled;
+            boolean warpActive = master && cfg.keyboardWarpEnabled;
 
-            // Section 1: Individual Effect Toggles
-            List<GboardPatchesSettingsContract.Row> effectRows = new ArrayList<GboardPatchesSettingsContract.Row>(7);
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
+            // 1. General (Master toggle + global color theme & speed)
+            List<GboardPatchesSettingsContract.Row> generalRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
+            generalRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     enabledTitle,
                     enabledSummary,
                     master,
                     true,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeEnabled(preferences, checked))));
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    rainbowTrailTitle,
-                    rainbowTrailSummary,
-                    cfg.rainbowTrailEnabled,
-                    master,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardTypingEffectsSettings.writeRainbowTrailEnabled(preferences, checked))));
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    trailGlowTitle,
-                    trailGlowSummary,
-                    cfg.trailGlowEnabled,
-                    master && cfg.rainbowTrailEnabled,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardTypingEffectsSettings.writeTrailGlowEnabled(preferences, checked))));
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    glitterTitle,
-                    glitterSummary,
-                    cfg.glitterEnabled,
-                    master,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardTypingEffectsSettings.writeGlitterEnabled(preferences, checked))));
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    tapExplosionTitle,
-                    tapExplosionSummary,
-                    cfg.tapExplosionEnabled,
-                    master,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardTypingEffectsSettings.writeTapExplosionEnabled(preferences, checked))));
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    releaseExplosionTitle,
-                    releaseExplosionSummary,
-                    cfg.releaseExplosionEnabled,
-                    master,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardTypingEffectsSettings.writeReleaseExplosionEnabled(preferences, checked))));
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    shockwaveRingTitle,
-                    shockwaveRingSummary,
-                    cfg.shockwaveRingEnabled,
-                    anyExplosion,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardTypingEffectsSettings.writeShockwaveRingEnabled(preferences, checked))));
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    keyHighlightTitle,
-                    keyHighlightSummary,
-                    cfg.keyHighlightEnabled,
-                    master,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardTypingEffectsSettings.writeKeyHighlightEnabled(preferences, checked))));
-            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    keyboardWarpTitle,
-                    keyboardWarpSummary,
-                    cfg.keyboardWarpEnabled,
-                    master,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardTypingEffectsSettings.writeKeyboardWarpEnabled(preferences, checked))));
-
-            // Section 2: Look & Style Pickers
-            List<GboardPatchesSettingsContract.Row> styleRows = new ArrayList<GboardPatchesSettingsContract.Row>(4);
-            styleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+            generalRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     paletteTitle,
                     paletteSummary,
                     labelForValue(paletteLabels, paletteValues, cfg.colorPalette),
@@ -385,49 +337,39 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.colorPalette,
                             selected -> saveAndRefresh(host,
                                     GboardTypingEffectsSettings.writeColorPalette(preferences, selected)))));
-            styleRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    explosionStyleTitle,
-                    explosionStyleSummary,
-                    labelForValue(explosionStyleLabels, explosionStyleValues, cfg.explosionStyle),
-                    anyExplosion,
-                    () -> GboardPatchesSettingsContract.showSingleChoiceDialog(
+            generalRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    rainbowSpeedTitle,
+                    rainbowSpeedSummary,
+                    formatUnit(cfg.rainbowSpeedPercent, GboardTypingEffectsSettings.DEFAULT_RAINBOW_SPEED_PERCENT, "%"),
+                    master,
+                    () -> showIntSliderDialog(
                             host,
-                            explosionStyleTitle,
-                            explosionStyleLabels,
-                            explosionStyleValues,
-                            cfg.explosionStyle,
-                            selected -> saveAndRefresh(host,
-                                    GboardTypingEffectsSettings.writeExplosionStyle(preferences, selected)))));
-            styleRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    glitterStyleTitle,
-                    glitterStyleSummary,
-                    labelForValue(glitterStyleLabels, glitterStyleValues, cfg.glitterStyle),
-                    master && cfg.glitterEnabled,
-                    () -> GboardPatchesSettingsContract.showSingleChoiceDialog(
-                            host,
-                            glitterStyleTitle,
-                            glitterStyleLabels,
-                            glitterStyleValues,
-                            cfg.glitterStyle,
-                            selected -> saveAndRefresh(host,
-                                    GboardTypingEffectsSettings.writeGlitterStyle(preferences, selected)))));
-            styleRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    keyHighlightStyleTitle,
-                    keyHighlightStyleSummary,
-                    labelForValue(keyHighlightStyleLabels, keyHighlightStyleValues, cfg.keyHighlightStyle),
-                    master && cfg.keyHighlightEnabled,
-                    () -> GboardPatchesSettingsContract.showSingleChoiceDialog(
-                            host,
-                            keyHighlightStyleTitle,
-                            keyHighlightStyleLabels,
-                            keyHighlightStyleValues,
-                            cfg.keyHighlightStyle,
-                            selected -> saveAndRefresh(host,
-                                    GboardTypingEffectsSettings.writeKeyHighlightStyle(preferences, selected)))));
+                            rainbowSpeedTitle,
+                            rainbowSpeedSummary,
+                            GboardTypingEffectsSettings.MIN_RAINBOW_SPEED_PERCENT,
+                            GboardTypingEffectsSettings.MAX_RAINBOW_SPEED_PERCENT,
+                            RAINBOW_SPEED_STEP_PERCENT,
+                            GboardTypingEffectsSettings.DEFAULT_RAINBOW_SPEED_PERCENT,
+                            cfg.rainbowSpeedPercent,
+                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_RAINBOW_SPEED_PERCENT, "%"),
+                            v -> GboardTypingEffectsSettings.writeRainbowSpeedPercent(preferences, v))));
 
-            // Section 3: Swipe Trail Sliders
-            boolean trailActive = master && cfg.rainbowTrailEnabled;
-            List<GboardPatchesSettingsContract.Row> trailRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
+            // 2. Rainbow Swipe Trail (Toggle + glow + width + fade)
+            List<GboardPatchesSettingsContract.Row> trailRows = new ArrayList<GboardPatchesSettingsContract.Row>(4);
+            trailRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    rainbowTrailTitle,
+                    rainbowTrailSummary,
+                    cfg.rainbowTrailEnabled,
+                    master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeRainbowTrailEnabled(preferences, checked))));
+            trailRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    trailGlowTitle,
+                    trailGlowSummary,
+                    cfg.trailGlowEnabled,
+                    trailActive,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeTrailGlowEnabled(preferences, checked))));
             trailRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     trailWidthTitle,
                     trailWidthSummary,
@@ -460,26 +402,83 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.trailFadeMs,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_TRAIL_FADE_MS, "ms"),
                             v -> GboardTypingEffectsSettings.writeTrailFadeMs(preferences, v))));
-            trailRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    rainbowSpeedTitle,
-                    rainbowSpeedSummary,
-                    formatUnit(cfg.rainbowSpeedPercent, GboardTypingEffectsSettings.DEFAULT_RAINBOW_SPEED_PERCENT, "%"),
+
+            // 3. Swipe Glitter (Toggle + style + density)
+            List<GboardPatchesSettingsContract.Row> glitterRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
+            glitterRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    glitterTitle,
+                    glitterSummary,
+                    cfg.glitterEnabled,
                     master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeGlitterEnabled(preferences, checked))));
+            glitterRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    glitterStyleTitle,
+                    glitterStyleSummary,
+                    labelForValue(glitterStyleLabels, glitterStyleValues, cfg.glitterStyle),
+                    glitterActive,
+                    () -> GboardPatchesSettingsContract.showSingleChoiceDialog(
+                            host,
+                            glitterStyleTitle,
+                            glitterStyleLabels,
+                            glitterStyleValues,
+                            cfg.glitterStyle,
+                            selected -> saveAndRefresh(host,
+                                    GboardTypingEffectsSettings.writeGlitterStyle(preferences, selected)))));
+            glitterRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    glitterDensityTitle,
+                    glitterDensitySummary,
+                    formatUnit(cfg.glitterDensity, GboardTypingEffectsSettings.DEFAULT_GLITTER_DENSITY, "/10"),
+                    glitterActive,
                     () -> showIntSliderDialog(
                             host,
-                            rainbowSpeedTitle,
-                            rainbowSpeedSummary,
-                            GboardTypingEffectsSettings.MIN_RAINBOW_SPEED_PERCENT,
-                            GboardTypingEffectsSettings.MAX_RAINBOW_SPEED_PERCENT,
-                            RAINBOW_SPEED_STEP_PERCENT,
-                            GboardTypingEffectsSettings.DEFAULT_RAINBOW_SPEED_PERCENT,
-                            cfg.rainbowSpeedPercent,
-                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_RAINBOW_SPEED_PERCENT, "%"),
-                            v -> GboardTypingEffectsSettings.writeRainbowSpeedPercent(preferences, v))));
+                            glitterDensityTitle,
+                            glitterDensitySummary,
+                            GboardTypingEffectsSettings.MIN_GLITTER_DENSITY,
+                            GboardTypingEffectsSettings.MAX_GLITTER_DENSITY,
+                            GLITTER_DENSITY_STEP,
+                            GboardTypingEffectsSettings.DEFAULT_GLITTER_DENSITY,
+                            cfg.glitterDensity,
+                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_GLITTER_DENSITY, "/10"),
+                            v -> GboardTypingEffectsSettings.writeGlitterDensity(preferences, v))));
 
-            // Section 4: Particles & Explosions Sliders
-            List<GboardPatchesSettingsContract.Row> particleRows = new ArrayList<GboardPatchesSettingsContract.Row>(5);
-            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+            // 4. Explosions (Tap & Release toggles + shockwave ring + style + count)
+            List<GboardPatchesSettingsContract.Row> explosionRows = new ArrayList<GboardPatchesSettingsContract.Row>(5);
+            explosionRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    tapExplosionTitle,
+                    tapExplosionSummary,
+                    cfg.tapExplosionEnabled,
+                    master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeTapExplosionEnabled(preferences, checked))));
+            explosionRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    releaseExplosionTitle,
+                    releaseExplosionSummary,
+                    cfg.releaseExplosionEnabled,
+                    master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeReleaseExplosionEnabled(preferences, checked))));
+            explosionRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    shockwaveRingTitle,
+                    shockwaveRingSummary,
+                    cfg.shockwaveRingEnabled,
+                    anyExplosion,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeShockwaveRingEnabled(preferences, checked))));
+            explosionRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    explosionStyleTitle,
+                    explosionStyleSummary,
+                    labelForValue(explosionStyleLabels, explosionStyleValues, cfg.explosionStyle),
+                    anyExplosion,
+                    () -> GboardPatchesSettingsContract.showSingleChoiceDialog(
+                            host,
+                            explosionStyleTitle,
+                            explosionStyleLabels,
+                            explosionStyleValues,
+                            cfg.explosionStyle,
+                            selected -> saveAndRefresh(host,
+                                    GboardTypingEffectsSettings.writeExplosionStyle(preferences, selected)))));
+            explosionRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     particleCountTitle,
                     particleCountSummary,
                     formatUnit(cfg.particleCount, GboardTypingEffectsSettings.DEFAULT_PARTICLE_COUNT, ""),
@@ -495,23 +494,10 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.particleCount,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_PARTICLE_COUNT, ""),
                             v -> GboardTypingEffectsSettings.writeParticleCount(preferences, v))));
-            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    glitterDensityTitle,
-                    glitterDensitySummary,
-                    formatUnit(cfg.glitterDensity, GboardTypingEffectsSettings.DEFAULT_GLITTER_DENSITY, "/10"),
-                    master && cfg.glitterEnabled,
-                    () -> showIntSliderDialog(
-                            host,
-                            glitterDensityTitle,
-                            glitterDensitySummary,
-                            GboardTypingEffectsSettings.MIN_GLITTER_DENSITY,
-                            GboardTypingEffectsSettings.MAX_GLITTER_DENSITY,
-                            GLITTER_DENSITY_STEP,
-                            GboardTypingEffectsSettings.DEFAULT_GLITTER_DENSITY,
-                            cfg.glitterDensity,
-                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_GLITTER_DENSITY, "/10"),
-                            v -> GboardTypingEffectsSettings.writeGlitterDensity(preferences, v))));
-            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+
+            // 5. Particle Physics (Shared size, lifetime, and speed for glitter & explosions)
+            List<GboardPatchesSettingsContract.Row> physicsRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
+            physicsRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     particleSizeTitle,
                     particleSizeSummary,
                     formatUnit(cfg.particleSizePercent, GboardTypingEffectsSettings.DEFAULT_PARTICLE_SIZE_PERCENT, "%"),
@@ -527,7 +513,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.particleSizePercent,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_PARTICLE_SIZE_PERCENT, "%"),
                             v -> GboardTypingEffectsSettings.writeParticleSizePercent(preferences, v))));
-            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+            physicsRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     particleLifetimeTitle,
                     particleLifetimeSummary,
                     formatUnit(cfg.particleLifetimeMs, GboardTypingEffectsSettings.DEFAULT_PARTICLE_LIFETIME_MS, "ms"),
@@ -543,7 +529,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.particleLifetimeMs,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_PARTICLE_LIFETIME_MS, "ms"),
                             v -> GboardTypingEffectsSettings.writeParticleLifetimeMs(preferences, v))));
-            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+            physicsRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     particleSpeedTitle,
                     particleSpeedSummary,
                     formatUnit(cfg.particleSpeedPercent, GboardTypingEffectsSettings.DEFAULT_PARTICLE_SPEED_PERCENT, "%"),
@@ -559,12 +545,35 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.particleSpeedPercent,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_PARTICLE_SPEED_PERCENT, "%"),
                             v -> GboardTypingEffectsSettings.writeParticleSpeedPercent(preferences, v))));
-            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+
+            // 6. Key Touch Glow (Toggle + style + duration)
+            List<GboardPatchesSettingsContract.Row> keyGlowRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
+            keyGlowRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    keyHighlightTitle,
+                    keyHighlightSummary,
+                    cfg.keyHighlightEnabled,
+                    master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeKeyHighlightEnabled(preferences, checked))));
+            keyGlowRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    keyHighlightStyleTitle,
+                    keyHighlightStyleSummary,
+                    labelForValue(keyHighlightStyleLabels, keyHighlightStyleValues, cfg.keyHighlightStyle),
+                    keyGlowActive,
+                    () -> GboardPatchesSettingsContract.showSingleChoiceDialog(
+                            host,
+                            keyHighlightStyleTitle,
+                            keyHighlightStyleLabels,
+                            keyHighlightStyleValues,
+                            cfg.keyHighlightStyle,
+                            selected -> saveAndRefresh(host,
+                                    GboardTypingEffectsSettings.writeKeyHighlightStyle(preferences, selected)))));
+            keyGlowRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     keyHighlightDurationTitle,
                     keyHighlightDurationSummary,
                     formatUnit(cfg.keyHighlightDurationMs,
                             GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_DURATION_MS, "ms"),
-                    master && cfg.keyHighlightEnabled,
+                    keyGlowActive,
                     () -> showIntSliderDialog(
                             host,
                             keyHighlightDurationTitle,
@@ -576,12 +585,22 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.keyHighlightDurationMs,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_DURATION_MS, "ms"),
                             v -> GboardTypingEffectsSettings.writeKeyHighlightDurationMs(preferences, v))));
-            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+
+            // 7. Trampoline Keyboard Warp (Toggle + strength + radius)
+            List<GboardPatchesSettingsContract.Row> warpRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
+            warpRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    keyboardWarpTitle,
+                    keyboardWarpSummary,
+                    cfg.keyboardWarpEnabled,
+                    master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeKeyboardWarpEnabled(preferences, checked))));
+            warpRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     warpStrengthTitle,
                     warpStrengthSummary,
                     formatUnit(cfg.warpStrengthPercent,
                             GboardTypingEffectsSettings.DEFAULT_WARP_STRENGTH_PERCENT, "%"),
-                    master && cfg.keyboardWarpEnabled,
+                    warpActive,
                     () -> showIntSliderDialog(
                             host,
                             warpStrengthTitle,
@@ -593,12 +612,12 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.warpStrengthPercent,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_WARP_STRENGTH_PERCENT, "%"),
                             v -> GboardTypingEffectsSettings.writeWarpStrengthPercent(preferences, v))));
-            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+            warpRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     warpRadiusTitle,
                     warpRadiusSummary,
                     formatUnit(cfg.warpRadiusDp,
                             GboardTypingEffectsSettings.DEFAULT_WARP_RADIUS_DP, "dp"),
-                    master && cfg.keyboardWarpEnabled,
+                    warpActive,
                     () -> showIntSliderDialog(
                             host,
                             warpRadiusTitle,
@@ -611,7 +630,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_WARP_RADIUS_DP, "dp"),
                             v -> GboardTypingEffectsSettings.writeWarpRadiusDp(preferences, v))));
 
-            // Section 5: Reset to defaults
+            // 8. Reset to defaults
             List<GboardPatchesSettingsContract.Row> resetRows = Collections.singletonList(
                     new GboardPatchesSettingsContract.DangerRow(
                             resetTitle,
@@ -632,10 +651,13 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                     summary,
                     Collections.emptyList(),
                     Arrays.asList(
-                            new GboardPatchesSettingsContract.Section(sectionEffects, effectRows),
-                            new GboardPatchesSettingsContract.Section(sectionStyle, styleRows),
+                            new GboardPatchesSettingsContract.Section(sectionGeneral, generalRows),
                             new GboardPatchesSettingsContract.Section(sectionTrail, trailRows),
-                            new GboardPatchesSettingsContract.Section(sectionParticles, particleRows),
+                            new GboardPatchesSettingsContract.Section(sectionGlitter, glitterRows),
+                            new GboardPatchesSettingsContract.Section(sectionExplosions, explosionRows),
+                            new GboardPatchesSettingsContract.Section(sectionParticlePhysics, physicsRows),
+                            new GboardPatchesSettingsContract.Section(sectionKeyGlow, keyGlowRows),
+                            new GboardPatchesSettingsContract.Section(sectionWarp, warpRows),
                             new GboardPatchesSettingsContract.Section(
                                     null,
                                     null,

@@ -94,22 +94,6 @@ public final class TypingEffectsEngine {
         public long durationMs;
     }
 
-    public static final class KeyWarpTransform {
-        public float scale = 1f;
-        public float translationX = 0f;
-        public float translationY = 0f;
-        public float rotationX = 0f;
-        public float rotationY = 0f;
-
-        public void reset() {
-            scale = 1f;
-            translationX = 0f;
-            translationY = 0f;
-            rotationX = 0f;
-            rotationY = 0f;
-        }
-    }
-
     private static final class FadingWarpWell {
         float x;
         float y;
@@ -484,115 +468,107 @@ public final class TypingEffectsEngine {
     }
 
     /**
-     * Computes the trampoline-style 3D indentation transform for a key centered at
-     * {@code (keyCenterX, keyCenterY)} in {@code SoftKeyboardView} layout coordinates.
+     * Fills a continuous 2D trampoline mesh ({@code (cols + 1) * (rows + 1)} vertices) for
+     * {@link android.graphics.Canvas#drawBitmapMesh} so the entire keyboard warps together like
+     * a single elastic rubber mat pinned at its outer edges.
      *
-     * @return {@code true} if the key has a non-identity transform, {@code false} if at rest.
+     * @param outVerts  length {@code >= (cols + 1) * (rows + 1) * 2}
+     * @param outColors optional length {@code >= (cols + 1) * (rows + 1)} ARGB shade multipliers
+     * @return {@code true} if any vertex was displaced, {@code false} if the keyboard is at rest.
      */
-    public boolean computeKeyWarp(
-            float keyCenterX,
-            float keyCenterY,
+    public boolean fillTrampolineMesh(
+            int width,
+            int height,
+            int cols,
+            int rows,
             long nowMs,
-            KeyWarpTransform out) {
-        out.reset();
-        if (!hasActiveWarp()) {
+            float[] outVerts,
+            int[] outColors) {
+        if (!hasActiveWarp() || width <= 0 || height <= 0 || cols <= 0 || rows <= 0) {
             return false;
         }
 
-        float radiusPx = Math.max(20f * density, config.warpRadiusDp * density);
+        float radiusPx = Math.max(24f * density, config.warpRadiusDp * density);
         float strength = config.warpStrengthPercent / 100f;
-        float scaleDelta = 0f;
-        float tx = 0f;
-        float ty = 0f;
-        float rx = 0f;
-        float ry = 0f;
+        float edgeMarginPx = 18f * density;
+        boolean anyMoved = false;
 
-        // Active finger presses create a steady depression well.
-        for (PointerState state : activePointers.values()) {
-            float[] contrib = evaluateWarpWell(
-                    keyCenterX, keyCenterY, state.lastX, state.lastY, radiusPx, strength, 1.0f);
-            if (contrib != null) {
-                scaleDelta += contrib[0];
-                tx += contrib[1];
-                ty += contrib[2];
-                rx += contrib[3];
-                ry += contrib[4];
+        int vIdx = 0;
+        int cIdx = 0;
+        for (int r = 0; r <= rows; r++) {
+            float baseY = (height * (float) r) / rows;
+            boolean pinY = (r == 0 || r == rows);
+            float edgeY = pinY ? 0f : Math.min(1f, Math.min(baseY, height - baseY) / edgeMarginPx);
+
+            for (int c = 0; c <= cols; c++) {
+                float baseX = (width * (float) c) / cols;
+                boolean pinX = (c == 0 || c == cols);
+                float edgeX = pinX ? 0f : Math.min(1f, Math.min(baseX, width - baseX) / edgeMarginPx);
+                float edgeFactor = Math.min(edgeX, edgeY);
+
+                float offsetX = 0f;
+                float offsetY = 0f;
+                float depthSum = 0f;
+
+                if (edgeFactor > 0.001f) {
+                    // Active finger presses create a smooth depression funnel.
+                    for (PointerState state : activePointers.values()) {
+                        float dx = state.lastX - baseX;
+                        float dy = state.lastY - baseY;
+                        float dist = (float) Math.hypot(dx, dy);
+                        if (dist < radiusPx) {
+                            float u = 1f - (dist / radiusPx);
+                            float bell = u * u * (3f - 2f * u);
+                            float pull = Math.min(0.42f, 0.24f * strength * bell);
+                            offsetX += dx * pull;
+                            offsetY += dy * pull + 7.5f * density * strength * bell;
+                            depthSum += strength * bell;
+                        }
+                    }
+
+                    // Released fingers ripple back with a damped trampoline spring.
+                    for (int i = 0; i < fadingWarpWells.size(); i++) {
+                        FadingWarpWell well = fadingWarpWells.get(i);
+                        float t = (nowMs - well.releaseMs) / (float) Math.max(1L, well.durationMs);
+                        if (t < 0f || t >= 1f) continue;
+                        float amp = (float) (Math.exp(-5.0 * t) * Math.cos(2.5 * Math.PI * t));
+                        if (Math.abs(amp) < 0.008f) continue;
+                        float dx = well.x - baseX;
+                        float dy = well.y - baseY;
+                        float dist = (float) Math.hypot(dx, dy);
+                        if (dist < radiusPx) {
+                            float u = 1f - (dist / radiusPx);
+                            float bell = u * u * (3f - 2f * u);
+                            float pull = Math.max(-0.22f, Math.min(0.42f, 0.24f * strength * amp * bell));
+                            offsetX += dx * pull;
+                            offsetY += dy * pull + 7.5f * density * strength * amp * bell;
+                            depthSum += strength * amp * bell;
+                        }
+                    }
+
+                    offsetX *= edgeFactor;
+                    offsetY *= edgeFactor;
+                    depthSum *= edgeFactor;
+                }
+
+                float finalX = pinX ? baseX : Math.max(0f, Math.min(width, baseX + offsetX));
+                float finalY = pinY ? baseY : Math.max(0f, Math.min(height, baseY + offsetY));
+                if (Math.abs(finalX - baseX) > 0.15f || Math.abs(finalY - baseY) > 0.15f) {
+                    anyMoved = true;
+                }
+
+                outVerts[vIdx++] = finalX;
+                outVerts[vIdx++] = finalY;
+
+                if (outColors != null) {
+                    // Subtle 3D dimple shading: slight darkening inside the pressed funnel.
+                    float shade = 1f - Math.max(-0.04f, Math.min(0.24f, depthSum * 0.14f));
+                    int ch = Math.max(185, Math.min(255, Math.round(255f * shade)));
+                    outColors[cIdx++] = 0xFF000000 | (ch << 16) | (ch << 8) | ch;
+                }
             }
         }
-
-        // Released fingers bounce back with a damped trampoline spring curve.
-        for (int i = 0; i < fadingWarpWells.size(); i++) {
-            FadingWarpWell well = fadingWarpWells.get(i);
-            float t = (nowMs - well.releaseMs) / (float) Math.max(1L, well.durationMs);
-            if (t < 0f || t >= 1f) continue;
-            float amp = (float) (Math.exp(-5.0 * t) * Math.cos(2.5 * Math.PI * t));
-            if (Math.abs(amp) < 0.008f) continue;
-            float[] contrib = evaluateWarpWell(
-                    keyCenterX, keyCenterY, well.x, well.y, radiusPx, strength, amp);
-            if (contrib != null) {
-                scaleDelta += contrib[0];
-                tx += contrib[1];
-                ty += contrib[2];
-                rx += contrib[3];
-                ry += contrib[4];
-            }
-        }
-
-        if (Math.abs(scaleDelta) < 0.001f
-                && Math.abs(tx) < 0.1f
-                && Math.abs(ty) < 0.1f
-                && Math.abs(rx) < 0.1f
-                && Math.abs(ry) < 0.1f) {
-            return false;
-        }
-
-        out.scale = Math.max(0.68f, Math.min(1.14f, 1f + scaleDelta));
-        float maxShift = 18f * density;
-        out.translationX = Math.max(-maxShift, Math.min(maxShift, tx));
-        out.translationY = Math.max(-maxShift, Math.min(maxShift, ty));
-        out.rotationX = Math.max(-22f, Math.min(22f, rx));
-        out.rotationY = Math.max(-22f, Math.min(22f, ry));
-        return true;
-    }
-
-    private float[] evaluateWarpWell(
-            float kx,
-            float ky,
-            float wx,
-            float wy,
-            float radiusPx,
-            float strength,
-            float amplitude) {
-        float dx = wx - kx;
-        float dy = wy - ky;
-        float dist = (float) Math.hypot(dx, dy);
-        if (dist >= radiusPx) {
-            return null;
-        }
-        float u = 1f - (dist / radiusPx); // 1 at press center -> 0 at radius edge
-        // Smooth bell curve for depth (scale & vertical dip)
-        float bell = u * u * (3f - 2f * u);
-        // Slope curve peaks around mid-radius (keys on the slope tilt & pull inward)
-        float slope = 4f * u * (1f - u);
-
-        float scaleDelta = -0.17f * strength * amplitude * bell;
-        float tx = 0f;
-        float ty = 3.2f * density * strength * amplitude * bell;
-        float rx = 0f;
-        float ry = 0f;
-
-        if (dist > 0.5f) {
-            float nx = dx / dist;
-            float ny = dy / dist;
-            float pullPx = 9.5f * density * strength * amplitude * slope;
-            tx += nx * pullPx;
-            ty += ny * pullPx;
-            // 3D perspective tilt: keys dip toward the finger depression center.
-            float tiltDeg = 15f * strength * amplitude * slope;
-            ry = nx * tiltDeg;
-            rx = -ny * tiltDeg;
-        }
-        return new float[] { scaleDelta, tx, ty, rx, ry };
+        return anyMoved;
     }
 
     private void addFadingWarpWell(float x, float y, long nowMs) {

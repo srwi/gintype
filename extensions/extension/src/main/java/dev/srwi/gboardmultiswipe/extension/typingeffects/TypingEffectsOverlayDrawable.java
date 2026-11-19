@@ -1,6 +1,8 @@
 package dev.srwi.gboardmultiswipe.extension.typingeffects;
 
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -8,17 +10,26 @@ import android.graphics.PixelFormat;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
+import android.view.View;
 
+import java.lang.ref.WeakReference;
 import java.util.List;
 
 /**
  * Hardware-accelerated {@link Drawable} attached to {@code SoftKeyboardView.getOverlay()} that
- * renders Typing Effects (tapered rainbow/palette swipe trails with optional neon glow,
- * shockwave rings, glowing sparks, twinkling 4-point sparkle stars, and tumbling confetti).
+ * renders Typing Effects: continuous trampoline keyboard mesh warp, key touch glow, tapered
+ * rainbow/palette swipe trails with optional neon glow, shockwave rings, glowing sparks,
+ * twinkling 4-point sparkle stars, and tumbling confetti.
  */
 final class TypingEffectsOverlayDrawable extends Drawable {
 
+    private static final int MESH_COLS = 24;
+    private static final int MESH_ROWS = 10;
+    private static final int MESH_VERTEX_COUNT = (MESH_COLS + 1) * (MESH_ROWS + 1);
+
+    private final WeakReference<View> hostViewRef;
     private final TypingEffectsEngine engine;
+    private final Paint meshPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint trailGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint trailMainPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint trailCorePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -33,8 +44,15 @@ final class TypingEffectsOverlayDrawable extends Drawable {
     private final RectF confettiRect = new RectF();
     private final RectF keyRect = new RectF();
     private final RectF keyPulseRect = new RectF();
+    private final float[] meshVerts = new float[MESH_VERTEX_COUNT * 2];
+    private final int[] meshColors = new int[MESH_VERTEX_COUNT];
 
-    TypingEffectsOverlayDrawable(TypingEffectsEngine engine) {
+    private Bitmap captureBitmap = null;
+    private Canvas captureCanvas = null;
+    private boolean isCapturing = false;
+
+    TypingEffectsOverlayDrawable(View hostView, TypingEffectsEngine engine) {
+        this.hostViewRef = new WeakReference<View>(hostView);
         this.engine = engine;
 
         trailGlowPaint.setStyle(Paint.Style.STROKE);
@@ -61,8 +79,19 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         keyBorderPaint.setStyle(Paint.Style.STROKE);
     }
 
+    void releaseResources() {
+        if (captureBitmap != null) {
+            captureBitmap.recycle();
+            captureBitmap = null;
+        }
+        captureCanvas = null;
+    }
+
     @Override
     public void draw(Canvas canvas) {
+        if (isCapturing) {
+            return;
+        }
         TypingEffectsConfig cfg = engine.getConfig();
         if (!cfg.enabled) {
             return;
@@ -70,12 +99,16 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         long nowMs = SystemClock.uptimeMillis();
         float density = engine.getDensity();
 
-        // 0. Fancy Key Touch Glow (drawn underneath trails and particles for depth)
-        if (cfg.keyHighlightEnabled) {
-            List<TypingEffectsEngine.KeyHighlight> keys = engine.getKeyHighlights();
-            for (int i = 0; i < keys.size(); i++) {
-                drawKeyHighlight(canvas, keys.get(i), cfg, nowMs, density);
-            }
+        // 0. Continuous Trampoline Keyboard Mat Warp (captures the whole keyboard + key glows
+        //    and warps them together as one unified elastic surface!)
+        boolean drewWarpedMat = false;
+        if (cfg.keyboardWarpEnabled && engine.hasActiveWarp()) {
+            drewWarpedMat = drawTrampolineWarpMat(canvas, cfg, nowMs, density);
+        }
+
+        // 0b. Key Touch Glow (drawn directly when keyboard mat is not actively warped)
+        if (!drewWarpedMat && cfg.keyHighlightEnabled) {
+            drawAllKeyHighlights(canvas, cfg, nowMs, density);
         }
 
         // 1. Rainbow / Palette Swipe Trails
@@ -96,6 +129,105 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         List<TypingEffectsEngine.Particle> particles = engine.getParticles();
         for (int i = 0; i < particles.size(); i++) {
             drawParticle(canvas, particles.get(i), nowMs);
+        }
+    }
+
+    private boolean drawTrampolineWarpMat(
+            Canvas canvas,
+            TypingEffectsConfig cfg,
+            long nowMs,
+            float density) {
+        View hostView = hostViewRef.get();
+        if (hostView == null) return false;
+        int w = hostView.getWidth();
+        int h = hostView.getHeight();
+        if (w <= 0 || h <= 0) return false;
+
+        boolean displaced = engine.fillTrampolineMesh(
+                w, h, MESH_COLS, MESH_ROWS, nowMs, meshVerts, meshColors);
+        if (!displaced) {
+            return false;
+        }
+
+        if (captureBitmap == null
+                || captureBitmap.isRecycled()
+                || captureBitmap.getWidth() != w
+                || captureBitmap.getHeight() != h) {
+            if (captureBitmap != null && !captureBitmap.isRecycled()) {
+                captureBitmap.recycle();
+            }
+            try {
+                captureBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                captureCanvas = new Canvas(captureBitmap);
+            } catch (OutOfMemoryError ignored) {
+                captureBitmap = null;
+                captureCanvas = null;
+                return false;
+            }
+        }
+
+        isCapturing = true;
+        try {
+            captureBitmap.eraseColor(Color.TRANSPARENT);
+            drawOpaqueKeyboardBackdrop(hostView, captureCanvas);
+            hostView.draw(captureCanvas);
+            if (cfg.keyHighlightEnabled) {
+                drawAllKeyHighlights(captureCanvas, cfg, nowMs, density);
+            }
+        } finally {
+            isCapturing = false;
+        }
+
+        canvas.drawBitmapMesh(
+                captureBitmap,
+                MESH_COLS,
+                MESH_ROWS,
+                meshVerts,
+                0,
+                meshColors,
+                0,
+                meshPaint);
+        return true;
+    }
+
+    /**
+     * Draws the nearest ancestor keyboard background into the offscreen capture bitmap so gaps
+     * between keys remain 100% opaque and never reveal unwarped keys underneath.
+     */
+    private static void drawOpaqueKeyboardBackdrop(View hostView, Canvas outCanvas) {
+        float offsetX = 0f;
+        float offsetY = 0f;
+        View cur = hostView;
+        for (int depth = 0; depth < 6 && cur != null; depth++) {
+            Drawable bg = cur.getBackground();
+            if (bg != null) {
+                int save = outCanvas.save();
+                outCanvas.translate(-offsetX, -offsetY);
+                bg.draw(outCanvas);
+                outCanvas.restoreToCount(save);
+                return;
+            }
+            offsetX += cur.getX();
+            offsetY += cur.getY();
+            if (cur.getParent() instanceof View) {
+                View parent = (View) cur.getParent();
+                offsetX -= parent.getScrollX();
+                offsetY -= parent.getScrollY();
+                cur = parent;
+            } else {
+                break;
+            }
+        }
+    }
+
+    private void drawAllKeyHighlights(
+            Canvas canvas,
+            TypingEffectsConfig cfg,
+            long nowMs,
+            float density) {
+        List<TypingEffectsEngine.KeyHighlight> keys = engine.getKeyHighlights();
+        for (int i = 0; i < keys.size(); i++) {
+            drawKeyHighlight(canvas, keys.get(i), cfg, nowMs, density);
         }
     }
 

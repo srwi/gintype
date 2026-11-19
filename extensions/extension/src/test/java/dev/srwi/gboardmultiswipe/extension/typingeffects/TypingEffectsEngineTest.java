@@ -272,29 +272,39 @@ public class TypingEffectsEngineTest {
     }
 
     @Test
-    public void trampolineKeyboardWarpDepressesCenterPullsNeighborsAndRebounds() {
+    public void trampolineKeyboardWarpMeshPinsEdgesPullsInteriorAndRebounds() {
         TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(11L));
         engine.setConfig(TypingEffectsConfig.defaults());
 
-        engine.onPointerDown(0, 200f, 200f, 1000L);
+        int w = 800;
+        int h = 400;
+        int cols = 16;
+        int rows = 8;
+        int count = (cols + 1) * (rows + 1);
+        float[] verts = new float[count * 2];
+        int[] colors = new int[count];
+
+        engine.onPointerDown(0, 400f, 200f, 1000L);
         assertTrue(engine.hasActiveWarp());
+        assertTrue(engine.fillTrampolineMesh(w, h, cols, rows, 1000L, verts, colors));
 
-        TypingEffectsEngine.KeyWarpTransform center = new TypingEffectsEngine.KeyWarpTransform();
-        assertTrue(engine.computeKeyWarp(200f, 200f, 1000L, center));
-        assertTrue("Pressed key should shrink slightly", center.scale < 0.90f);
+        // Top-left corner (0, 0) must stay pinned at (0, 0)
+        assertEquals(0f, verts[0], 0.001f);
+        assertEquals(0f, verts[1], 0.001f);
 
-        TypingEffectsEngine.KeyWarpTransform leftNeighbor = new TypingEffectsEngine.KeyWarpTransform();
-        assertTrue(engine.computeKeyWarp(120f, 200f, 1000L, leftNeighbor));
-        assertTrue("Left neighbor should pull right toward press center", leftNeighbor.translationX > 0f);
-        assertTrue("Left neighbor should tilt toward press center", leftNeighbor.rotationY > 0f);
+        // Interior vertex slightly left of center (col=6, row=4 -> baseX=300, baseY=200)
+        // should be pulled right toward 400 and slightly downward
+        int idxLeft = 4 * (cols + 1) + 6;
+        assertTrue("Interior vertex left of press should pull right", verts[idxLeft * 2] > 300f);
+        assertTrue("Interior vertex should dip downward", verts[idxLeft * 2 + 1] > 200f);
 
-        TypingEffectsEngine.KeyWarpTransform farKey = new TypingEffectsEngine.KeyWarpTransform();
-        assertFalse("Key far outside warp radius should stay untouched",
-                engine.computeKeyWarp(900f, 200f, 1000L, farKey));
-        assertEquals(1f, farKey.scale, 0.001f);
+        // Center vertex (col=8, row=4) should be shaded slightly darker for 3D dimple depth
+        int idxCenter = 4 * (cols + 1) + 8;
+        assertTrue("Center vertex should have subtle dimple shading",
+                (colors[idxCenter] & 0xFF) < 255);
 
         // Release triggers damped trampoline rebound and eventually settles cleanly
-        engine.onPointerUp(0, 200f, 200f, 1050L);
+        engine.onPointerUp(0, 400f, 200f, 1050L);
         assertTrue(engine.hasActiveWarp());
         assertFalse("Warp spring should finish cleanly after duration", engine.step(2000L));
         assertFalse(engine.hasActiveWarp());

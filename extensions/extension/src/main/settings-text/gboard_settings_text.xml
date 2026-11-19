@@ -453,16 +453,25 @@
         <translation locale="en">Rainbow swipe trail, glitter particles, and tap or release explosions</translation>
         </string>
     <string name="gboard_patches_typing_effects_section_effects">
-        <translation locale="en">Effects</translation>
+        <translation locale="en">General</translation>
         </string>
     <string name="gboard_patches_typing_effects_section_style">
-        <translation locale="en">Look &amp; Style</translation>
+        <translation locale="en">Swipe Glitter</translation>
         </string>
     <string name="gboard_patches_typing_effects_section_trail">
-        <translation locale="en">Swipe Trail</translation>
+        <translation locale="en">Rainbow Swipe Trail</translation>
         </string>
     <string name="gboard_patches_typing_effects_section_particles">
-        <translation locale="en">Particles &amp; Explosions</translation>
+        <translation locale="en">Explosions</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_section_particle_physics">
+        <translation locale="en">Particle Physics</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_section_key_glow">
+        <translation locale="en">Key Touch Glow</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_section_warp">
+        <translation locale="en">Trampoline Keyboard Warp</translation>
         </string>
     <string name="gboard_patches_typing_effects_enabled_title">
         <translation locale="en">Enable Typing Effects</translation>

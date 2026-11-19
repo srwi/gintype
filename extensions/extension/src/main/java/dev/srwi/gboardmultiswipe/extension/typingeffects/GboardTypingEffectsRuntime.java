@@ -13,8 +13,6 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import java.lang.ref.WeakReference;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.WeakHashMap;
 
 /**
@@ -139,10 +137,6 @@ public final class GboardTypingEffectsRuntime {
         private final Rect tempOutlineRect = new Rect();
         private final RectF tempVisualRect = new RectF();
         private final Outline tempOutline = new Outline();
-        private final TypingEffectsEngine.KeyWarpTransform tempWarp =
-                new TypingEffectsEngine.KeyWarpTransform();
-        private final List<View> warpedKeyViews = new ArrayList<View>(48);
-        private boolean warpCurrentlyApplied = false;
         private boolean attached = false;
         private boolean animating = false;
         private int lastBoundsW = -1;
@@ -160,7 +154,6 @@ public final class GboardTypingEffectsRuntime {
                 syncBounds(view);
                 long nowMs = SystemClock.uptimeMillis();
                 boolean stillActive = engine.step(nowMs);
-                applyOrResetKeyWarp(view, nowMs);
                 drawable.invalidateSelf();
                 if (stillActive) {
                     scheduleNextFrame(view);
@@ -174,14 +167,11 @@ public final class GboardTypingEffectsRuntime {
                     ? view.getResources().getDisplayMetrics().density
                     : 2.5f;
             this.engine = new TypingEffectsEngine(density);
-            this.drawable = new TypingEffectsOverlayDrawable(engine);
+            this.drawable = new TypingEffectsOverlayDrawable(view, engine);
         }
 
         void setConfig(TypingEffectsConfig cfg) {
             engine.setConfig(cfg);
-            if (!cfg.enabled || !cfg.keyboardWarpEnabled) {
-                resetKeyWarps();
-            }
             if (!cfg.hasAnyVisualEffectEnabled() && animating) {
                 engine.clearAll();
                 drawable.invalidateSelf();
@@ -244,11 +234,8 @@ public final class GboardTypingEffectsRuntime {
             }
 
             if (engine.hasActiveEffects()) {
-                applyOrResetKeyWarp(view, nowMs);
                 drawable.invalidateSelf();
                 scheduleNextFrame(view);
-            } else if (warpCurrentlyApplied) {
-                resetKeyWarps();
             }
         }
 
@@ -449,97 +436,7 @@ public final class GboardTypingEffectsRuntime {
             view.postOnAnimation(frameRunnable);
         }
 
-        private void applyOrResetKeyWarp(View root, long nowMs) {
-            if (!engine.hasActiveWarp()) {
-                if (warpCurrentlyApplied) {
-                    resetKeyWarps();
-                }
-                return;
-            }
-
-            warpedKeyViews.clear();
-            collectSoftKeyViews(root, warpedKeyViews);
-            float cameraDist = 4200f * engine.getDensity();
-            boolean anyTransformed = false;
-
-            for (int i = 0; i < warpedKeyViews.size(); i++) {
-                View key = warpedKeyViews.get(i);
-                int w = key.getWidth();
-                int h = key.getHeight();
-                if (w <= 0 || h <= 0) continue;
-
-                // Compute pure layout center (excluding translation) to avoid feedback jitter.
-                float cx = w * 0.5f;
-                float cy = h * 0.5f;
-                View cur = key;
-                while (cur != null && cur != root) {
-                    cx += cur.getLeft();
-                    cy += cur.getTop();
-                    if (cur.getParent() instanceof View) {
-                        View parent = (View) cur.getParent();
-                        cx -= parent.getScrollX();
-                        cy -= parent.getScrollY();
-                        cur = parent;
-                    } else {
-                        break;
-                    }
-                }
-
-                if (engine.computeKeyWarp(cx, cy, nowMs, tempWarp)) {
-                    key.setCameraDistance(cameraDist);
-                    key.setPivotX(w * 0.5f);
-                    key.setPivotY(h * 0.5f);
-                    key.setScaleX(tempWarp.scale);
-                    key.setScaleY(tempWarp.scale);
-                    key.setTranslationX(tempWarp.translationX);
-                    key.setTranslationY(tempWarp.translationY);
-                    key.setRotationX(tempWarp.rotationX);
-                    key.setRotationY(tempWarp.rotationY);
-                    anyTransformed = true;
-                } else {
-                    resetSingleKeyWarp(key);
-                }
-            }
-            warpCurrentlyApplied = anyTransformed;
-        }
-
-        private void resetKeyWarps() {
-            for (int i = 0; i < warpedKeyViews.size(); i++) {
-                resetSingleKeyWarp(warpedKeyViews.get(i));
-            }
-            warpedKeyViews.clear();
-            warpCurrentlyApplied = false;
-        }
-
-        private static void resetSingleKeyWarp(View key) {
-            if (key == null) return;
-            if (key.getScaleX() != 1f) key.setScaleX(1f);
-            if (key.getScaleY() != 1f) key.setScaleY(1f);
-            if (key.getTranslationX() != 0f) key.setTranslationX(0f);
-            if (key.getTranslationY() != 0f) key.setTranslationY(0f);
-            if (key.getRotationX() != 0f) key.setRotationX(0f);
-            if (key.getRotationY() != 0f) key.setRotationY(0f);
-        }
-
-        private static void collectSoftKeyViews(View node, List<View> out) {
-            if (node == null || node.getVisibility() != View.VISIBLE) {
-                return;
-            }
-            if (node.getClass().getName().endsWith("SoftKeyView")) {
-                out.add(node);
-                return;
-            }
-            if (node instanceof ViewGroup) {
-                ViewGroup group = (ViewGroup) node;
-                int count = group.getChildCount();
-                for (int i = 0; i < count; i++) {
-                    collectSoftKeyViews(group.getChildAt(i), out);
-                }
-            }
-        }
-
         void detach() {
-            resetKeyWarps();
             View view = viewRef.get();
             if (view != null) {
                 view.removeCallbacks(frameRunnable);
@@ -553,6 +450,7 @@ public final class GboardTypingEffectsRuntime {
             animating = false;
             attached = false;
             engine.clearAll();
+            drawable.releaseResources();
         }
     }
 }
