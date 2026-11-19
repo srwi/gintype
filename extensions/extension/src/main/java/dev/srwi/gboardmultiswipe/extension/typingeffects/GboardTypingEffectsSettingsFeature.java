@@ -341,8 +341,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             generalRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     enabledTitle,
                     enabledSummary,
-                    master,
                     true,
+                    master,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeEnabled(preferences, checked))));
             generalRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -380,15 +380,15 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             trailRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     rainbowTrailTitle,
                     rainbowTrailSummary,
-                    cfg.rainbowTrailEnabled,
                     master,
+                    cfg.rainbowTrailEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeRainbowTrailEnabled(preferences, checked))));
             trailRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     trailGlowTitle,
                     trailGlowSummary,
-                    cfg.trailGlowEnabled,
                     trailActive,
+                    cfg.trailGlowEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeTrailGlowEnabled(preferences, checked))));
             trailRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -429,8 +429,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             glitterRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     glitterTitle,
                     glitterSummary,
-                    cfg.glitterEnabled,
                     master,
+                    cfg.glitterEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeGlitterEnabled(preferences, checked))));
             glitterRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -468,22 +468,22 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             explosionRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     tapExplosionTitle,
                     tapExplosionSummary,
-                    cfg.tapExplosionEnabled,
                     master,
+                    cfg.tapExplosionEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeTapExplosionEnabled(preferences, checked))));
             explosionRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     releaseExplosionTitle,
                     releaseExplosionSummary,
-                    cfg.releaseExplosionEnabled,
                     master,
+                    cfg.releaseExplosionEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeReleaseExplosionEnabled(preferences, checked))));
             explosionRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     shockwaveRingTitle,
                     shockwaveRingSummary,
-                    cfg.shockwaveRingEnabled,
                     anyExplosion,
+                    cfg.shockwaveRingEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeShockwaveRingEnabled(preferences, checked))));
             explosionRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -572,8 +572,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             keyGlowRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     keyHighlightTitle,
                     keyHighlightSummary,
-                    cfg.keyHighlightEnabled,
                     master,
+                    cfg.keyHighlightEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeKeyHighlightEnabled(preferences, checked))));
             keyGlowRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -612,8 +612,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             warpRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     keyboardWarpTitle,
                     keyboardWarpSummary,
-                    cfg.keyboardWarpEnabled,
                     master,
+                    cfg.keyboardWarpEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeKeyboardWarpEnabled(preferences, checked))));
             warpRows.add(new GboardPatchesSettingsContract.SelectorRow(
@@ -656,8 +656,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
             windRows.add(new GboardPatchesSettingsContract.SwitchRow(
                     windTitle,
                     windSummary,
-                    cfg.windEnabled,
                     master,
+                    cfg.windEnabled,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeWindEnabled(preferences, checked))));
             windRows.add(new GboardPatchesSettingsContract.SelectorRow(
