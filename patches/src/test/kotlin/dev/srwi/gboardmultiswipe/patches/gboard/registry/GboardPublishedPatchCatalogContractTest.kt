@@ -22,6 +22,10 @@ class GboardPublishedPatchCatalogContractTest {
             gboardMultiSwipePatch,
             registrations.single { patch -> patch.name == "MultiSwipe" },
         )
+        assertSame(
+            gboardTypingEffectsPatch,
+            registrations.single { patch -> patch.name == "Typing Effects" },
+        )
     }
 
     @Test

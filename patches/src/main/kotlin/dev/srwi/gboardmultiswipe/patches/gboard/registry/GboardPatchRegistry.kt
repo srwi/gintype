@@ -14,6 +14,8 @@ import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThicc
 import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarFeatureMarkerPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeBytecodePatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeFeatureMarkerPatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.typingeffects.gboardTypingEffectsBytecodePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.typingeffects.gboardTypingEffectsFeatureMarkerPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.gboardPatchesSettingsPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.generated.GboardTargetAdmission
 import dev.srwi.gboardmultiswipe.patches.shared.Constants.COMPATIBILITY_GBOARD
@@ -70,6 +72,22 @@ val gboardMultiSwipePatch = gboardPublicResourcePatch(
 }
 
 @Suppress("unused")
+val gboardTypingEffectsPatch = gboardPublicResourcePatch(
+    featureId = "typing_effects",
+    name = "Typing Effects",
+    description = "Visual typing show effects: rainbow swipe trail, glitter particles, and tap/release explosions with full customization.",
+    default = true,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(
+        gboardPatchesSettingsPatch,
+        gboardTypingEffectsFeatureMarkerPatch,
+        gboardTypingEffectsBytecodePatch,
+    )
+}
+
+@Suppress("unused")
 val gboardPackageRenamePatch = gboardPublicResourcePatch(
     featureId = "package_rename",
     name = "Package Rename",
@@ -106,9 +124,10 @@ val gboardPackageRenamePatch = gboardPublicResourcePatch(
 
 object GboardPublishedPatchCatalog {
     val morpheRegistrations: Set<Patch<*>> = linkedSetOf(
-        gboardThiccTopBarPatch,
         gboardMultiSwipePatch,
         gboardPackageRenamePatch,
+        gboardThiccTopBarPatch,
+        gboardTypingEffectsPatch,
     )
 
     fun publishedInventory(version: String): String {

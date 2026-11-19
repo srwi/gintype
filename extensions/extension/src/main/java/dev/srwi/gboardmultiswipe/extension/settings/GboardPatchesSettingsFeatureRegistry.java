@@ -10,6 +10,7 @@ import java.util.List;
 
 import dev.srwi.gboardmultiswipe.extension.thicctopbar.GboardThiccTopBarSettingsFeature;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeSettingsFeature;
+import dev.srwi.gboardmultiswipe.extension.typingeffects.GboardTypingEffectsSettingsFeature;
 
 public final class GboardPatchesSettingsFeatureRegistry {
     private static final String TAG = "GboardPatches";
@@ -30,7 +31,8 @@ public final class GboardPatchesSettingsFeatureRegistry {
     public static List<GboardPatchesSettingsContract.Feature> allFeatures(Context context) {
         return Collections.unmodifiableList(Arrays.asList(
                 new GboardMultiSwipeSettingsFeature(context),
-                new GboardThiccTopBarSettingsFeature(context)));
+                new GboardThiccTopBarSettingsFeature(context),
+                new GboardTypingEffectsSettingsFeature(context)));
     }
 
     private static void addIfAvailable(Context context,

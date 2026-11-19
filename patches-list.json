@@ -2,25 +2,13 @@
   "version": "1.0.0",
   "patches": [
     {
-      "name": "Thicc Top Bar",
-      "description": "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
-      "use": true,
-      "dependencies": [],
-      "compatiblePackages": {
-        "com.google.android.inputmethod.latin": [
-          "18.5.4.993608717-release-arm64-v8a"
-        ]
-      },
-      "options": []
-    },
-    {
       "name": "MultiSwipe",
       "description": "Two-finger swipe and tap+swipe chorded gesture typing powered by the Kinetica algorithm and Gboard dictionary.",
       "use": true,
       "dependencies": [],
       "compatiblePackages": {
         "com.google.android.inputmethod.latin": [
-          "18.5.4.993608717-release-arm64-v8a"
+          "18.5.6.993608717-release-arm64-v8a"
         ]
       },
       "options": []
@@ -32,7 +20,7 @@
       "dependencies": [],
       "compatiblePackages": {
         "com.google.android.inputmethod.latin": [
-          "18.5.4.993608717-release-arm64-v8a"
+          "18.5.6.993608717-release-arm64-v8a"
         ]
       },
       "options": [
@@ -51,6 +39,30 @@
           }
         }
       ]
+    },
+    {
+      "name": "Thicc Top Bar",
+      "description": "Vertical word suggestions with up/down swipe and 2D sentence matrix.",
+      "use": true,
+      "dependencies": [],
+      "compatiblePackages": {
+        "com.google.android.inputmethod.latin": [
+          "18.5.6.993608717-release-arm64-v8a"
+        ]
+      },
+      "options": []
+    },
+    {
+      "name": "Typing Effects",
+      "description": "Visual typing show effects: rainbow swipe trail, glitter particles, and tap/release explosions with full customization.",
+      "use": true,
+      "dependencies": [],
+      "compatiblePackages": {
+        "com.google.android.inputmethod.latin": [
+          "18.5.6.993608717-release-arm64-v8a"
+        ]
+      },
+      "options": []
     }
   ]
 }

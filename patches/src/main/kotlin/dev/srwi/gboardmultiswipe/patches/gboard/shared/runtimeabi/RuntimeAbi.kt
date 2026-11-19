@@ -14,6 +14,9 @@ internal enum class RuntimeCallId(internal val encodedAbi: String) {
     MULTISWIPE_RUNTIME_SHOULD_RECEIVE_EVENTS_DURING_OTHER_OWNER("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldReceiveEventsDuringOtherOwner(Ljava/lang/Object;)Z"),
     MULTISWIPE_RUNTIME_SHOULD_SUPPRESS_BASIC_HANDLER("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldSuppressBasicMotionEventHandler(Ljava/lang/Object;Landroid/view/MotionEvent;)Z"),
     MULTISWIPE_RUNTIME_SHOULD_SUPPRESS_ROLLOVER_COMMIT("Ldev/srwi/gboardmultiswipe/extension/multiswipe/GboardMultiSwipeRuntime;->shouldSuppressRolloverCommitOnPointerDown(Landroid/view/MotionEvent;)Z"),
+    TYPING_EFFECTS_RUNTIME_ON_KEYBOARD_TOUCH_EVENT("Ldev/srwi/gboardmultiswipe/extension/typingeffects/GboardTypingEffectsRuntime;->onKeyboardTouchEvent(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
+    TYPING_EFFECTS_RUNTIME_ON_KEYBOARD_DETACHED("Ldev/srwi/gboardmultiswipe/extension/typingeffects/GboardTypingEffectsRuntime;->onKeyboardDetached(Ljava/lang/Object;)V"),
+    TYPING_EFFECTS_RUNTIME_SHOULD_SUPPRESS_STOCK_TRAIL("Ldev/srwi/gboardmultiswipe/extension/typingeffects/GboardTypingEffectsRuntime;->shouldSuppressStockGestureTrail(Ljava/lang/Object;)Z"),
 }
 
 internal data class RuntimeAbi(

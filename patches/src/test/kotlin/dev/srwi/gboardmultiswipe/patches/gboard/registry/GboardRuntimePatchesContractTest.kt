@@ -4,6 +4,8 @@ import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThicc
 import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarFeatureMarkerPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeBytecodePatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeFeatureMarkerPatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.typingeffects.gboardTypingEffectsBytecodePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.typingeffects.gboardTypingEffectsFeatureMarkerPatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -17,15 +19,18 @@ class GboardRuntimePatchesContractTest {
             patch.name == "Thicc Top Bar"
         }
         val multiswipe = registrations.single { patch -> patch.name == "MultiSwipe" }
+        val typingEffects = registrations.single { patch -> patch.name == "Typing Effects" }
 
         assertSame(gboardThiccTopBarPatch, matrix)
         assertSame(gboardMultiSwipePatch, multiswipe)
+        assertSame(gboardTypingEffectsPatch, typingEffects)
 
         val generated = generatedPublishedPatches().associateBy { patch ->
             patch["name"].asString
         }
         assertTrue(generated.getValue(matrix.name!!)["use"].asBoolean)
         assertTrue(generated.getValue(multiswipe.name!!)["use"].asBoolean)
+        assertTrue(generated.getValue(typingEffects.name!!)["use"].asBoolean)
     }
 
     @Test
@@ -42,6 +47,13 @@ class GboardRuntimePatchesContractTest {
         })
         assertTrue(gboardMultiSwipePatch.dependencies.any { dependency ->
             dependency === gboardMultiSwipeBytecodePatch
+        })
+
+        assertTrue(gboardTypingEffectsPatch.dependencies.any { dependency ->
+            dependency === gboardTypingEffectsFeatureMarkerPatch
+        })
+        assertTrue(gboardTypingEffectsPatch.dependencies.any { dependency ->
+            dependency === gboardTypingEffectsBytecodePatch
         })
     }
 

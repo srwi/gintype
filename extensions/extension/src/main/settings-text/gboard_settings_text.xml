@@ -446,4 +446,190 @@
     <string name="gboard_patches_kinetica_reset_done">
         <translation locale="en">Decoder parameters reset to defaults.</translation>
         </string>
+    <string name="gboard_patches_typing_effects_title">
+        <translation locale="en">Typing Effects</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_summary">
+        <translation locale="en">Rainbow swipe trail, glitter particles, and tap or release explosions</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_section_effects">
+        <translation locale="en">Effects</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_section_style">
+        <translation locale="en">Look &amp; Style</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_section_trail">
+        <translation locale="en">Swipe Trail</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_section_particles">
+        <translation locale="en">Particles &amp; Explosions</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_enabled_title">
+        <translation locale="en">Enable Typing Effects</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_enabled_summary">
+        <translation locale="en">Master switch for all visual show effects on the keyboard</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_rainbow_trail_title">
+        <translation locale="en">Rainbow swipe trail</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_rainbow_trail_summary">
+        <translation locale="en">Replace the default swipe trail with an animated color trail for single-finger and MultiSwipe gestures</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_trail_glow_title">
+        <translation locale="en">Trail neon glow</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_trail_glow_summary">
+        <translation locale="en">Add a luminous outer aura and bright core highlight to the swipe trail</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_title">
+        <translation locale="en">Swipe glitter</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_summary">
+        <translation locale="en">Emit shimmering glitter particles behind your fingers while swiping</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_tap_explosion_title">
+        <translation locale="en">Tap explosion</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_tap_explosion_summary">
+        <translation locale="en">Burst particles at your fingertip whenever you tap a key</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_release_explosion_title">
+        <translation locale="en">Swipe-release explosion</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_release_explosion_summary">
+        <translation locale="en">Trigger a celebratory burst when lifting a finger at the end of a swipe</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_shockwave_ring_title">
+        <translation locale="en">Shockwave ring</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_shockwave_ring_summary">
+        <translation locale="en">Add an expanding luminous ring to tap and swipe-release explosions</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_palette_title">
+        <translation locale="en">Color palette</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_palette_summary">
+        <translation locale="en">Color theme used for trails, glitter, and explosions</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_palette_rainbow">
+        <translation locale="en">Rainbow (Default)</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_palette_neon">
+        <translation locale="en">Neon Cyberpunk</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_palette_fire">
+        <translation locale="en">Blazing Fire</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_palette_galaxy">
+        <translation locale="en">Cosmic Galaxy</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_palette_pastel">
+        <translation locale="en">Dreamy Pastel</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_explosion_style_title">
+        <translation locale="en">Explosion style</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_explosion_style_summary">
+        <translation locale="en">Visual particle shape for tap and swipe-release bursts</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_explosion_style_sparks_ring">
+        <translation locale="en">Glowing sparks (Default)</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_explosion_style_sparkles">
+        <translation locale="en">Sparkling stars &amp; diamonds</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_explosion_style_confetti">
+        <translation locale="en">Colorful confetti shards</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_explosion_style_all_out">
+        <translation locale="en">All-out show mix (Sparks + Stars + Confetti)</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_style_title">
+        <translation locale="en">Glitter style</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_style_summary">
+        <translation locale="en">Particle shape emitted along your swipe path</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_style_sparkles">
+        <translation locale="en">Twinkling stars (Default)</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_style_sparks">
+        <translation locale="en">Glowing micro-sparks</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_style_confetti">
+        <translation locale="en">Mini confetti flecks</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_style_mixed">
+        <translation locale="en">Mixed sparkle burst</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_trail_width_title">
+        <translation locale="en">Trail width</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_trail_width_summary">
+        <translation locale="en">Thickness of the swipe ribbon at your fingertip</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_trail_fade_title">
+        <translation locale="en">Trail fade duration</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_trail_fade_summary">
+        <translation locale="en">How long swipe trails linger before fading away</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_rainbow_speed_title">
+        <translation locale="en">Color cycle speed</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_rainbow_speed_summary">
+        <translation locale="en">How rapidly rainbow and palette colors shift along the trail</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_particle_count_title">
+        <translation locale="en">Explosion particle count</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_particle_count_summary">
+        <translation locale="en">Number of particles spawned per tap or swipe-release explosion</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_density_title">
+        <translation locale="en">Glitter density</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_glitter_density_summary">
+        <translation locale="en">How densely glitter particles spawn while swiping</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_particle_size_title">
+        <translation locale="en">Particle size</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_particle_size_summary">
+        <translation locale="en">Scale of sparks, stars, confetti, and shockwave rings</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_particle_lifetime_title">
+        <translation locale="en">Particle lifetime</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_particle_lifetime_summary">
+        <translation locale="en">How long explosion and glitter particles stay visible</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_particle_speed_title">
+        <translation locale="en">Particle speed</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_particle_speed_summary">
+        <translation locale="en">Initial burst velocity of explosion and glitter particles</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_reset_title">
+        <translation locale="en">Reset to defaults</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_reset_summary">
+        <translation locale="en">Restore all Typing Effects toggles, styles, and sliders to default values</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_reset_confirm_title">
+        <translation locale="en">Reset Typing Effects?</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_reset_confirm_message">
+        <translation locale="en">All Typing Effects settings will be restored to their default values.</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_reset_done">
+        <translation locale="en">Typing Effects reset to defaults.</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_error_title">
+        <translation locale="en">Typing Effects settings unavailable</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_error_summary">
+        <translation locale="en">The Typing Effects settings screen failed to load. Reopen Gboard settings and try again.</translation>
+        </string>
 </settings-text>

@@ -11,6 +11,8 @@ public final class GboardPatchesFeatureAvailability {
             "dev.srwi.gboardmultiswipe.feature.thicc_top_bar";
     public static final String FEATURE_MULTISWIPE =
             "dev.srwi.gboardmultiswipe.feature.multiswipe";
+    public static final String FEATURE_TYPING_EFFECTS =
+            "dev.srwi.gboardmultiswipe.feature.typing_effects";
 
     private static final String TAG = "GboardPatches";
 

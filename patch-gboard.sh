@@ -230,6 +230,7 @@ PATCH_ARGS=(
   --exclusive
   -e "Thicc Top Bar"
   -e "MultiSwipe"
+  -e "Typing Effects"
 )
 if [[ "$RENAME_PACKAGE" == true ]]; then
   PATCH_ARGS+=(-e "Package Rename")
