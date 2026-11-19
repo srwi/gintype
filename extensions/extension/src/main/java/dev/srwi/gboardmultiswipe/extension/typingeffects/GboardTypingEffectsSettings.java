@@ -18,6 +18,7 @@ public final class GboardTypingEffectsSettings {
     public static final String PREF_KEY_RELEASE_EXPLOSION = "pref_typing_effects_release_explosion";
     public static final String PREF_KEY_SHOCKWAVE_RING = "pref_typing_effects_shockwave_ring";
     public static final String PREF_KEY_KEY_HIGHLIGHT = "pref_typing_effects_key_highlight";
+    public static final String PREF_KEY_KEYBOARD_WARP = "pref_typing_effects_keyboard_warp";
     public static final String PREF_KEY_COLOR_PALETTE = "pref_typing_effects_color_palette";
     public static final String PREF_KEY_EXPLOSION_STYLE = "pref_typing_effects_explosion_style";
     public static final String PREF_KEY_GLITTER_STYLE = "pref_typing_effects_glitter_style";
@@ -34,6 +35,8 @@ public final class GboardTypingEffectsSettings {
     public static final String PREF_KEY_PARTICLE_SPEED = "pref_typing_effects_particle_speed";
     public static final String PREF_KEY_KEY_HIGHLIGHT_DURATION_MS =
             "pref_typing_effects_key_highlight_duration_ms";
+    public static final String PREF_KEY_WARP_STRENGTH = "pref_typing_effects_warp_strength";
+    public static final String PREF_KEY_WARP_RADIUS_DP = "pref_typing_effects_warp_radius_dp";
 
     public static final boolean DEFAULT_ENABLED = true;
     public static final boolean DEFAULT_RAINBOW_TRAIL = true;
@@ -43,6 +46,7 @@ public final class GboardTypingEffectsSettings {
     public static final boolean DEFAULT_RELEASE_EXPLOSION = true;
     public static final boolean DEFAULT_SHOCKWAVE_RING = true;
     public static final boolean DEFAULT_KEY_HIGHLIGHT = true;
+    public static final boolean DEFAULT_KEYBOARD_WARP = true;
 
     public static final String DEFAULT_COLOR_PALETTE = TypingEffectsConfig.PALETTE_RAINBOW;
     public static final String DEFAULT_EXPLOSION_STYLE =
@@ -87,6 +91,14 @@ public final class GboardTypingEffectsSettings {
     public static final int MAX_KEY_HIGHLIGHT_DURATION_MS = 1200;
     public static final int DEFAULT_KEY_HIGHLIGHT_DURATION_MS = 380;
 
+    public static final int MIN_WARP_STRENGTH_PERCENT = 25;
+    public static final int MAX_WARP_STRENGTH_PERCENT = 220;
+    public static final int DEFAULT_WARP_STRENGTH_PERCENT = 100;
+
+    public static final int MIN_WARP_RADIUS_DP = 60;
+    public static final int MAX_WARP_RADIUS_DP = 220;
+    public static final int DEFAULT_WARP_RADIUS_DP = 115;
+
     private GboardTypingEffectsSettings() {
     }
 
@@ -122,6 +134,7 @@ public final class GboardTypingEffectsSettings {
                 readReleaseExplosionEnabled(preferences),
                 readShockwaveRingEnabled(preferences),
                 readKeyHighlightEnabled(preferences),
+                readKeyboardWarpEnabled(preferences),
                 readColorPalette(preferences),
                 readExplosionStyle(preferences),
                 readGlitterStyle(preferences),
@@ -134,7 +147,9 @@ public final class GboardTypingEffectsSettings {
                 readParticleSizePercent(preferences),
                 readParticleLifetimeMs(preferences),
                 readParticleSpeedPercent(preferences),
-                readKeyHighlightDurationMs(preferences));
+                readKeyHighlightDurationMs(preferences),
+                readWarpStrengthPercent(preferences),
+                readWarpRadiusDp(preferences));
     }
 
     public static void ensureDefaults(SharedPreferences preferences) {
@@ -169,6 +184,10 @@ public final class GboardTypingEffectsSettings {
         if (!preferences.contains(PREF_KEY_KEY_HIGHLIGHT)) {
             if (editor == null) editor = preferences.edit();
             editor.putBoolean(PREF_KEY_KEY_HIGHLIGHT, DEFAULT_KEY_HIGHLIGHT);
+        }
+        if (!preferences.contains(PREF_KEY_KEYBOARD_WARP)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putBoolean(PREF_KEY_KEYBOARD_WARP, DEFAULT_KEYBOARD_WARP);
         }
         if (!preferences.contains(PREF_KEY_COLOR_PALETTE)) {
             if (editor == null) editor = preferences.edit();
@@ -222,6 +241,14 @@ public final class GboardTypingEffectsSettings {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_KEY_HIGHLIGHT_DURATION_MS, DEFAULT_KEY_HIGHLIGHT_DURATION_MS);
         }
+        if (!preferences.contains(PREF_KEY_WARP_STRENGTH)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putInt(PREF_KEY_WARP_STRENGTH, DEFAULT_WARP_STRENGTH_PERCENT);
+        }
+        if (!preferences.contains(PREF_KEY_WARP_RADIUS_DP)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putInt(PREF_KEY_WARP_RADIUS_DP, DEFAULT_WARP_RADIUS_DP);
+        }
         if (editor != null) {
             editor.commit();
         }
@@ -238,6 +265,7 @@ public final class GboardTypingEffectsSettings {
                 .putBoolean(PREF_KEY_RELEASE_EXPLOSION, DEFAULT_RELEASE_EXPLOSION)
                 .putBoolean(PREF_KEY_SHOCKWAVE_RING, DEFAULT_SHOCKWAVE_RING)
                 .putBoolean(PREF_KEY_KEY_HIGHLIGHT, DEFAULT_KEY_HIGHLIGHT)
+                .putBoolean(PREF_KEY_KEYBOARD_WARP, DEFAULT_KEYBOARD_WARP)
                 .putString(PREF_KEY_COLOR_PALETTE, DEFAULT_COLOR_PALETTE)
                 .putString(PREF_KEY_EXPLOSION_STYLE, DEFAULT_EXPLOSION_STYLE)
                 .putString(PREF_KEY_GLITTER_STYLE, DEFAULT_GLITTER_STYLE)
@@ -251,6 +279,8 @@ public final class GboardTypingEffectsSettings {
                 .putInt(PREF_KEY_PARTICLE_LIFETIME_MS, DEFAULT_PARTICLE_LIFETIME_MS)
                 .putInt(PREF_KEY_PARTICLE_SPEED, DEFAULT_PARTICLE_SPEED_PERCENT)
                 .putInt(PREF_KEY_KEY_HIGHLIGHT_DURATION_MS, DEFAULT_KEY_HIGHLIGHT_DURATION_MS)
+                .putInt(PREF_KEY_WARP_STRENGTH, DEFAULT_WARP_STRENGTH_PERCENT)
+                .putInt(PREF_KEY_WARP_RADIUS_DP, DEFAULT_WARP_RADIUS_DP)
                 .commit();
         GboardTypingEffectsRuntime.invalidateCachedConfig();
         return ok;
@@ -320,6 +350,14 @@ public final class GboardTypingEffectsSettings {
 
     public static boolean writeKeyHighlightEnabled(SharedPreferences preferences, boolean value) {
         return writeBoolean(preferences, PREF_KEY_KEY_HIGHLIGHT, value);
+    }
+
+    public static boolean readKeyboardWarpEnabled(SharedPreferences preferences) {
+        return readBoolean(preferences, PREF_KEY_KEYBOARD_WARP, DEFAULT_KEYBOARD_WARP);
+    }
+
+    public static boolean writeKeyboardWarpEnabled(SharedPreferences preferences, boolean value) {
+        return writeBoolean(preferences, PREF_KEY_KEYBOARD_WARP, value);
     }
 
     public static String readColorPalette(SharedPreferences preferences) {
@@ -472,6 +510,26 @@ public final class GboardTypingEffectsSettings {
     public static boolean writeKeyHighlightDurationMs(SharedPreferences preferences, int value) {
         return writeClampedInt(preferences, PREF_KEY_KEY_HIGHLIGHT_DURATION_MS,
                 value, MIN_KEY_HIGHLIGHT_DURATION_MS, MAX_KEY_HIGHLIGHT_DURATION_MS);
+    }
+
+    public static int readWarpStrengthPercent(SharedPreferences preferences) {
+        return readClampedInt(preferences, PREF_KEY_WARP_STRENGTH,
+                DEFAULT_WARP_STRENGTH_PERCENT, MIN_WARP_STRENGTH_PERCENT, MAX_WARP_STRENGTH_PERCENT);
+    }
+
+    public static boolean writeWarpStrengthPercent(SharedPreferences preferences, int value) {
+        return writeClampedInt(preferences, PREF_KEY_WARP_STRENGTH,
+                value, MIN_WARP_STRENGTH_PERCENT, MAX_WARP_STRENGTH_PERCENT);
+    }
+
+    public static int readWarpRadiusDp(SharedPreferences preferences) {
+        return readClampedInt(preferences, PREF_KEY_WARP_RADIUS_DP,
+                DEFAULT_WARP_RADIUS_DP, MIN_WARP_RADIUS_DP, MAX_WARP_RADIUS_DP);
+    }
+
+    public static boolean writeWarpRadiusDp(SharedPreferences preferences, int value) {
+        return writeClampedInt(preferences, PREF_KEY_WARP_RADIUS_DP,
+                value, MIN_WARP_RADIUS_DP, MAX_WARP_RADIUS_DP);
     }
 
     private static boolean readBoolean(SharedPreferences prefs, String key, boolean def) {

@@ -26,6 +26,8 @@ public final class TypingEffectsEngine {
     static final int MAX_TRAIL_POINTS = 160;
     static final int MAX_FADING_TRAILS = 12;
     static final int MAX_KEY_HIGHLIGHTS = 36;
+    static final int MAX_WARP_WELLS = 12;
+    static final long WARP_SPRING_DURATION_MS = 340L;
 
     public static final class TrailPoint {
         public float x;
@@ -92,6 +94,29 @@ public final class TypingEffectsEngine {
         public long durationMs;
     }
 
+    public static final class KeyWarpTransform {
+        public float scale = 1f;
+        public float translationX = 0f;
+        public float translationY = 0f;
+        public float rotationX = 0f;
+        public float rotationY = 0f;
+
+        public void reset() {
+            scale = 1f;
+            translationX = 0f;
+            translationY = 0f;
+            rotationX = 0f;
+            rotationY = 0f;
+        }
+    }
+
+    private static final class FadingWarpWell {
+        float x;
+        float y;
+        long releaseMs;
+        long durationMs;
+    }
+
     private static final class PointerState {
         final int pointerId;
         float downX;
@@ -123,6 +148,7 @@ public final class TypingEffectsEngine {
     private final List<Particle> particles = new ArrayList<Particle>(64);
     private final List<ShockwaveRing> rings = new ArrayList<ShockwaveRing>(8);
     private final List<KeyHighlight> keyHighlights = new ArrayList<KeyHighlight>(16);
+    private final List<FadingWarpWell> fadingWarpWells = new ArrayList<FadingWarpWell>(8);
 
     private TypingEffectsConfig config = TypingEffectsConfig.defaults();
     private long lastStepMs = -1L;
@@ -220,6 +246,10 @@ public final class TypingEffectsEngine {
             }
         }
 
+        if (config.enabled && config.keyboardWarpEnabled) {
+            addFadingWarpWell(x, y, nowMs);
+        }
+
         if (!config.enabled) {
             return;
         }
@@ -242,6 +272,9 @@ public final class TypingEffectsEngine {
                 state.stroke.active = false;
                 state.stroke.releaseTimeMs = nowMs;
                 fadingTrails.add(state.stroke);
+            }
+            if (config.enabled && config.keyboardWarpEnabled) {
+                addFadingWarpWell(state.lastX, state.lastY, nowMs);
             }
         }
         activePointers.clear();
@@ -314,6 +347,7 @@ public final class TypingEffectsEngine {
         particles.clear();
         rings.clear();
         keyHighlights.clear();
+        fadingWarpWells.clear();
         lastStepMs = -1L;
     }
 
@@ -386,14 +420,31 @@ public final class TypingEffectsEngine {
             }
         }
 
+        // Prune expired trampoline warp springs.
+        Iterator<FadingWarpWell> warpIt = fadingWarpWells.iterator();
+        while (warpIt.hasNext()) {
+            FadingWarpWell well = warpIt.next();
+            if (nowMs - well.releaseMs >= well.durationMs) {
+                warpIt.remove();
+            }
+        }
+
         return hasActiveEffects();
+    }
+
+    public boolean hasActiveWarp() {
+        if (!config.enabled || !config.keyboardWarpEnabled) {
+            return false;
+        }
+        return !activePointers.isEmpty() || !fadingWarpWells.isEmpty();
     }
 
     public boolean hasActiveEffects() {
         if (!particles.isEmpty()
                 || !rings.isEmpty()
                 || !fadingTrails.isEmpty()
-                || !keyHighlights.isEmpty()) {
+                || !keyHighlights.isEmpty()
+                || hasActiveWarp()) {
             return true;
         }
         if (config.rainbowTrailEnabled) {
@@ -430,6 +481,132 @@ public final class TypingEffectsEngine {
 
     public List<KeyHighlight> getKeyHighlights() {
         return keyHighlights;
+    }
+
+    /**
+     * Computes the trampoline-style 3D indentation transform for a key centered at
+     * {@code (keyCenterX, keyCenterY)} in {@code SoftKeyboardView} layout coordinates.
+     *
+     * @return {@code true} if the key has a non-identity transform, {@code false} if at rest.
+     */
+    public boolean computeKeyWarp(
+            float keyCenterX,
+            float keyCenterY,
+            long nowMs,
+            KeyWarpTransform out) {
+        out.reset();
+        if (!hasActiveWarp()) {
+            return false;
+        }
+
+        float radiusPx = Math.max(20f * density, config.warpRadiusDp * density);
+        float strength = config.warpStrengthPercent / 100f;
+        float scaleDelta = 0f;
+        float tx = 0f;
+        float ty = 0f;
+        float rx = 0f;
+        float ry = 0f;
+
+        // Active finger presses create a steady depression well.
+        for (PointerState state : activePointers.values()) {
+            float[] contrib = evaluateWarpWell(
+                    keyCenterX, keyCenterY, state.lastX, state.lastY, radiusPx, strength, 1.0f);
+            if (contrib != null) {
+                scaleDelta += contrib[0];
+                tx += contrib[1];
+                ty += contrib[2];
+                rx += contrib[3];
+                ry += contrib[4];
+            }
+        }
+
+        // Released fingers bounce back with a damped trampoline spring curve.
+        for (int i = 0; i < fadingWarpWells.size(); i++) {
+            FadingWarpWell well = fadingWarpWells.get(i);
+            float t = (nowMs - well.releaseMs) / (float) Math.max(1L, well.durationMs);
+            if (t < 0f || t >= 1f) continue;
+            float amp = (float) (Math.exp(-5.0 * t) * Math.cos(2.5 * Math.PI * t));
+            if (Math.abs(amp) < 0.008f) continue;
+            float[] contrib = evaluateWarpWell(
+                    keyCenterX, keyCenterY, well.x, well.y, radiusPx, strength, amp);
+            if (contrib != null) {
+                scaleDelta += contrib[0];
+                tx += contrib[1];
+                ty += contrib[2];
+                rx += contrib[3];
+                ry += contrib[4];
+            }
+        }
+
+        if (Math.abs(scaleDelta) < 0.001f
+                && Math.abs(tx) < 0.1f
+                && Math.abs(ty) < 0.1f
+                && Math.abs(rx) < 0.1f
+                && Math.abs(ry) < 0.1f) {
+            return false;
+        }
+
+        out.scale = Math.max(0.68f, Math.min(1.14f, 1f + scaleDelta));
+        float maxShift = 18f * density;
+        out.translationX = Math.max(-maxShift, Math.min(maxShift, tx));
+        out.translationY = Math.max(-maxShift, Math.min(maxShift, ty));
+        out.rotationX = Math.max(-22f, Math.min(22f, rx));
+        out.rotationY = Math.max(-22f, Math.min(22f, ry));
+        return true;
+    }
+
+    private float[] evaluateWarpWell(
+            float kx,
+            float ky,
+            float wx,
+            float wy,
+            float radiusPx,
+            float strength,
+            float amplitude) {
+        float dx = wx - kx;
+        float dy = wy - ky;
+        float dist = (float) Math.hypot(dx, dy);
+        if (dist >= radiusPx) {
+            return null;
+        }
+        float u = 1f - (dist / radiusPx); // 1 at press center -> 0 at radius edge
+        // Smooth bell curve for depth (scale & vertical dip)
+        float bell = u * u * (3f - 2f * u);
+        // Slope curve peaks around mid-radius (keys on the slope tilt & pull inward)
+        float slope = 4f * u * (1f - u);
+
+        float scaleDelta = -0.17f * strength * amplitude * bell;
+        float tx = 0f;
+        float ty = 3.2f * density * strength * amplitude * bell;
+        float rx = 0f;
+        float ry = 0f;
+
+        if (dist > 0.5f) {
+            float nx = dx / dist;
+            float ny = dy / dist;
+            float pullPx = 9.5f * density * strength * amplitude * slope;
+            tx += nx * pullPx;
+            ty += ny * pullPx;
+            // 3D perspective tilt: keys dip toward the finger depression center.
+            float tiltDeg = 15f * strength * amplitude * slope;
+            ry = nx * tiltDeg;
+            rx = -ny * tiltDeg;
+        }
+        return new float[] { scaleDelta, tx, ty, rx, ry };
+    }
+
+    private void addFadingWarpWell(float x, float y, long nowMs) {
+        FadingWarpWell well;
+        if (fadingWarpWells.size() >= MAX_WARP_WELLS) {
+            well = fadingWarpWells.remove(0);
+        } else {
+            well = new FadingWarpWell();
+        }
+        well.x = x;
+        well.y = y;
+        well.releaseMs = nowMs;
+        well.durationMs = WARP_SPRING_DURATION_MS;
+        fadingWarpWells.add(well);
     }
 
     public int getActivePointerCount() {

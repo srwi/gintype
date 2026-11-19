@@ -34,11 +34,12 @@ public class TypingEffectsEngineTest {
                 releaseExplosion,
                 shockwaveRing,
                 keyHighlight,
+                false,
                 palette,
                 explosionStyle,
                 glitterStyle,
                 keyHighlightStyle,
-                12, 360, 150, particleCount, 5, 100, 520, 100, 380);
+                12, 360, 150, particleCount, 5, 100, 520, 100, 380, 100, 115);
     }
 
     @Test
@@ -268,5 +269,34 @@ public class TypingEffectsEngineTest {
         assertTrue(hasSpark);
         assertTrue(hasStar);
         assertTrue(hasConfetti);
+    }
+
+    @Test
+    public void trampolineKeyboardWarpDepressesCenterPullsNeighborsAndRebounds() {
+        TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(11L));
+        engine.setConfig(TypingEffectsConfig.defaults());
+
+        engine.onPointerDown(0, 200f, 200f, 1000L);
+        assertTrue(engine.hasActiveWarp());
+
+        TypingEffectsEngine.KeyWarpTransform center = new TypingEffectsEngine.KeyWarpTransform();
+        assertTrue(engine.computeKeyWarp(200f, 200f, 1000L, center));
+        assertTrue("Pressed key should shrink slightly", center.scale < 0.90f);
+
+        TypingEffectsEngine.KeyWarpTransform leftNeighbor = new TypingEffectsEngine.KeyWarpTransform();
+        assertTrue(engine.computeKeyWarp(120f, 200f, 1000L, leftNeighbor));
+        assertTrue("Left neighbor should pull right toward press center", leftNeighbor.translationX > 0f);
+        assertTrue("Left neighbor should tilt toward press center", leftNeighbor.rotationY > 0f);
+
+        TypingEffectsEngine.KeyWarpTransform farKey = new TypingEffectsEngine.KeyWarpTransform();
+        assertFalse("Key far outside warp radius should stay untouched",
+                engine.computeKeyWarp(900f, 200f, 1000L, farKey));
+        assertEquals(1f, farKey.scale, 0.001f);
+
+        // Release triggers damped trampoline rebound and eventually settles cleanly
+        engine.onPointerUp(0, 200f, 200f, 1050L);
+        assertTrue(engine.hasActiveWarp());
+        assertFalse("Warp spring should finish cleanly after duration", engine.step(2000L));
+        assertFalse(engine.hasActiveWarp());
     }
 }

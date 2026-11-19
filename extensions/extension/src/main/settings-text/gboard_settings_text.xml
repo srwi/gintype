@@ -533,6 +533,24 @@
     <string name="gboard_patches_typing_effects_key_highlight_duration_summary">
         <translation locale="en">How long touched keys stay illuminated before fading out</translation>
         </string>
+    <string name="gboard_patches_typing_effects_keyboard_warp_title">
+        <translation locale="en">Trampoline keyboard warp</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_keyboard_warp_summary">
+        <translation locale="en">Flex and depress touched and neighboring keys like an elastic trampoline with spring rebound</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_warp_strength_title">
+        <translation locale="en">Warp strength</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_warp_strength_summary">
+        <translation locale="en">How deeply keys depress, tilt, and pull toward your finger</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_warp_radius_title">
+        <translation locale="en">Warp radius</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_warp_radius_summary">
+        <translation locale="en">How far the trampoline wave spreads across surrounding keys</translation>
+        </string>
     <string name="gboard_patches_typing_effects_palette_title">
         <translation locale="en">Color palette</translation>
         </string>

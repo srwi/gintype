@@ -32,6 +32,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private static final int PARTICLE_LIFETIME_STEP_MS = 40;
     private static final int PARTICLE_SPEED_STEP_PERCENT = 10;
     private static final int KEY_HIGHLIGHT_DURATION_STEP_MS = 20;
+    private static final int WARP_STRENGTH_STEP_PERCENT = 15;
+    private static final int WARP_RADIUS_STEP_DP = 10;
 
     private interface IntFormatter {
         String format(int value);
@@ -63,6 +65,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private final String shockwaveRingSummary;
     private final String keyHighlightTitle;
     private final String keyHighlightSummary;
+    private final String keyboardWarpTitle;
+    private final String keyboardWarpSummary;
     private final String paletteTitle;
     private final String paletteSummary;
     private final String[] paletteLabels;
@@ -97,6 +101,10 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private final String particleSpeedSummary;
     private final String keyHighlightDurationTitle;
     private final String keyHighlightDurationSummary;
+    private final String warpStrengthTitle;
+    private final String warpStrengthSummary;
+    private final String warpRadiusTitle;
+    private final String warpRadiusSummary;
     private final String defaultValueTemplate;
     private final String resetTitle;
     private final String resetSummary;
@@ -135,6 +143,10 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                 text(context, R.string.gboard_patches_typing_effects_key_highlight_title);
         keyHighlightSummary =
                 text(context, R.string.gboard_patches_typing_effects_key_highlight_summary);
+        keyboardWarpTitle =
+                text(context, R.string.gboard_patches_typing_effects_keyboard_warp_title);
+        keyboardWarpSummary =
+                text(context, R.string.gboard_patches_typing_effects_keyboard_warp_summary);
 
         paletteTitle = text(context, R.string.gboard_patches_typing_effects_palette_title);
         paletteSummary = text(context, R.string.gboard_patches_typing_effects_palette_summary);
@@ -232,6 +244,14 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                 text(context, R.string.gboard_patches_typing_effects_key_highlight_duration_title);
         keyHighlightDurationSummary =
                 text(context, R.string.gboard_patches_typing_effects_key_highlight_duration_summary);
+        warpStrengthTitle =
+                text(context, R.string.gboard_patches_typing_effects_warp_strength_title);
+        warpStrengthSummary =
+                text(context, R.string.gboard_patches_typing_effects_warp_strength_summary);
+        warpRadiusTitle =
+                text(context, R.string.gboard_patches_typing_effects_warp_radius_title);
+        warpRadiusSummary =
+                text(context, R.string.gboard_patches_typing_effects_warp_radius_summary);
         defaultValueTemplate = text(context, R.string.gboard_patches_multiswipe_value_default);
         resetTitle = text(context, R.string.gboard_patches_typing_effects_reset_title);
         resetSummary = text(context, R.string.gboard_patches_typing_effects_reset_summary);
@@ -342,6 +362,13 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                     master,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeKeyHighlightEnabled(preferences, checked))));
+            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    keyboardWarpTitle,
+                    keyboardWarpSummary,
+                    cfg.keyboardWarpEnabled,
+                    master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeKeyboardWarpEnabled(preferences, checked))));
 
             // Section 2: Look & Style Pickers
             List<GboardPatchesSettingsContract.Row> styleRows = new ArrayList<GboardPatchesSettingsContract.Row>(4);
@@ -549,6 +576,40 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.keyHighlightDurationMs,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_DURATION_MS, "ms"),
                             v -> GboardTypingEffectsSettings.writeKeyHighlightDurationMs(preferences, v))));
+            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    warpStrengthTitle,
+                    warpStrengthSummary,
+                    formatUnit(cfg.warpStrengthPercent,
+                            GboardTypingEffectsSettings.DEFAULT_WARP_STRENGTH_PERCENT, "%"),
+                    master && cfg.keyboardWarpEnabled,
+                    () -> showIntSliderDialog(
+                            host,
+                            warpStrengthTitle,
+                            warpStrengthSummary,
+                            GboardTypingEffectsSettings.MIN_WARP_STRENGTH_PERCENT,
+                            GboardTypingEffectsSettings.MAX_WARP_STRENGTH_PERCENT,
+                            WARP_STRENGTH_STEP_PERCENT,
+                            GboardTypingEffectsSettings.DEFAULT_WARP_STRENGTH_PERCENT,
+                            cfg.warpStrengthPercent,
+                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_WARP_STRENGTH_PERCENT, "%"),
+                            v -> GboardTypingEffectsSettings.writeWarpStrengthPercent(preferences, v))));
+            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    warpRadiusTitle,
+                    warpRadiusSummary,
+                    formatUnit(cfg.warpRadiusDp,
+                            GboardTypingEffectsSettings.DEFAULT_WARP_RADIUS_DP, "dp"),
+                    master && cfg.keyboardWarpEnabled,
+                    () -> showIntSliderDialog(
+                            host,
+                            warpRadiusTitle,
+                            warpRadiusSummary,
+                            GboardTypingEffectsSettings.MIN_WARP_RADIUS_DP,
+                            GboardTypingEffectsSettings.MAX_WARP_RADIUS_DP,
+                            WARP_RADIUS_STEP_DP,
+                            GboardTypingEffectsSettings.DEFAULT_WARP_RADIUS_DP,
+                            cfg.warpRadiusDp,
+                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_WARP_RADIUS_DP, "dp"),
+                            v -> GboardTypingEffectsSettings.writeWarpRadiusDp(preferences, v))));
 
             // Section 5: Reset to defaults
             List<GboardPatchesSettingsContract.Row> resetRows = Collections.singletonList(
