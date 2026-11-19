@@ -29,12 +29,10 @@ final class TypingEffectsOverlayDrawable extends Drawable {
     private final Paint keyFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint keyHaloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint keyBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint keySheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path starPath = new Path();
     private final RectF confettiRect = new RectF();
     private final RectF keyRect = new RectF();
     private final RectF keyPulseRect = new RectF();
-    private final RectF keySheenRect = new RectF();
 
     TypingEffectsOverlayDrawable(TypingEffectsEngine engine) {
         this.engine = engine;
@@ -61,7 +59,6 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         keyFillPaint.setStyle(Paint.Style.FILL);
         keyHaloPaint.setStyle(Paint.Style.STROKE);
         keyBorderPaint.setStyle(Paint.Style.STROKE);
-        keySheenPaint.setStyle(Paint.Style.FILL);
     }
 
     @Override
@@ -155,17 +152,6 @@ final class TypingEffectsOverlayDrawable extends Drawable {
 
             keyFillPaint.setColor(TypingEffectsConfig.withAlpha(baseColor, Math.round(68f * alphaFactor)));
             canvas.drawRoundRect(keyRect, cornerRadius, cornerRadius, keyFillPaint);
-
-            // Top glossy specular highlight bar (glass RGB keycap sheen)
-            float sheenInset = Math.max(2f * density, cornerRadius * 0.45f);
-            float sheenH = Math.max(2.2f * density, height * 0.16f);
-            keySheenRect.set(
-                    keyRect.left + sheenInset,
-                    keyRect.top + 1.5f * density,
-                    keyRect.right - sheenInset,
-                    keyRect.top + 1.5f * density + sheenH);
-            keySheenPaint.setColor(TypingEffectsConfig.withAlpha(0xFFFFFFFF, Math.round(64f * alphaFactor)));
-            canvas.drawRoundRect(keySheenRect, sheenH * 0.5f, sheenH * 0.5f, keySheenPaint);
 
             // Crisp luminous neon border
             keyBorderPaint.setStrokeWidth(2.1f * density);
