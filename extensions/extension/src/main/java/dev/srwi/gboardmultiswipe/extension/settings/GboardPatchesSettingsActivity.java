@@ -112,7 +112,7 @@ public final class GboardPatchesSettingsActivity extends Activity
     private static final String GBOARD_SETTINGS_ACTIVITY_CLASS =
             "com.google.android.apps.inputmethod.latin.preference.SettingsActivity";
     private static final String SUPPORTED_DEVELOPER_OPTIONS_TARGET_VERSION =
-            "18.5.6.993608717-release-arm64-v8a";
+            "18.5.4.993608717-release-arm64-v8a";
     private static final String GBOARD_PACKAGE_STABLE =
             "com.google.android.inputmethod.latin";
     private static final String GBOARD_PACKAGE_RENAMED =

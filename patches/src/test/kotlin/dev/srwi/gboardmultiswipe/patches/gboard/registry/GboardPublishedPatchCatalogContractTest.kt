@@ -46,7 +46,7 @@ class GboardPublishedPatchCatalogContractTest {
         }
         assertTrue(matrixSuggestions.get("use").asBoolean)
         assertEquals(
-            listOf("18.5.6.993608717-release-arm64-v8a"),
+            listOf("18.5.4.993608717-release-arm64-v8a"),
             matrixSuggestions.getAsJsonObject("compatiblePackages")
                 .getAsJsonArray("com.google.android.inputmethod.latin")
                 .map { version -> version.asString },
