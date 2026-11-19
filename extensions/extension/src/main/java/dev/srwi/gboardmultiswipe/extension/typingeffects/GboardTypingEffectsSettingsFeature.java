@@ -31,6 +31,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private static final int PARTICLE_SIZE_STEP_PERCENT = 10;
     private static final int PARTICLE_LIFETIME_STEP_MS = 40;
     private static final int PARTICLE_SPEED_STEP_PERCENT = 10;
+    private static final int KEY_HIGHLIGHT_DURATION_STEP_MS = 20;
 
     private interface IntFormatter {
         String format(int value);
@@ -60,6 +61,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private final String releaseExplosionSummary;
     private final String shockwaveRingTitle;
     private final String shockwaveRingSummary;
+    private final String keyHighlightTitle;
+    private final String keyHighlightSummary;
     private final String paletteTitle;
     private final String paletteSummary;
     private final String[] paletteLabels;
@@ -72,6 +75,10 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private final String glitterStyleSummary;
     private final String[] glitterStyleLabels;
     private final String[] glitterStyleValues;
+    private final String keyHighlightStyleTitle;
+    private final String keyHighlightStyleSummary;
+    private final String[] keyHighlightStyleLabels;
+    private final String[] keyHighlightStyleValues;
     private final String trailWidthTitle;
     private final String trailWidthSummary;
     private final String trailFadeTitle;
@@ -88,6 +95,8 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private final String particleLifetimeSummary;
     private final String particleSpeedTitle;
     private final String particleSpeedSummary;
+    private final String keyHighlightDurationTitle;
+    private final String keyHighlightDurationSummary;
     private final String defaultValueTemplate;
     private final String resetTitle;
     private final String resetSummary;
@@ -122,6 +131,10 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                 text(context, R.string.gboard_patches_typing_effects_shockwave_ring_title);
         shockwaveRingSummary =
                 text(context, R.string.gboard_patches_typing_effects_shockwave_ring_summary);
+        keyHighlightTitle =
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_title);
+        keyHighlightSummary =
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_summary);
 
         paletteTitle = text(context, R.string.gboard_patches_typing_effects_palette_title);
         paletteSummary = text(context, R.string.gboard_patches_typing_effects_palette_summary);
@@ -174,6 +187,21 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                 TypingEffectsConfig.GLITTER_STYLE_MIXED
         };
 
+        keyHighlightStyleTitle =
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_style_title);
+        keyHighlightStyleSummary =
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_style_summary);
+        keyHighlightStyleLabels = new String[] {
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_style_neon_glow),
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_style_plasma_pulse),
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_style_soft_fill)
+        };
+        keyHighlightStyleValues = new String[] {
+                TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_NEON_GLOW,
+                TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_PLASMA_PULSE,
+                TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_SOFT_FILL
+        };
+
         trailWidthTitle = text(context, R.string.gboard_patches_typing_effects_trail_width_title);
         trailWidthSummary = text(context, R.string.gboard_patches_typing_effects_trail_width_summary);
         trailFadeTitle = text(context, R.string.gboard_patches_typing_effects_trail_fade_title);
@@ -200,6 +228,10 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                 text(context, R.string.gboard_patches_typing_effects_particle_speed_title);
         particleSpeedSummary =
                 text(context, R.string.gboard_patches_typing_effects_particle_speed_summary);
+        keyHighlightDurationTitle =
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_duration_title);
+        keyHighlightDurationSummary =
+                text(context, R.string.gboard_patches_typing_effects_key_highlight_duration_summary);
         defaultValueTemplate = text(context, R.string.gboard_patches_multiswipe_value_default);
         resetTitle = text(context, R.string.gboard_patches_typing_effects_reset_title);
         resetSummary = text(context, R.string.gboard_patches_typing_effects_reset_summary);
@@ -303,9 +335,16 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                     anyExplosion,
                     checked -> saveBoolAndRefresh(host,
                             GboardTypingEffectsSettings.writeShockwaveRingEnabled(preferences, checked))));
+            effectRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    keyHighlightTitle,
+                    keyHighlightSummary,
+                    cfg.keyHighlightEnabled,
+                    master,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardTypingEffectsSettings.writeKeyHighlightEnabled(preferences, checked))));
 
             // Section 2: Look & Style Pickers
-            List<GboardPatchesSettingsContract.Row> styleRows = new ArrayList<GboardPatchesSettingsContract.Row>(3);
+            List<GboardPatchesSettingsContract.Row> styleRows = new ArrayList<GboardPatchesSettingsContract.Row>(4);
             styleRows.add(new GboardPatchesSettingsContract.SelectorRow(
                     paletteTitle,
                     paletteSummary,
@@ -345,6 +384,19 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.glitterStyle,
                             selected -> saveAndRefresh(host,
                                     GboardTypingEffectsSettings.writeGlitterStyle(preferences, selected)))));
+            styleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    keyHighlightStyleTitle,
+                    keyHighlightStyleSummary,
+                    labelForValue(keyHighlightStyleLabels, keyHighlightStyleValues, cfg.keyHighlightStyle),
+                    master && cfg.keyHighlightEnabled,
+                    () -> GboardPatchesSettingsContract.showSingleChoiceDialog(
+                            host,
+                            keyHighlightStyleTitle,
+                            keyHighlightStyleLabels,
+                            keyHighlightStyleValues,
+                            cfg.keyHighlightStyle,
+                            selected -> saveAndRefresh(host,
+                                    GboardTypingEffectsSettings.writeKeyHighlightStyle(preferences, selected)))));
 
             // Section 3: Swipe Trail Sliders
             boolean trailActive = master && cfg.rainbowTrailEnabled;
@@ -480,6 +532,23 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
                             cfg.particleSpeedPercent,
                             v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_PARTICLE_SPEED_PERCENT, "%"),
                             v -> GboardTypingEffectsSettings.writeParticleSpeedPercent(preferences, v))));
+            particleRows.add(new GboardPatchesSettingsContract.SelectorRow(
+                    keyHighlightDurationTitle,
+                    keyHighlightDurationSummary,
+                    formatUnit(cfg.keyHighlightDurationMs,
+                            GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_DURATION_MS, "ms"),
+                    master && cfg.keyHighlightEnabled,
+                    () -> showIntSliderDialog(
+                            host,
+                            keyHighlightDurationTitle,
+                            keyHighlightDurationSummary,
+                            GboardTypingEffectsSettings.MIN_KEY_HIGHLIGHT_DURATION_MS,
+                            GboardTypingEffectsSettings.MAX_KEY_HIGHLIGHT_DURATION_MS,
+                            KEY_HIGHLIGHT_DURATION_STEP_MS,
+                            GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_DURATION_MS,
+                            cfg.keyHighlightDurationMs,
+                            v -> formatUnit(v, GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_DURATION_MS, "ms"),
+                            v -> GboardTypingEffectsSettings.writeKeyHighlightDurationMs(preferences, v))));
 
             // Section 5: Reset to defaults
             List<GboardPatchesSettingsContract.Row> resetRows = Collections.singletonList(

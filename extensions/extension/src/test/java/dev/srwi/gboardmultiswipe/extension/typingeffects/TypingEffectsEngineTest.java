@@ -11,6 +11,36 @@ import java.util.Random;
 
 public class TypingEffectsEngineTest {
 
+    private static TypingEffectsConfig configWith(
+            boolean enabled,
+            boolean rainbowTrail,
+            boolean trailGlow,
+            boolean glitter,
+            boolean tapExplosion,
+            boolean releaseExplosion,
+            boolean shockwaveRing,
+            boolean keyHighlight,
+            String palette,
+            String explosionStyle,
+            String glitterStyle,
+            String keyHighlightStyle,
+            int particleCount) {
+        return new TypingEffectsConfig(
+                enabled,
+                rainbowTrail,
+                trailGlow,
+                glitter,
+                tapExplosion,
+                releaseExplosion,
+                shockwaveRing,
+                keyHighlight,
+                palette,
+                explosionStyle,
+                glitterStyle,
+                keyHighlightStyle,
+                12, 360, 150, particleCount, 5, 100, 520, 100, 380);
+    }
+
     @Test
     public void tapSpawnsExplosionAndShockwaveRingWithoutTrail() {
         TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(42L));
@@ -75,19 +105,21 @@ public class TypingEffectsEngineTest {
     public void individualFeatureTogglesDisableEachEffectIndependently() {
         TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(1L));
 
-        // Only rainbow trail enabled: no glitter, no tap explosion, no release explosion, no ring.
-        TypingEffectsConfig trailOnly = new TypingEffectsConfig(
-                true, true, true, false, false, false, false,
+        // Only rainbow trail enabled: no glitter, no tap explosion, no release explosion, no ring, no key glow.
+        engine.setConfig(configWith(
+                true, true, true, false, false, false, false, false,
                 TypingEffectsConfig.PALETTE_RAINBOW,
                 TypingEffectsConfig.EXPLOSION_STYLE_SPARKS_RING,
                 TypingEffectsConfig.GLITTER_STYLE_SPARKLES,
-                12, 360, 150, 20, 5, 100, 520, 100);
-        engine.setConfig(trailOnly);
+                TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_NEON_GLOW,
+                20));
 
         engine.onPointerDown(0, 10f, 10f, 100L);
+        engine.onKeyTouched(101, 0f, 0f, 50f, 60f, 100L);
         engine.onPointerUp(0, 11f, 11f, 120L);
         assertTrue("Tap explosion disabled -> 0 particles", engine.getParticles().isEmpty());
         assertTrue("Shockwave ring disabled -> 0 rings", engine.getRings().isEmpty());
+        assertTrue("Key highlight disabled -> 0 key highlights", engine.getKeyHighlights().isEmpty());
 
         engine.onPointerDown(1, 10f, 10f, 200L);
         engine.onPointerMove(1, 90f, 10f, 220L);
@@ -99,32 +131,64 @@ public class TypingEffectsEngineTest {
     }
 
     @Test
+    public void keyTouchHighlightRefreshesSameKeyAndExpiresCleanly() {
+        TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(21L));
+        engine.setConfig(configWith(
+                true, false, false, false, false, false, false, true,
+                TypingEffectsConfig.PALETTE_NEON,
+                TypingEffectsConfig.EXPLOSION_STYLE_SPARKS_RING,
+                TypingEffectsConfig.GLITTER_STYLE_SPARKLES,
+                TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_PLASMA_PULSE,
+                20));
+
+        engine.onKeyTouched(1, 10f, 20f, 70f, 90f, 1000L);
+        engine.onKeyTouched(1, 10f, 20f, 70f, 90f, 1100L);
+        engine.onKeyTouched(2, 80f, 20f, 140f, 90f, 1150L);
+
+        assertEquals("Touching the same key twice should refresh instead of duplicating",
+                2, engine.getKeyHighlights().size());
+        assertEquals(1100L, engine.getKeyHighlights().get(0).lastTouchedMs);
+        assertTrue(engine.hasActiveEffects());
+
+        // Still active shortly after touch
+        assertTrue(engine.step(1250L));
+        assertEquals(2, engine.getKeyHighlights().size());
+
+        // Expired after duration elapses (380ms after 1150ms = 1530ms)
+        assertFalse(engine.step(1600L));
+        assertTrue(engine.getKeyHighlights().isEmpty());
+    }
+
+    @Test
     public void masterToggleOffProducesNoEffects() {
         TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(5L));
-        TypingEffectsConfig disabled = new TypingEffectsConfig(
-                false, true, true, true, true, true, true,
+        engine.setConfig(configWith(
+                false, true, true, true, true, true, true, true,
                 TypingEffectsConfig.PALETTE_NEON,
                 TypingEffectsConfig.EXPLOSION_STYLE_ALL_OUT,
                 TypingEffectsConfig.GLITTER_STYLE_MIXED,
-                12, 360, 150, 20, 5, 100, 520, 100);
-        engine.setConfig(disabled);
+                TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_NEON_GLOW,
+                20));
 
         engine.onPointerDown(0, 50f, 50f, 100L);
+        engine.onKeyTouched(42, 30f, 30f, 90f, 90f, 100L);
         engine.onPointerMove(0, 200f, 50f, 120L);
         engine.onPointerUp(0, 200f, 50f, 140L);
 
         assertFalse(engine.hasActiveEffects());
         assertTrue(engine.getParticles().isEmpty());
         assertTrue(engine.getRings().isEmpty());
+        assertTrue(engine.getKeyHighlights().isEmpty());
         assertTrue(engine.collectRenderableTrails().isEmpty());
     }
 
     @Test
-    public void stepExpiresAllParticlesRingsAndTrailsCleanly() {
+    public void stepExpiresAllParticlesRingsTrailsAndKeyHighlightsCleanly() {
         TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(13L));
         engine.setConfig(TypingEffectsConfig.defaults());
 
         engine.onPointerDown(0, 20f, 20f, 1000L);
+        engine.onKeyTouched(9, 10f, 10f, 50f, 50f, 1000L);
         engine.onPointerMove(0, 120f, 20f, 1020L);
         engine.onPointerUp(0, 120f, 20f, 1040L);
         assertTrue(engine.hasActiveEffects());
@@ -134,6 +198,7 @@ public class TypingEffectsEngineTest {
         assertFalse("All effects should expire after lifetime elapses", stillActive);
         assertTrue(engine.getParticles().isEmpty());
         assertTrue(engine.getRings().isEmpty());
+        assertTrue(engine.getKeyHighlights().isEmpty());
         assertTrue(engine.collectRenderableTrails().isEmpty());
     }
 
@@ -147,12 +212,13 @@ public class TypingEffectsEngineTest {
                 TypingEffectsConfig.PALETTE_PASTEL
         };
         for (String palette : palettes) {
-            TypingEffectsConfig cfg = new TypingEffectsConfig(
-                    true, true, true, true, true, true, true,
+            TypingEffectsConfig cfg = configWith(
+                    true, true, true, true, true, true, true, true,
                     palette,
                     TypingEffectsConfig.EXPLOSION_STYLE_ALL_OUT,
                     TypingEffectsConfig.GLITTER_STYLE_MIXED,
-                    12, 360, 150, 20, 5, 100, 520, 100);
+                    TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_NEON_GLOW,
+                    20);
             int c0 = cfg.sampleColor(0.0f);
             int c1 = cfg.sampleColor(0.35f);
             assertEquals(0xFF, (c0 >>> 24) & 0xFF);
@@ -166,12 +232,13 @@ public class TypingEffectsEngineTest {
         TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(3L));
 
         // Confetti only
-        engine.setConfig(new TypingEffectsConfig(
-                true, false, false, false, true, false, false,
+        engine.setConfig(configWith(
+                true, false, false, false, true, false, false, false,
                 TypingEffectsConfig.PALETTE_RAINBOW,
                 TypingEffectsConfig.EXPLOSION_STYLE_CONFETTI,
                 TypingEffectsConfig.GLITTER_STYLE_SPARKLES,
-                12, 360, 150, 12, 5, 100, 520, 100));
+                TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_NEON_GLOW,
+                12));
         engine.onPointerDown(0, 100f, 100f, 100L);
         engine.onPointerUp(0, 100f, 100f, 120L);
         assertEquals(12, engine.getParticles().size());
@@ -181,12 +248,13 @@ public class TypingEffectsEngineTest {
 
         // All-out show mix includes all 3 shapes
         engine.clearAll();
-        engine.setConfig(new TypingEffectsConfig(
-                true, false, false, false, true, false, true,
+        engine.setConfig(configWith(
+                true, false, false, false, true, false, true, false,
                 TypingEffectsConfig.PALETTE_RAINBOW,
                 TypingEffectsConfig.EXPLOSION_STYLE_ALL_OUT,
                 TypingEffectsConfig.GLITTER_STYLE_MIXED,
-                12, 360, 150, 18, 5, 100, 520, 100));
+                TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_NEON_GLOW,
+                18));
         engine.onPointerDown(0, 100f, 100f, 200L);
         engine.onPointerUp(0, 100f, 100f, 220L);
         boolean hasSpark = false;

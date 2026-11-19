@@ -17,9 +17,12 @@ public final class GboardTypingEffectsSettings {
     public static final String PREF_KEY_TAP_EXPLOSION = "pref_typing_effects_tap_explosion";
     public static final String PREF_KEY_RELEASE_EXPLOSION = "pref_typing_effects_release_explosion";
     public static final String PREF_KEY_SHOCKWAVE_RING = "pref_typing_effects_shockwave_ring";
+    public static final String PREF_KEY_KEY_HIGHLIGHT = "pref_typing_effects_key_highlight";
     public static final String PREF_KEY_COLOR_PALETTE = "pref_typing_effects_color_palette";
     public static final String PREF_KEY_EXPLOSION_STYLE = "pref_typing_effects_explosion_style";
     public static final String PREF_KEY_GLITTER_STYLE = "pref_typing_effects_glitter_style";
+    public static final String PREF_KEY_KEY_HIGHLIGHT_STYLE =
+            "pref_typing_effects_key_highlight_style";
     public static final String PREF_KEY_TRAIL_WIDTH_DP = "pref_typing_effects_trail_width_dp";
     public static final String PREF_KEY_TRAIL_FADE_MS = "pref_typing_effects_trail_fade_ms";
     public static final String PREF_KEY_RAINBOW_SPEED = "pref_typing_effects_rainbow_speed";
@@ -29,6 +32,8 @@ public final class GboardTypingEffectsSettings {
     public static final String PREF_KEY_PARTICLE_LIFETIME_MS =
             "pref_typing_effects_particle_lifetime_ms";
     public static final String PREF_KEY_PARTICLE_SPEED = "pref_typing_effects_particle_speed";
+    public static final String PREF_KEY_KEY_HIGHLIGHT_DURATION_MS =
+            "pref_typing_effects_key_highlight_duration_ms";
 
     public static final boolean DEFAULT_ENABLED = true;
     public static final boolean DEFAULT_RAINBOW_TRAIL = true;
@@ -37,11 +42,14 @@ public final class GboardTypingEffectsSettings {
     public static final boolean DEFAULT_TAP_EXPLOSION = true;
     public static final boolean DEFAULT_RELEASE_EXPLOSION = true;
     public static final boolean DEFAULT_SHOCKWAVE_RING = true;
+    public static final boolean DEFAULT_KEY_HIGHLIGHT = true;
 
     public static final String DEFAULT_COLOR_PALETTE = TypingEffectsConfig.PALETTE_RAINBOW;
     public static final String DEFAULT_EXPLOSION_STYLE =
             TypingEffectsConfig.EXPLOSION_STYLE_SPARKS_RING;
     public static final String DEFAULT_GLITTER_STYLE = TypingEffectsConfig.GLITTER_STYLE_SPARKLES;
+    public static final String DEFAULT_KEY_HIGHLIGHT_STYLE =
+            TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_NEON_GLOW;
 
     public static final int MIN_TRAIL_WIDTH_DP = 4;
     public static final int MAX_TRAIL_WIDTH_DP = 24;
@@ -74,6 +82,10 @@ public final class GboardTypingEffectsSettings {
     public static final int MIN_PARTICLE_SPEED_PERCENT = 40;
     public static final int MAX_PARTICLE_SPEED_PERCENT = 220;
     public static final int DEFAULT_PARTICLE_SPEED_PERCENT = 100;
+
+    public static final int MIN_KEY_HIGHLIGHT_DURATION_MS = 120;
+    public static final int MAX_KEY_HIGHLIGHT_DURATION_MS = 1200;
+    public static final int DEFAULT_KEY_HIGHLIGHT_DURATION_MS = 380;
 
     private GboardTypingEffectsSettings() {
     }
@@ -109,9 +121,11 @@ public final class GboardTypingEffectsSettings {
                 readTapExplosionEnabled(preferences),
                 readReleaseExplosionEnabled(preferences),
                 readShockwaveRingEnabled(preferences),
+                readKeyHighlightEnabled(preferences),
                 readColorPalette(preferences),
                 readExplosionStyle(preferences),
                 readGlitterStyle(preferences),
+                readKeyHighlightStyle(preferences),
                 readTrailWidthDp(preferences),
                 readTrailFadeMs(preferences),
                 readRainbowSpeedPercent(preferences),
@@ -119,7 +133,8 @@ public final class GboardTypingEffectsSettings {
                 readGlitterDensity(preferences),
                 readParticleSizePercent(preferences),
                 readParticleLifetimeMs(preferences),
-                readParticleSpeedPercent(preferences));
+                readParticleSpeedPercent(preferences),
+                readKeyHighlightDurationMs(preferences));
     }
 
     public static void ensureDefaults(SharedPreferences preferences) {
@@ -151,6 +166,10 @@ public final class GboardTypingEffectsSettings {
             if (editor == null) editor = preferences.edit();
             editor.putBoolean(PREF_KEY_SHOCKWAVE_RING, DEFAULT_SHOCKWAVE_RING);
         }
+        if (!preferences.contains(PREF_KEY_KEY_HIGHLIGHT)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putBoolean(PREF_KEY_KEY_HIGHLIGHT, DEFAULT_KEY_HIGHLIGHT);
+        }
         if (!preferences.contains(PREF_KEY_COLOR_PALETTE)) {
             if (editor == null) editor = preferences.edit();
             editor.putString(PREF_KEY_COLOR_PALETTE, DEFAULT_COLOR_PALETTE);
@@ -162,6 +181,10 @@ public final class GboardTypingEffectsSettings {
         if (!preferences.contains(PREF_KEY_GLITTER_STYLE)) {
             if (editor == null) editor = preferences.edit();
             editor.putString(PREF_KEY_GLITTER_STYLE, DEFAULT_GLITTER_STYLE);
+        }
+        if (!preferences.contains(PREF_KEY_KEY_HIGHLIGHT_STYLE)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putString(PREF_KEY_KEY_HIGHLIGHT_STYLE, DEFAULT_KEY_HIGHLIGHT_STYLE);
         }
         if (!preferences.contains(PREF_KEY_TRAIL_WIDTH_DP)) {
             if (editor == null) editor = preferences.edit();
@@ -195,6 +218,10 @@ public final class GboardTypingEffectsSettings {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_PARTICLE_SPEED, DEFAULT_PARTICLE_SPEED_PERCENT);
         }
+        if (!preferences.contains(PREF_KEY_KEY_HIGHLIGHT_DURATION_MS)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putInt(PREF_KEY_KEY_HIGHLIGHT_DURATION_MS, DEFAULT_KEY_HIGHLIGHT_DURATION_MS);
+        }
         if (editor != null) {
             editor.commit();
         }
@@ -210,9 +237,11 @@ public final class GboardTypingEffectsSettings {
                 .putBoolean(PREF_KEY_TAP_EXPLOSION, DEFAULT_TAP_EXPLOSION)
                 .putBoolean(PREF_KEY_RELEASE_EXPLOSION, DEFAULT_RELEASE_EXPLOSION)
                 .putBoolean(PREF_KEY_SHOCKWAVE_RING, DEFAULT_SHOCKWAVE_RING)
+                .putBoolean(PREF_KEY_KEY_HIGHLIGHT, DEFAULT_KEY_HIGHLIGHT)
                 .putString(PREF_KEY_COLOR_PALETTE, DEFAULT_COLOR_PALETTE)
                 .putString(PREF_KEY_EXPLOSION_STYLE, DEFAULT_EXPLOSION_STYLE)
                 .putString(PREF_KEY_GLITTER_STYLE, DEFAULT_GLITTER_STYLE)
+                .putString(PREF_KEY_KEY_HIGHLIGHT_STYLE, DEFAULT_KEY_HIGHLIGHT_STYLE)
                 .putInt(PREF_KEY_TRAIL_WIDTH_DP, DEFAULT_TRAIL_WIDTH_DP)
                 .putInt(PREF_KEY_TRAIL_FADE_MS, DEFAULT_TRAIL_FADE_MS)
                 .putInt(PREF_KEY_RAINBOW_SPEED, DEFAULT_RAINBOW_SPEED_PERCENT)
@@ -221,6 +250,7 @@ public final class GboardTypingEffectsSettings {
                 .putInt(PREF_KEY_PARTICLE_SIZE, DEFAULT_PARTICLE_SIZE_PERCENT)
                 .putInt(PREF_KEY_PARTICLE_LIFETIME_MS, DEFAULT_PARTICLE_LIFETIME_MS)
                 .putInt(PREF_KEY_PARTICLE_SPEED, DEFAULT_PARTICLE_SPEED_PERCENT)
+                .putInt(PREF_KEY_KEY_HIGHLIGHT_DURATION_MS, DEFAULT_KEY_HIGHLIGHT_DURATION_MS)
                 .commit();
         GboardTypingEffectsRuntime.invalidateCachedConfig();
         return ok;
@@ -284,6 +314,14 @@ public final class GboardTypingEffectsSettings {
         return writeBoolean(preferences, PREF_KEY_SHOCKWAVE_RING, value);
     }
 
+    public static boolean readKeyHighlightEnabled(SharedPreferences preferences) {
+        return readBoolean(preferences, PREF_KEY_KEY_HIGHLIGHT, DEFAULT_KEY_HIGHLIGHT);
+    }
+
+    public static boolean writeKeyHighlightEnabled(SharedPreferences preferences, boolean value) {
+        return writeBoolean(preferences, PREF_KEY_KEY_HIGHLIGHT, value);
+    }
+
     public static String readColorPalette(SharedPreferences preferences) {
         if (preferences == null) return DEFAULT_COLOR_PALETTE;
         try {
@@ -327,6 +365,21 @@ public final class GboardTypingEffectsSettings {
     public static boolean writeGlitterStyle(SharedPreferences preferences, String value) {
         return writeString(preferences, PREF_KEY_GLITTER_STYLE,
                 TypingEffectsConfig.normalizeGlitterStyle(value));
+    }
+
+    public static String readKeyHighlightStyle(SharedPreferences preferences) {
+        if (preferences == null) return DEFAULT_KEY_HIGHLIGHT_STYLE;
+        try {
+            return TypingEffectsConfig.normalizeKeyHighlightStyle(
+                    preferences.getString(PREF_KEY_KEY_HIGHLIGHT_STYLE, DEFAULT_KEY_HIGHLIGHT_STYLE));
+        } catch (ClassCastException ignored) {
+            return DEFAULT_KEY_HIGHLIGHT_STYLE;
+        }
+    }
+
+    public static boolean writeKeyHighlightStyle(SharedPreferences preferences, String value) {
+        return writeString(preferences, PREF_KEY_KEY_HIGHLIGHT_STYLE,
+                TypingEffectsConfig.normalizeKeyHighlightStyle(value));
     }
 
     public static int readTrailWidthDp(SharedPreferences preferences) {
@@ -407,6 +460,18 @@ public final class GboardTypingEffectsSettings {
     public static boolean writeParticleSpeedPercent(SharedPreferences preferences, int value) {
         return writeClampedInt(preferences, PREF_KEY_PARTICLE_SPEED,
                 value, MIN_PARTICLE_SPEED_PERCENT, MAX_PARTICLE_SPEED_PERCENT);
+    }
+
+    public static int readKeyHighlightDurationMs(SharedPreferences preferences) {
+        return readClampedInt(preferences, PREF_KEY_KEY_HIGHLIGHT_DURATION_MS,
+                DEFAULT_KEY_HIGHLIGHT_DURATION_MS,
+                MIN_KEY_HIGHLIGHT_DURATION_MS,
+                MAX_KEY_HIGHLIGHT_DURATION_MS);
+    }
+
+    public static boolean writeKeyHighlightDurationMs(SharedPreferences preferences, int value) {
+        return writeClampedInt(preferences, PREF_KEY_KEY_HIGHLIGHT_DURATION_MS,
+                value, MIN_KEY_HIGHLIGHT_DURATION_MS, MAX_KEY_HIGHLIGHT_DURATION_MS);
     }
 
     private static boolean readBoolean(SharedPreferences prefs, String key, boolean def) {

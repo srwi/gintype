@@ -28,6 +28,11 @@ public final class TypingEffectsConfig {
     public static final String GLITTER_STYLE_CONFETTI = "confetti";
     public static final String GLITTER_STYLE_MIXED = "mixed";
 
+    // Key highlight visual style identifiers
+    public static final String KEY_HIGHLIGHT_STYLE_NEON_GLOW = "neon_glow";
+    public static final String KEY_HIGHLIGHT_STYLE_PLASMA_PULSE = "plasma_pulse";
+    public static final String KEY_HIGHLIGHT_STYLE_SOFT_FILL = "soft_fill";
+
     private static final int[] NEON_COLORS = {
             0xFF00F5FF, // Electric cyan
             0xFFFF00E5, // Hot magenta
@@ -68,9 +73,11 @@ public final class TypingEffectsConfig {
     public final boolean tapExplosionEnabled;
     public final boolean releaseExplosionEnabled;
     public final boolean shockwaveRingEnabled;
+    public final boolean keyHighlightEnabled;
     public final String colorPalette;
     public final String explosionStyle;
     public final String glitterStyle;
+    public final String keyHighlightStyle;
     public final int trailWidthDp;
     public final int trailFadeMs;
     public final int rainbowSpeedPercent;
@@ -79,6 +86,7 @@ public final class TypingEffectsConfig {
     public final int particleSizePercent;
     public final int particleLifetimeMs;
     public final int particleSpeedPercent;
+    public final int keyHighlightDurationMs;
 
     public TypingEffectsConfig(
             boolean enabled,
@@ -88,9 +96,11 @@ public final class TypingEffectsConfig {
             boolean tapExplosionEnabled,
             boolean releaseExplosionEnabled,
             boolean shockwaveRingEnabled,
+            boolean keyHighlightEnabled,
             String colorPalette,
             String explosionStyle,
             String glitterStyle,
+            String keyHighlightStyle,
             int trailWidthDp,
             int trailFadeMs,
             int rainbowSpeedPercent,
@@ -98,7 +108,8 @@ public final class TypingEffectsConfig {
             int glitterDensity,
             int particleSizePercent,
             int particleLifetimeMs,
-            int particleSpeedPercent) {
+            int particleSpeedPercent,
+            int keyHighlightDurationMs) {
         this.enabled = enabled;
         this.rainbowTrailEnabled = rainbowTrailEnabled;
         this.trailGlowEnabled = trailGlowEnabled;
@@ -106,9 +117,11 @@ public final class TypingEffectsConfig {
         this.tapExplosionEnabled = tapExplosionEnabled;
         this.releaseExplosionEnabled = releaseExplosionEnabled;
         this.shockwaveRingEnabled = shockwaveRingEnabled;
+        this.keyHighlightEnabled = keyHighlightEnabled;
         this.colorPalette = normalizePalette(colorPalette);
         this.explosionStyle = normalizeExplosionStyle(explosionStyle);
         this.glitterStyle = normalizeGlitterStyle(glitterStyle);
+        this.keyHighlightStyle = normalizeKeyHighlightStyle(keyHighlightStyle);
         this.trailWidthDp = trailWidthDp;
         this.trailFadeMs = trailFadeMs;
         this.rainbowSpeedPercent = rainbowSpeedPercent;
@@ -117,6 +130,7 @@ public final class TypingEffectsConfig {
         this.particleSizePercent = particleSizePercent;
         this.particleLifetimeMs = particleLifetimeMs;
         this.particleSpeedPercent = particleSpeedPercent;
+        this.keyHighlightDurationMs = keyHighlightDurationMs;
     }
 
     public static TypingEffectsConfig defaults() {
@@ -128,9 +142,11 @@ public final class TypingEffectsConfig {
                 GboardTypingEffectsSettings.DEFAULT_TAP_EXPLOSION,
                 GboardTypingEffectsSettings.DEFAULT_RELEASE_EXPLOSION,
                 GboardTypingEffectsSettings.DEFAULT_SHOCKWAVE_RING,
+                GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT,
                 GboardTypingEffectsSettings.DEFAULT_COLOR_PALETTE,
                 GboardTypingEffectsSettings.DEFAULT_EXPLOSION_STYLE,
                 GboardTypingEffectsSettings.DEFAULT_GLITTER_STYLE,
+                GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_STYLE,
                 GboardTypingEffectsSettings.DEFAULT_TRAIL_WIDTH_DP,
                 GboardTypingEffectsSettings.DEFAULT_TRAIL_FADE_MS,
                 GboardTypingEffectsSettings.DEFAULT_RAINBOW_SPEED_PERCENT,
@@ -138,14 +154,16 @@ public final class TypingEffectsConfig {
                 GboardTypingEffectsSettings.DEFAULT_GLITTER_DENSITY,
                 GboardTypingEffectsSettings.DEFAULT_PARTICLE_SIZE_PERCENT,
                 GboardTypingEffectsSettings.DEFAULT_PARTICLE_LIFETIME_MS,
-                GboardTypingEffectsSettings.DEFAULT_PARTICLE_SPEED_PERCENT);
+                GboardTypingEffectsSettings.DEFAULT_PARTICLE_SPEED_PERCENT,
+                GboardTypingEffectsSettings.DEFAULT_KEY_HIGHLIGHT_DURATION_MS);
     }
 
     public boolean hasAnyVisualEffectEnabled() {
         return enabled && (rainbowTrailEnabled
                 || glitterEnabled
                 || tapExplosionEnabled
-                || releaseExplosionEnabled);
+                || releaseExplosionEnabled
+                || keyHighlightEnabled);
     }
 
     public static String normalizePalette(String raw) {
@@ -168,6 +186,12 @@ public final class TypingEffectsConfig {
         if (GLITTER_STYLE_CONFETTI.equals(raw)) return GLITTER_STYLE_CONFETTI;
         if (GLITTER_STYLE_MIXED.equals(raw)) return GLITTER_STYLE_MIXED;
         return GLITTER_STYLE_SPARKLES;
+    }
+
+    public static String normalizeKeyHighlightStyle(String raw) {
+        if (KEY_HIGHLIGHT_STYLE_PLASMA_PULSE.equals(raw)) return KEY_HIGHLIGHT_STYLE_PLASMA_PULSE;
+        if (KEY_HIGHLIGHT_STYLE_SOFT_FILL.equals(raw)) return KEY_HIGHLIGHT_STYLE_SOFT_FILL;
+        return KEY_HIGHLIGHT_STYLE_NEON_GLOW;
     }
 
     /**

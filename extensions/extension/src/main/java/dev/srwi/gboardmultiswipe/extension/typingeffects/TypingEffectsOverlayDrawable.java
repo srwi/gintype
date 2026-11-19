@@ -26,8 +26,15 @@ final class TypingEffectsOverlayDrawable extends Drawable {
     private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint particlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint sparkStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint keyFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint keyHaloPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint keyBorderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint keySheenPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path starPath = new Path();
     private final RectF confettiRect = new RectF();
+    private final RectF keyRect = new RectF();
+    private final RectF keyPulseRect = new RectF();
+    private final RectF keySheenRect = new RectF();
 
     TypingEffectsOverlayDrawable(TypingEffectsEngine engine) {
         this.engine = engine;
@@ -50,6 +57,11 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         particlePaint.setStyle(Paint.Style.FILL);
         sparkStrokePaint.setStyle(Paint.Style.STROKE);
         sparkStrokePaint.setStrokeCap(Paint.Cap.ROUND);
+
+        keyFillPaint.setStyle(Paint.Style.FILL);
+        keyHaloPaint.setStyle(Paint.Style.STROKE);
+        keyBorderPaint.setStyle(Paint.Style.STROKE);
+        keySheenPaint.setStyle(Paint.Style.FILL);
     }
 
     @Override
@@ -60,6 +72,14 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         }
         long nowMs = SystemClock.uptimeMillis();
         float density = engine.getDensity();
+
+        // 0. Fancy Key Touch Glow (drawn underneath trails and particles for depth)
+        if (cfg.keyHighlightEnabled) {
+            List<TypingEffectsEngine.KeyHighlight> keys = engine.getKeyHighlights();
+            for (int i = 0; i < keys.size(); i++) {
+                drawKeyHighlight(canvas, keys.get(i), cfg, nowMs, density);
+            }
+        }
 
         // 1. Rainbow / Palette Swipe Trails
         if (cfg.rainbowTrailEnabled) {
@@ -79,6 +99,99 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         List<TypingEffectsEngine.Particle> particles = engine.getParticles();
         for (int i = 0; i < particles.size(); i++) {
             drawParticle(canvas, particles.get(i), nowMs);
+        }
+    }
+
+    private void drawKeyHighlight(
+            Canvas canvas,
+            TypingEffectsEngine.KeyHighlight kh,
+            TypingEffectsConfig cfg,
+            long nowMs,
+            float density) {
+        float fadeT = clamp01((nowMs - kh.lastTouchedMs) / (float) Math.max(1L, kh.durationMs));
+        if (fadeT >= 1f) return;
+
+        // Smooth ease-out fade so the key stays radiant briefly, then dissolves like an RGB keycap.
+        float alphaFactor = (1f - fadeT) * (1f - fadeT);
+
+        // Subtle elastic pop-in during the first 85ms of touch.
+        float popT = clamp01((nowMs - kh.firstTouchedMs) / 85f);
+        float popExpandPx = (1f - popT) * 2.2f * density;
+
+        float insetX = Math.min(2.5f * density, (kh.right - kh.left) * 0.06f);
+        float insetY = Math.min(3.0f * density, (kh.bottom - kh.top) * 0.08f);
+        keyRect.set(
+                kh.left + insetX - popExpandPx,
+                kh.top + insetY - popExpandPx,
+                kh.right - insetX + popExpandPx,
+                kh.bottom - insetY + popExpandPx);
+
+        float width = keyRect.width();
+        float height = keyRect.height();
+        if (width <= 0f || height <= 0f) return;
+
+        float cornerRadius = Math.min(8f * density, Math.min(width, height) * 0.24f);
+        int baseColor = kh.colorArgb;
+        int brightColor = TypingEffectsConfig.blendTowardWhite(baseColor, 0.58f);
+
+        boolean isSoftFill = TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_SOFT_FILL.equals(cfg.keyHighlightStyle);
+        boolean isPlasma = TypingEffectsConfig.KEY_HIGHLIGHT_STYLE_PLASMA_PULSE.equals(cfg.keyHighlightStyle);
+
+        if (isSoftFill) {
+            // Translucent glowing glass fill + delicate bright rim
+            keyFillPaint.setColor(TypingEffectsConfig.withAlpha(baseColor, Math.round(92f * alphaFactor)));
+            canvas.drawRoundRect(keyRect, cornerRadius, cornerRadius, keyFillPaint);
+
+            keyBorderPaint.setStrokeWidth(1.6f * density);
+            keyBorderPaint.setColor(TypingEffectsConfig.withAlpha(brightColor, Math.round(185f * alphaFactor)));
+            canvas.drawRoundRect(keyRect, cornerRadius, cornerRadius, keyBorderPaint);
+        } else {
+            // Neon Glow & Plasma Pulse: outer halo + rich translucent fill + crisp neon rim + top gloss
+            keyHaloPaint.setStrokeWidth(5.8f * density * (0.65f + 0.35f * alphaFactor));
+            keyHaloPaint.setColor(TypingEffectsConfig.withAlpha(baseColor, Math.round(74f * alphaFactor)));
+            canvas.drawRoundRect(keyRect, cornerRadius, cornerRadius, keyHaloPaint);
+
+            keyFillPaint.setColor(TypingEffectsConfig.withAlpha(baseColor, Math.round(68f * alphaFactor)));
+            canvas.drawRoundRect(keyRect, cornerRadius, cornerRadius, keyFillPaint);
+
+            // Top glossy specular highlight bar (glass RGB keycap sheen)
+            float sheenInset = Math.max(2f * density, cornerRadius * 0.45f);
+            float sheenH = Math.max(2.2f * density, height * 0.16f);
+            keySheenRect.set(
+                    keyRect.left + sheenInset,
+                    keyRect.top + 1.5f * density,
+                    keyRect.right - sheenInset,
+                    keyRect.top + 1.5f * density + sheenH);
+            keySheenPaint.setColor(TypingEffectsConfig.withAlpha(0xFFFFFFFF, Math.round(64f * alphaFactor)));
+            canvas.drawRoundRect(keySheenRect, sheenH * 0.5f, sheenH * 0.5f, keySheenPaint);
+
+            // Crisp luminous neon border
+            keyBorderPaint.setStrokeWidth(2.1f * density);
+            keyBorderPaint.setColor(TypingEffectsConfig.withAlpha(brightColor, Math.round(235f * alphaFactor)));
+            canvas.drawRoundRect(keyRect, cornerRadius, cornerRadius, keyBorderPaint);
+
+            // Plasma Pulse: expanding outer light frame radiating off the key
+            if (isPlasma) {
+                float pulseT = clamp01((nowMs - kh.firstTouchedMs) / (float) Math.max(120L, kh.durationMs));
+                if (pulseT < 1f) {
+                    float eased = 1f - (1f - pulseT) * (1f - pulseT);
+                    float growPx = eased * 9.5f * density;
+                    float pulseAlpha = (1f - pulseT) * (1f - pulseT);
+                    keyPulseRect.set(
+                            keyRect.left - growPx,
+                            keyRect.top - growPx,
+                            keyRect.right + growPx,
+                            keyRect.bottom + growPx);
+                    keyBorderPaint.setStrokeWidth(Math.max(1f, 2.2f * density * (1f - 0.55f * pulseT)));
+                    keyBorderPaint.setColor(TypingEffectsConfig.withAlpha(
+                            brightColor, Math.round(175f * pulseAlpha)));
+                    canvas.drawRoundRect(
+                            keyPulseRect,
+                            cornerRadius + growPx * 0.4f,
+                            cornerRadius + growPx * 0.4f,
+                            keyBorderPaint);
+                }
+            }
         }
     }
 

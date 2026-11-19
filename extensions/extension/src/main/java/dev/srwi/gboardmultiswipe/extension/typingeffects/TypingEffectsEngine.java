@@ -25,6 +25,7 @@ public final class TypingEffectsEngine {
     static final int MAX_RINGS = 24;
     static final int MAX_TRAIL_POINTS = 160;
     static final int MAX_FADING_TRAILS = 12;
+    static final int MAX_KEY_HIGHLIGHTS = 36;
 
     public static final class TrailPoint {
         public float x;
@@ -78,6 +79,18 @@ public final class TypingEffectsEngine {
         public long durationMs;
     }
 
+    public static final class KeyHighlight {
+        public int keyId;
+        public float left;
+        public float top;
+        public float right;
+        public float bottom;
+        public int colorArgb;
+        public long firstTouchedMs;
+        public long lastTouchedMs;
+        public long durationMs;
+    }
+
     private static final class PointerState {
         final int pointerId;
         float downX;
@@ -108,10 +121,12 @@ public final class TypingEffectsEngine {
     private final List<TrailStroke> fadingTrails = new ArrayList<TrailStroke>();
     private final List<Particle> particles = new ArrayList<Particle>(64);
     private final List<ShockwaveRing> rings = new ArrayList<ShockwaveRing>(8);
+    private final List<KeyHighlight> keyHighlights = new ArrayList<KeyHighlight>(16);
 
     private TypingEffectsConfig config = TypingEffectsConfig.defaults();
     private long lastStepMs = -1L;
     private float pointerPhaseCounter = 0f;
+    private float keyPhaseCounter = 0f;
 
     public TypingEffectsEngine(float density) {
         this(density, new Random());
@@ -231,11 +246,60 @@ public final class TypingEffectsEngine {
         activePointers.clear();
     }
 
+    public void onKeyTouched(
+            int keyId,
+            float left,
+            float top,
+            float right,
+            float bottom,
+            long nowMs) {
+        if (!config.enabled || !config.keyHighlightEnabled) {
+            return;
+        }
+        if (right <= left || bottom <= top) {
+            return;
+        }
+        long durationMs = Math.max(80L, config.keyHighlightDurationMs);
+        // Refresh existing highlight for the same key so holding/sliding across it stays smooth.
+        for (int i = 0; i < keyHighlights.size(); i++) {
+            KeyHighlight existing = keyHighlights.get(i);
+            if (existing.keyId == keyId) {
+                existing.left = left;
+                existing.top = top;
+                existing.right = right;
+                existing.bottom = bottom;
+                existing.lastTouchedMs = nowMs;
+                existing.durationMs = durationMs;
+                return;
+            }
+        }
+        KeyHighlight highlight;
+        if (keyHighlights.size() >= MAX_KEY_HIGHLIGHTS) {
+            highlight = keyHighlights.remove(0);
+        } else {
+            highlight = new KeyHighlight();
+        }
+        float phase = computeColorPhase(nowMs, keyPhaseCounter);
+        keyPhaseCounter = (keyPhaseCounter + 0.09f) % 1.0f;
+
+        highlight.keyId = keyId;
+        highlight.left = left;
+        highlight.top = top;
+        highlight.right = right;
+        highlight.bottom = bottom;
+        highlight.colorArgb = config.sampleColor(phase);
+        highlight.firstTouchedMs = nowMs;
+        highlight.lastTouchedMs = nowMs;
+        highlight.durationMs = durationMs;
+        keyHighlights.add(highlight);
+    }
+
     public void clearAll() {
         activePointers.clear();
         fadingTrails.clear();
         particles.clear();
         rings.clear();
+        keyHighlights.clear();
         lastStepMs = -1L;
     }
 
@@ -299,11 +363,23 @@ public final class TypingEffectsEngine {
             }
         }
 
+        // Prune expired key highlights.
+        Iterator<KeyHighlight> keyIt = keyHighlights.iterator();
+        while (keyIt.hasNext()) {
+            KeyHighlight kh = keyIt.next();
+            if (nowMs - kh.lastTouchedMs >= kh.durationMs) {
+                keyIt.remove();
+            }
+        }
+
         return hasActiveEffects();
     }
 
     public boolean hasActiveEffects() {
-        if (!particles.isEmpty() || !rings.isEmpty() || !fadingTrails.isEmpty()) {
+        if (!particles.isEmpty()
+                || !rings.isEmpty()
+                || !fadingTrails.isEmpty()
+                || !keyHighlights.isEmpty()) {
             return true;
         }
         if (config.rainbowTrailEnabled) {
@@ -336,6 +412,10 @@ public final class TypingEffectsEngine {
 
     public List<ShockwaveRing> getRings() {
         return rings;
+    }
+
+    public List<KeyHighlight> getKeyHighlights() {
+        return keyHighlights;
     }
 
     public int getActivePointerCount() {

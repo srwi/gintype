@@ -506,6 +506,33 @@
     <string name="gboard_patches_typing_effects_shockwave_ring_summary">
         <translation locale="en">Add an expanding luminous ring to tap and swipe-release explosions</translation>
         </string>
+    <string name="gboard_patches_typing_effects_key_highlight_title">
+        <translation locale="en">Key touch glow</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_key_highlight_summary">
+        <translation locale="en">Illuminates touched and swiped-over keys with a glowing highlight that fades out smoothly</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_key_highlight_style_title">
+        <translation locale="en">Key glow style</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_key_highlight_style_summary">
+        <translation locale="en">Visual style used to highlight touched keys</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_key_highlight_style_neon_glow">
+        <translation locale="en">Neon RGB glow (Default)</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_key_highlight_style_plasma_pulse">
+        <translation locale="en">Plasma pulse frame</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_key_highlight_style_soft_fill">
+        <translation locale="en">Soft glass fill</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_key_highlight_duration_title">
+        <translation locale="en">Key glow duration</translation>
+        </string>
+    <string name="gboard_patches_typing_effects_key_highlight_duration_summary">
+        <translation locale="en">How long touched keys stay illuminated before fading out</translation>
+        </string>
     <string name="gboard_patches_typing_effects_palette_title">
         <translation locale="en">Color palette</translation>
         </string>

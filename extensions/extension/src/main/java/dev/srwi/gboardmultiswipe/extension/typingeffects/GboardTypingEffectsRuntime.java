@@ -1,10 +1,12 @@
 package dev.srwi.gboardmultiswipe.extension.typingeffects;
 
 import android.content.Context;
+import android.graphics.Rect;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 
 import java.lang.ref.WeakReference;
 import java.util.WeakHashMap;
@@ -127,6 +129,7 @@ public final class GboardTypingEffectsRuntime {
         private final WeakReference<View> viewRef;
         private final TypingEffectsEngine engine;
         private final TypingEffectsOverlayDrawable drawable;
+        private final Rect tempKeyRect = new Rect();
         private boolean attached = false;
         private boolean animating = false;
         private int lastBoundsW = -1;
@@ -183,7 +186,10 @@ public final class GboardTypingEffectsRuntime {
                 case MotionEvent.ACTION_POINTER_DOWN: {
                     int idx = event.getActionIndex();
                     int pointerId = event.getPointerId(idx);
-                    engine.onPointerDown(pointerId, event.getX(idx), event.getY(idx), nowMs);
+                    float x = event.getX(idx);
+                    float y = event.getY(idx);
+                    engine.onPointerDown(pointerId, x, y, nowMs);
+                    notifyTouchedKey(view, x, y, nowMs);
                     break;
                 }
                 case MotionEvent.ACTION_MOVE: {
@@ -198,7 +204,10 @@ public final class GboardTypingEffectsRuntime {
                                     event.getHistoricalY(p, h),
                                     nowMs);
                         }
-                        engine.onPointerMove(pointerId, event.getX(p), event.getY(p), nowMs);
+                        float x = event.getX(p);
+                        float y = event.getY(p);
+                        engine.onPointerMove(pointerId, x, y, nowMs);
+                        notifyTouchedKey(view, x, y, nowMs);
                     }
                     break;
                 }
@@ -221,6 +230,66 @@ public final class GboardTypingEffectsRuntime {
                 drawable.invalidateSelf();
                 scheduleNextFrame(view);
             }
+        }
+
+        private void notifyTouchedKey(View root, float x, float y, long nowMs) {
+            if (!engine.getConfig().keyHighlightEnabled) {
+                return;
+            }
+            View keyView = findSoftKeyAt(root, x, y, 0, 0, tempKeyRect);
+            if (keyView != null) {
+                engine.onKeyTouched(
+                        System.identityHashCode(keyView),
+                        tempKeyRect.left,
+                        tempKeyRect.top,
+                        tempKeyRect.right,
+                        tempKeyRect.bottom,
+                        nowMs);
+            }
+        }
+
+        private static View findSoftKeyAt(
+                View node,
+                float x,
+                float y,
+                int offsetX,
+                int offsetY,
+                Rect outRect) {
+            if (node == null || node.getVisibility() != View.VISIBLE) {
+                return null;
+            }
+            int w = node.getWidth();
+            int h = node.getHeight();
+            if (w <= 0 || h <= 0) {
+                return null;
+            }
+            if (x < offsetX || x > offsetX + w || y < offsetY || y > offsetY + h) {
+                return null;
+            }
+            String className = node.getClass().getName();
+            if (className.endsWith("SoftKeyView")) {
+                outRect.set(offsetX, offsetY, offsetX + w, offsetY + h);
+                return node;
+            }
+            if (node instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) node;
+                int childCount = group.getChildCount();
+                int baseX = offsetX - group.getScrollX();
+                int baseY = offsetY - group.getScrollY();
+                for (int i = childCount - 1; i >= 0; i--) {
+                    View child = group.getChildAt(i);
+                    if (child == null || child.getVisibility() != View.VISIBLE) {
+                        continue;
+                    }
+                    int childLeft = baseX + child.getLeft() + Math.round(child.getTranslationX());
+                    int childTop = baseY + child.getTop() + Math.round(child.getTranslationY());
+                    View hit = findSoftKeyAt(child, x, y, childLeft, childTop, outRect);
+                    if (hit != null) {
+                        return hit;
+                    }
+                }
+            }
+            return null;
         }
 
         private void ensureAttached(View view) {
