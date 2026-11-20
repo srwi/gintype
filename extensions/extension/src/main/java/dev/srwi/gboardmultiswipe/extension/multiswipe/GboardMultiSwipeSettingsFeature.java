@@ -146,7 +146,7 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
 
     @Override
     public int getEntryIcon() {
-        return GboardPatchesIcons.BOLT;
+        return GboardPatchesIcons.GESTURE;
     }
 
     @Override

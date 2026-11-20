@@ -32,6 +32,8 @@ public final class GboardPatchesIcons {
     public static final int SEARCH = 17;
     public static final int MORE = 18;
     public static final int KEYBOARD = 19;
+    public static final int GESTURE = 20;
+    public static final int TOP_BAR = 21;
 
     private static final float VIEWPORT = 24f;
 
@@ -105,6 +107,13 @@ public final class GboardPatchesIcons {
                 return "M6,10a2,2 0,1 0,0 4a2,2 0,1 0,0 -4M12,10a2,2 0,1 0,0 4a2,2 0,1 0,0 -4M18,10a2,2 0,1 0,0 4a2,2 0,1 0,0 -4";
             case KEYBOARD:
                 return "M4,19q-0.825,0-1.4125-0.5875T2,17V7q0-0.825 0.5875-1.4125T4,5H20q0.825,0 1.4125,0.5875T22,7V17q0,0.825-0.5875,1.4125T20,19H4Zm0-2H20V7H4V17Zm4-1H16V14H8v2ZM5,13h2V11H5v2Zm3,0h2V11H8v2Zm3,0h2V11H11v2Zm3,0h2V11H14v2Zm3,0h2V11H17v2ZM5,10h2V8H5v2Zm3,0h2V8H8v2Zm3,0h2V8H11v2Zm3,0h2V8H14v2Zm3,0h2V8H17v2ZM4,17V7V17Z";
+            case GESTURE:
+                return "M4.59 6.89c.7-.71 1.4-1.35 1.71-1.22.5.2 0 1.03-.3 1.52-.25.42-2.86 3.89-2.86 6.31 0 1.28.48 2.34 1.34 2.98.75.56 1.74.73 2.64.46 1.07-.31 1.95-1.4 3.06-2.77 1.21-1.49 2.83-3.44 4.08-3.44 1.63 0 1.65 1.01 1.76 1.79-3.78.64-5.38 3.67-5.38 5.37 0 1.7 1.44 3.09 3.21 3.09 1.63 0 4.29-1.33 4.69-6.1H21v-2.5h-2.47c-.15-1.65-1.09-4.2-4.03-4.2-2.25 0-4.18 1.91-4.94 2.84-.58.73-2.06 2.48-2.29 2.72-.25.3-.68.84-1.11.84-.45 0-.72-.83-.36-1.92.35-1.09 1.4-2.86 1.85-3.52.78-1.14 1.3-1.92 1.3-3.28C8.95 3.69 7.31 3 6.44 3 5.12 3 3.97 4 3.72 4.25c-.36.36-.66.66-.88.93l1.75 1.71zm9.29 11.66c-.31 0-.74-.26-.74-.72 0-.6.73-2.2 2.87-2.76-.3 2.69-1.43 3.48-2.13 3.48z";
+            case TOP_BAR:
+                return "M4 3h16c1.1 0 2 .9 2 2v5c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V5c0-1.1.9-2 2-2z"
+                        + "m1 3.5v2h4v-2H5zm5.5 0v2h3v-2h-3zm4.5 0v2h4v-2h-4z"
+                        + "M3 14.5h5v2H3v-2zm6.5 0h5v2h-5v-2zm6.5 0h5v2h-5v-2z"
+                        + "M5 18.5h14v2H5v-2z";
             default:
                 return null;
         }

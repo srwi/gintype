@@ -90,12 +90,12 @@ public final class GboardThiccTopBarSettingsFeature
 
     @Override
     public int getEntryIcon() {
-        return GboardPatchesIcons.BOLT;
+        return GboardPatchesIcons.TOP_BAR;
     }
 
     @Override
     public String getEntryTone() {
-        return "blue";
+        return "teal";
     }
 
     @Override
