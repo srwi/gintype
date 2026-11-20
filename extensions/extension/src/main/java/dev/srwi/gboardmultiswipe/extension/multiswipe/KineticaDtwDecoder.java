@@ -1090,10 +1090,11 @@ public final class KineticaDtwDecoder {
 
         private int sortedChildren(int node, int depth, int[] outOrder) {
             int count = 0;
-            for (int c = 0; c < 26; c++) {
-                if (trie.child(node, c) != -1) {
-                    outOrder[count++] = c;
-                }
+            int mask = trie.getChildMask(node);
+            while (mask != 0) {
+                int c = Integer.numberOfTrailingZeros(mask);
+                outOrder[count++] = c;
+                mask &= mask - 1;
             }
             // Insertion sort descending by maxSubtreeFreq for fast best-first traversal
             for (int i = 1; i < count; i++) {

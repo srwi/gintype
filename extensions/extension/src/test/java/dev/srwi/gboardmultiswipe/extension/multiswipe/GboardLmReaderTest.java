@@ -289,9 +289,105 @@ public class GboardLmReaderTest {
         assertEquals(0, dicts.trie.lookupFrequency("schutz"));
     }
 
+    @Test
+    public void extractsExplicitLevel2TrigramsAndFiltersWeakChainedEdges() throws Exception {
+        List<LmSymbolSpec> symbols = Arrays.asList(
+                new LmSymbolSpec("<epsilon>".getBytes(StandardCharsets.UTF_8), 255, false),
+                new LmSymbolSpec("und".getBytes(StandardCharsets.UTF_8), 60, true),
+                new LmSymbolSpec("Schilddrüsen_".getBytes(StandardCharsets.UTF_8), 115, true),
+                new LmSymbolSpec("Daten_".getBytes(StandardCharsets.UTF_8), 110, true),
+                new LmSymbolSpec("Schwach_".getBytes(StandardCharsets.UTF_8), 90, true),
+                new LmSymbolSpec("_unter_".getBytes(StandardCharsets.UTF_8), 100, true),
+                new LmSymbolSpec("_Schutz_".getBytes(StandardCharsets.UTF_8), 95, true),
+                new LmSymbolSpec("_Funktion".getBytes(StandardCharsets.UTF_8), 105, true),
+                new LmSymbolSpec("_Erklärung".getBytes(StandardCharsets.UTF_8), 95, true),
+                new LmSymbolSpec("_Kette_".getBytes(StandardCharsets.UTF_8), 90, true)
+        );
+        // Ensure _unter_ is an L1 state so it can own an L2 trigram child state
+        // (and Daten_ + _Schutz_ -> _Erklärung is the only valid chained 3-part compound).
+        List<LmBigramSpec> bigrams = Arrays.asList(
+                new LmBigramSpec("Daten_", "_Schutz_", 20),
+                new LmBigramSpec("_Schutz_", "_Erklärung", 30),
+                // Weak step (q = 120 > MAX_CHAINED_TRIPLE_EDGE_Q = 96) must not form a noisy 3-part chain
+                new LmBigramSpec("Schwach_", "_Kette_", 120),
+                new LmBigramSpec("_Kette_", "_Funktion", 20),
+                new LmBigramSpec("_unter_", "und", 50)
+        );
+        List<LmTrigramSpec> trigrams = Collections.singletonList(
+                // Reverse context order in Gboard NGramFst: parent=_unter_, child=Schilddrüsen_ -> future=_Funktion
+                new LmTrigramSpec("_unter_", "Schilddrüsen_", "_Funktion", 12)
+        );
+
+        byte[] lmBytes = buildSyntheticLmWithTrigrams(symbols, bigrams, trigrams, 0.0676536f, 5);
+        GboardLmReader.LmDictionaries dicts = GboardLmReader.readFromBytes(
+                lmBytes, "de", true, GboardLmReader.DEFAULT_MAX_BIGRAMS, 0, 10);
+
+        assertEquals(2, dicts.compoundWordCount);
+        assertTrue(dicts.trie.containsWordIgnoreCase("Schilddrüsenunterfunktion"));
+        assertEquals(
+                "Schilddrüsenunterfunktion",
+                dicts.trie.getWordForms(dicts.trie.findNode("schilddrusenunterfunktion")).get(0).displayWord);
+        assertTrue(dicts.trie.containsWordIgnoreCase("Datenschutzerklärung"));
+        assertFalse(dicts.trie.containsWordIgnoreCase("Schwachkettefunktion"));
+        assertEquals(0, dicts.trie.lookupFrequency("schwachkettefunktion"));
+    }
+
+    @Test
+    public void compactTrieSupportsBitmaskTraversalMultiFormsAndPostCompactInsertion() {
+        MultiSwipeTrie trie = new MultiSwipeTrie(16);
+        MultiSwipeDictionaryLoader.insertWordIntoTrie(trie, "weg", 180, false, "de", true);
+        MultiSwipeDictionaryLoader.insertWordIntoTrie(trie, "Weg", 210, true, "de", true);
+        MultiSwipeDictionaryLoader.insertWordIntoTrie(trie, "Welt", 195, true, "de", true);
+        trie.compact();
+
+        assertEquals(2, trie.wordCount);
+        assertTrue(trie.containsWordIgnoreCase("weg"));
+        assertTrue(trie.containsWordIgnoreCase("Weg"));
+        assertTrue(trie.containsWordIgnoreCase("Welt"));
+        assertFalse(trie.containsWordIgnoreCase("Wege"));
+
+        int wegNode = trie.findNode("weg");
+        assertTrue(wegNode > 0);
+        List<MultiSwipeTrie.WordForm> wegForms = trie.getWordForms(wegNode);
+        assertEquals(2, wegForms.size());
+        assertEquals("Weg", wegForms.get(0).displayWord);
+        assertTrue(wegForms.get(0).isProperNoun);
+        assertEquals(210, wegForms.get(0).frequency);
+        assertEquals("weg", wegForms.get(1).displayWord);
+        assertFalse(wegForms.get(1).isProperNoun);
+        assertEquals(180, wegForms.get(1).frequency);
+
+        // Mutating after compact() (e.g. UserDictionary / session learning) preserves all existing entries
+        MultiSwipeDictionaryLoader.insertWordIntoTrie(trie, "weiter", 170, false, "de", true);
+        MultiSwipeDictionaryLoader.insertWordIntoTrie(trie, "schön", 205, false, "de", true);
+        MultiSwipeDictionaryLoader.insertWordIntoTrie(trie, "schon", 185, false, "de", true);
+        trie.compact();
+        assertEquals(4, trie.wordCount);
+        assertEquals(210, trie.lookupFrequency("Weg"));
+        assertEquals(210, trie.lookupFrequency("weg"));
+        assertEquals(205, trie.lookupFrequency("schön"));
+        assertEquals(185, trie.lookupFrequency("schon"));
+        assertEquals(195, trie.lookupFrequency("Welt"));
+        assertEquals(170, trie.lookupFrequency("weiter"));
+    }
+
     // -------------------------------------------------------------------------
     // Binary Gboard .lm builder for hermetic unit tests
     // -------------------------------------------------------------------------
+
+    static final class LmTrigramSpec {
+        final String l1Parent;
+        final String l2Child;
+        final String future;
+        final int qWeight;
+
+        LmTrigramSpec(String l1Parent, String l2Child, String future, int qWeight) {
+            this.l1Parent = l1Parent;
+            this.l2Child = l2Child;
+            this.future = future;
+            this.qWeight = qWeight;
+        }
+    }
 
     static final class LmSymbolSpec {
         final byte[] raw;
@@ -354,6 +450,17 @@ public class GboardLmReaderTest {
             float scale,
             int oddPaddingLen
     ) throws IOException {
+        return buildSyntheticLmWithTrigrams(
+                symbols, bigrams, Collections.emptyList(), scale, oddPaddingLen);
+    }
+
+    static byte[] buildSyntheticLmWithTrigrams(
+            List<LmSymbolSpec> symbols,
+            List<LmBigramSpec> bigrams,
+            List<LmTrigramSpec> trigrams,
+            float scale,
+            int oddPaddingLen
+    ) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         writeLeInt(out, GboardLmReader.LM_MAGIC);
         writeLeInt(out, 3);
@@ -381,7 +488,8 @@ public class GboardLmReaderTest {
 
         // Chunk 0x2
         long off2 = out.size() + 16L;
-        byte[] chunk2 = buildCompactLmChunk(off2, symbols, bigrams, compSymIds, tailWeights, wordToCompId, scale);
+        byte[] chunk2 = buildCompactLmChunk(
+                off2, symbols, bigrams, trigrams, compSymIds, tailWeights, wordToCompId, scale);
         writeChunk(out, 0x2L, chunk2);
 
         // Chunk 0x20
@@ -396,6 +504,7 @@ public class GboardLmReaderTest {
             long chunkFileOffset,
             List<LmSymbolSpec> symbols,
             List<LmBigramSpec> bigrams,
+            List<LmTrigramSpec> trigrams,
             List<Integer> compSymIds,
             List<Integer> tailWeights,
             Map<String, Integer> wordToCompId,
@@ -411,13 +520,33 @@ public class GboardLmReaderTest {
                         .add(new int[] {nextCid, b.qWeight});
             }
         }
+        // Group trigrams by L1 parent compressed ID -> list of (l2ChildCid, futureCid, qWeight)
+        Map<Integer, List<int[]>> l2ByParentCid = new LinkedHashMap<>();
+        for (LmTrigramSpec t : trigrams) {
+            Integer pCid = wordToCompId.get(t.l1Parent);
+            Integer cCid = wordToCompId.get(t.l2Child);
+            Integer fCid = wordToCompId.get(t.future);
+            if (pCid != null && cCid != null && fCid != null) {
+                byPrevCid.computeIfAbsent(pCid, k -> new ArrayList<>());
+                l2ByParentCid.computeIfAbsent(pCid, k -> new ArrayList<>())
+                        .add(new int[] {cCid, fCid, t.qWeight});
+            }
+        }
         List<Integer> l1PrevCids = new ArrayList<>(byPrevCid.keySet());
-        int numStates = 1 + l1PrevCids.size();
+        List<int[]> l2States = new ArrayList<>();
+        for (int prevCid : l1PrevCids) {
+            List<int[]> children = l2ByParentCid.get(prevCid);
+            if (children != null) {
+                l2States.addAll(children);
+            }
+        }
+        int numStates = 1 + l1PrevCids.size() + l2States.size();
 
         int numFutures = compSymIds.size();
         for (List<int[]> lst : byPrevCid.values()) {
             numFutures += lst.size();
         }
+        numFutures += l2States.size();
 
         // Build NGramFst block
         ByteArrayOutputStream ng = new ByteArrayOutputStream();
@@ -425,16 +554,28 @@ public class GboardLmReaderTest {
         writeLeLong(ng, numFutures);
         writeLeLong(ng, 0L); // numFinal
 
-        // ctx_bv_: bit 0=1, bit 1=0, then l1PrevCids.size() 1s, then 0s
+        // ctx_bv_: super-root '1','0', then state 0 has l1PrevCids.size() '1's + '0',
+        // then each L1 state has its L2 child count '1's + '0', then each L2 state has '0'.
         int ctxBits = 2 * numStates + 1;
         byte[] ctxBv = new byte[((ctxBits + 63) / 64) * 8];
         setBit(ctxBv, 0);
+        int cBitPos = 2;
         for (int i = 0; i < l1PrevCids.size(); i++) {
-            setBit(ctxBv, 2 + i);
+            setBit(ctxBv, cBitPos++);
+        }
+        cBitPos++; // 0 terminating state 0's children
+        for (int prevCid : l1PrevCids) {
+            List<int[]> children = l2ByParentCid.get(prevCid);
+            if (children != null) {
+                for (int i = 0; i < children.size(); i++) {
+                    setBit(ctxBv, cBitPos++);
+                }
+            }
+            cBitPos++; // 0 terminating this L1 state's children
         }
         ng.write(ctxBv);
 
-        // fut_bv_: bit 0=0, state 0 unigrams (compSymIds.size() 1s) + 0, then each L1 state's 1s + 0
+        // fut_bv_: bit 0=0, state 0 unigrams (compSymIds.size() 1s) + 0, then each L1 state's 1s + 0, then each L2 state's 1 + 0
         int futBits = numFutures + numStates + 1;
         byte[] futBv = new byte[((futBits + 63) / 64) * 8];
         int bp = 1; // skip bit 0 (0)
@@ -449,15 +590,22 @@ public class GboardLmReaderTest {
             }
             bp++;
         }
+        for (int i = 0; i < l2States.size(); i++) {
+            setBit(futBv, bp++);
+            bp++;
+        }
         ng.write(futBv);
 
         // fin_bv_ (all zeros)
         ng.write(new byte[((numStates + 63) / 64) * 8]);
 
-        // ctx_words_: u16[numStates + 1] (index 0 = 0, index 1..l1 = l1PrevCids, trailing sentinel)
+        // ctx_words_: u16[numStates + 1] (index 0 = 0, index 1..l1 = l1PrevCids, index l1+1.. = l2ChildCids, trailing sentinel)
         writeLeShort(ng, 0);
         for (int prevCid : l1PrevCids) {
             writeLeShort(ng, prevCid);
+        }
+        for (int[] l2 : l2States) {
+            writeLeShort(ng, l2[0]);
         }
         writeLeShort(ng, 0);
 
@@ -473,6 +621,10 @@ public class GboardLmReaderTest {
                 writeLeShort(fw, arc[0]);
                 fwt.write(arc[1] & 0xFF);
             }
+        }
+        for (int[] l2 : l2States) {
+            writeLeShort(fw, l2[1]);
+            fwt.write(l2[2] & 0xFF);
         }
         ng.write(fw.toByteArray());
 

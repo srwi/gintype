@@ -290,10 +290,13 @@ public final class ThumbBeam {
 
     private void expand(Hyp h, List<Hyp> out) {
         int shortest = h.depth + stillNeeded(h);
-        for (int code = 0; code < 26; code++) {
+        int mask = trie.getChildMask(h.node);
+        while (mask != 0) {
+            int code = Integer.numberOfTrailingZeros(mask);
+            mask &= mask - 1;
+            if (!geometry.hasKey(code)) continue;
             int child = trie.child(h.node, code);
             if (child == -1) continue;
-            if (!geometry.hasKey(code)) continue;
             if (trie.getMaxWordLen(child) < shortest) continue;
 
             for (int s = 0; s < 2; s++) {
