@@ -149,6 +149,83 @@ public class GboardLmReaderTest {
         assertFalse(GboardLmReader.isUsableVocabularyWord("\u0099closure"));
     }
 
+    @Test
+    public void synthesizesTopCompoundWordsFromUnderscoreBigramsWithGermanCasing() throws Exception {
+        List<LmSymbolSpec> symbols = Arrays.asList(
+                new LmSymbolSpec("<epsilon>".getBytes(StandardCharsets.UTF_8), 255, false),
+                new LmSymbolSpec("und".getBytes(StandardCharsets.UTF_8), 60, true),
+                new LmSymbolSpec("vielleicht".getBytes(StandardCharsets.UTF_8), 113, true),
+                new LmSymbolSpec("Teilnahme".getBytes(StandardCharsets.UTF_8), 140, true),
+                new LmSymbolSpec("Teil_".getBytes(StandardCharsets.UTF_8), 137, true),
+                new LmSymbolSpec("Nacht-_".getBytes(StandardCharsets.UTF_8), 145, true),
+                new LmSymbolSpec("Rare_".getBytes(StandardCharsets.UTF_8), 210, true),
+                new LmSymbolSpec("_weise".getBytes(StandardCharsets.UTF_8), 81, true),
+                new LmSymbolSpec("_Zeit".getBytes(StandardCharsets.UTF_8), 95, true),
+                new LmSymbolSpec("_nahme".getBytes(StandardCharsets.UTF_8), 100, true),
+                new LmSymbolSpec("_Fotos".getBytes(StandardCharsets.UTF_8), 98, true),
+                new LmSymbolSpec("_Part".getBytes(StandardCharsets.UTF_8), 190, true),
+                new LmSymbolSpec("_infix_".getBytes(StandardCharsets.UTF_8), 90, true)
+        );
+        List<LmBigramSpec> bigrams = Arrays.asList(
+                new LmBigramSpec("Teil_", "_weise", 11),    // joint_q = 148 -> "teilweise"
+                new LmBigramSpec("Teil_", "_Zeit", 40),     // joint_q = 177 -> "Teilzeit"
+                new LmBigramSpec("Teil_", "_nahme", 90),    // already exists as "Teilnahme" -> skipped
+                new LmBigramSpec("Nacht-_", "_Fotos", 18),  // joint_q = 163 -> "Nacht-Fotos"
+                new LmBigramSpec("Rare_", "_Part", 50),     // joint_q = 260 -> dropped by cap=3
+                new LmBigramSpec("Teil_", "_infix_", 10)    // infixes ignored for 2-part compounds
+        );
+
+        byte[] lmBytes = buildSyntheticLm(symbols, bigrams, 0.0676536f, 5);
+        GboardLmReader.LmDictionaries dicts = GboardLmReader.readFromBytes(
+                lmBytes, "de", true, GboardLmReader.DEFAULT_MAX_BIGRAMS, 3);
+
+        assertEquals(3, dicts.cleanWordCount);
+        assertEquals(3, dicts.compoundWordCount);
+        assertEquals(0, dicts.bigramCount);
+
+        // Strongest 3 compounds admitted, preserving German compound capitalization & display forms
+        int freqTeilweise = dicts.trie.lookupFrequency("teilweise");
+        int freqTeilzeit = dicts.trie.lookupFrequency("teilzeit");
+        int freqNachtFotos = dicts.trie.lookupFrequency("nachtfotos");
+        assertTrue(freqTeilweise > freqTeilzeit);
+        assertTrue(freqNachtFotos > freqTeilzeit);
+
+        List<MultiSwipeTrie.WordForm> teilweiseForms =
+                dicts.trie.getWordForms(dicts.trie.findNode("teilweise"));
+        assertEquals(1, teilweiseForms.size());
+        assertEquals("teilweise", teilweiseForms.get(0).displayWord);
+        assertFalse(teilweiseForms.get(0).isProperNoun);
+
+        List<MultiSwipeTrie.WordForm> teilzeitForms =
+                dicts.trie.getWordForms(dicts.trie.findNode("teilzeit"));
+        assertEquals(1, teilzeitForms.size());
+        assertEquals("Teilzeit", teilzeitForms.get(0).displayWord);
+        assertTrue(teilzeitForms.get(0).isProperNoun);
+
+        List<MultiSwipeTrie.WordForm> nachtFotosForms =
+                dicts.trie.getWordForms(dicts.trie.findNode("nachtfotos"));
+        assertEquals(1, nachtFotosForms.size());
+        assertEquals("Nacht-Fotos", nachtFotosForms.get(0).displayWord);
+        assertTrue(nachtFotosForms.get(0).isProperNoun);
+
+        // Standalone word retains precedence; weak/infix/bare underscore tokens stay excluded
+        assertEquals(
+                "Teilnahme",
+                dicts.trie.getWordForms(dicts.trie.findNode("teilnahme")).get(0).displayWord);
+        assertEquals(0, dicts.trie.lookupFrequency("rarepart"));
+        assertEquals(0, dicts.trie.lookupFrequency("teilinfix"));
+        assertEquals(0, dicts.trie.lookupFrequency("teil"));
+        assertEquals(0, dicts.trie.lookupFrequency("weise"));
+    }
+
+    @Test
+    public void joinsGermanCompoundCasingConsistently() {
+        assertEquals("teilweise", GboardLmReader.joinCompoundWord("Teil", "weise"));
+        assertEquals("Teilzeit", GboardLmReader.joinCompoundWord("Teil", "Zeit"));
+        assertEquals("Ölmühle", GboardLmReader.joinCompoundWord("Öl", "Mühle"));
+        assertEquals("Nacht-Fotos", GboardLmReader.joinCompoundWord("Nacht-", "Fotos"));
+    }
+
     // -------------------------------------------------------------------------
     // Binary Gboard .lm builder for hermetic unit tests
     // -------------------------------------------------------------------------

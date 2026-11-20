@@ -239,7 +239,7 @@ flowchart TD
 - **Rule:** MultiSwipe reads Gboard's installed language model directly on-device and augments it with user vocabulary:
   - **Language Detection:** Normalized base tag from `Delight5Facilitator` (fallback `Locale.getDefault()`, fallback `"de"`).
   - **Source Resolution:** Primary via `Delight5Facilitator` main LM descriptors (type `1`); fallback via recursive disk scan of `superpacks`/`delight`/`delight5` excluding userhistory/contacts/shortcuts/blocklist. Refreshes when dedicated-umlaut layout state or underlying file timestamp/size changes.
-  - **Token Filtering & Folding:** Excludes internal tokens (`<epsilon>`, `<UNK>`, `_`-prefixed/suffixed, digits, control bytes) and folds accented characters transparently according to `hasDedicatedUmlauts`.
+  - **Token Filtering & Folding:** Excludes standalone internal tokens (`<epsilon>`, `<UNK>`, isolated `_`-prefixed/suffixed tokens, digits, control bytes) and folds accented characters transparently according to `hasDedicatedUmlauts`. Joins up to `35,000` strongest 2-part Level-1 compound bigrams (`X_ -> _Y`, ordered by `q_unigram(X_) + q_bigram(X_, _Y)`) using German compound casing (`Teil_` + `_weise` → `teilweise`, `Teil_` + `_Zeit` → `Teilzeit`, `Nacht-_` + `_Fotos` → `Nacht-Fotos`) when not already present as standalone words.
   - **User & Session Augmentation:** Merges Android `UserDictionary.Words` entries and adds words committed via MultiSwipe after `2` commits (`KineticaConstants.PERSONAL_MERGE_MIN_COUNT`) alongside committed `(prevWord, committedWord)` bigrams.
 - **Implementation:** `GboardMultiSwipeDictionaryManager`, `GboardLmReader`.
 

@@ -14,6 +14,9 @@ import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * Pure-Java parser for Gboard Delight5 {@code .lm} binary language model files.
@@ -37,6 +40,10 @@ public final class GboardLmReader {
     /** Cap bigrams kept in memory to the strongest continuations to bound heap and load latency. */
     static final int DEFAULT_MAX_BIGRAMS = 200_000;
 
+    /** Cap synthesized 2-part compounds ({@code X_ -> _Y}) to bound trie growth and heap usage. */
+    static final int DEFAULT_MAX_COMPOUNDS = 35_000;
+
+    private static final int MAX_JOINT_COMPOUND_Q = 510;
     private static final int DEFAULT_BIGRAM_SCALE_COUNT = 100_000;
 
     private GboardLmReader() {}
@@ -46,12 +53,24 @@ public final class GboardLmReader {
         public final MultiSwipeBigramTable bigrams;
         public final int cleanWordCount;
         public final int bigramCount;
+        public final int compoundWordCount;
 
         LmDictionaries(MultiSwipeTrie trie, MultiSwipeBigramTable bigrams, int cleanWordCount, int bigramCount) {
+            this(trie, bigrams, cleanWordCount, bigramCount, 0);
+        }
+
+        LmDictionaries(
+                MultiSwipeTrie trie,
+                MultiSwipeBigramTable bigrams,
+                int cleanWordCount,
+                int bigramCount,
+                int compoundWordCount
+        ) {
             this.trie = trie;
             this.bigrams = bigrams;
             this.cleanWordCount = cleanWordCount;
             this.bigramCount = bigramCount;
+            this.compoundWordCount = compoundWordCount;
         }
     }
 
@@ -88,6 +107,16 @@ public final class GboardLmReader {
             String lang,
             boolean hasDedicatedUmlautKeys,
             int maxBigrams
+    ) throws IOException {
+        return read(lmFile, lang, hasDedicatedUmlautKeys, maxBigrams, DEFAULT_MAX_COMPOUNDS);
+    }
+
+    public static LmDictionaries read(
+            File lmFile,
+            String lang,
+            boolean hasDedicatedUmlautKeys,
+            int maxBigrams,
+            int maxCompounds
     ) throws IOException {
         try (RandomAccessFile raf = new RandomAccessFile(lmFile, "r");
              FileChannel ch = raf.getChannel()) {
@@ -140,7 +169,8 @@ public final class GboardLmReader {
 
             byte[] symData = readChunkBytes(ch, symOff, symSize);
             byte[] fstData = readChunkBytes(ch, fstOff, fstSize);
-            return parseChunks(symData, symOff, fstData, fstOff, lang, hasDedicatedUmlautKeys, maxBigrams);
+            return parseChunks(
+                    symData, symOff, fstData, fstOff, lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds);
         }
     }
 
@@ -152,7 +182,8 @@ public final class GboardLmReader {
             String lang,
             boolean hasDedicatedUmlautKeys
     ) throws IOException {
-        return readFromBytes(readAllBytes(stream), lang, hasDedicatedUmlautKeys, DEFAULT_MAX_BIGRAMS);
+        return readFromBytes(
+                readAllBytes(stream), lang, hasDedicatedUmlautKeys, DEFAULT_MAX_BIGRAMS, DEFAULT_MAX_COMPOUNDS);
     }
 
     public static LmDictionaries readFromBytes(
@@ -160,6 +191,16 @@ public final class GboardLmReader {
             String lang,
             boolean hasDedicatedUmlautKeys,
             int maxBigrams
+    ) throws IOException {
+        return readFromBytes(lmBytes, lang, hasDedicatedUmlautKeys, maxBigrams, DEFAULT_MAX_COMPOUNDS);
+    }
+
+    public static LmDictionaries readFromBytes(
+            byte[] lmBytes,
+            String lang,
+            boolean hasDedicatedUmlautKeys,
+            int maxBigrams,
+            int maxCompounds
     ) throws IOException {
         if (lmBytes.length < 16) {
             throw new IOException("LM buffer too small");
@@ -198,7 +239,19 @@ public final class GboardLmReader {
             throw new IOException("Missing required LM chunks (0x20=" + (symData != null)
                     + ", 0x2=" + (fstData != null) + ")");
         }
-        return parseChunks(symData, symOff, fstData, fstOff, lang, hasDedicatedUmlautKeys, maxBigrams);
+        return parseChunks(symData, symOff, fstData, fstOff, lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds);
+    }
+
+    private static final class SymbolTable {
+        final String[] cleanWords;
+        final String[] compoundPrefixes;
+        final String[] compoundSuffixes;
+
+        SymbolTable(String[] cleanWords, String[] compoundPrefixes, String[] compoundSuffixes) {
+            this.cleanWords = cleanWords;
+            this.compoundPrefixes = compoundPrefixes;
+            this.compoundSuffixes = compoundSuffixes;
+        }
     }
 
     private static LmDictionaries parseChunks(
@@ -208,17 +261,19 @@ public final class GboardLmReader {
             long fstFileOffset,
             String lang,
             boolean hasDedicatedUmlautKeys,
-            int maxBigrams
+            int maxBigrams,
+            int maxCompounds
     ) throws IOException {
-        String[] symWords = parseMarisaSymbolTable(symData, symFileOffset);
-        return parseCompactLm(symWords, fstData, fstFileOffset, lang, hasDedicatedUmlautKeys, maxBigrams);
+        SymbolTable symbols = parseMarisaSymbolTable(symData, symFileOffset);
+        return parseCompactLm(
+                symbols, fstData, fstFileOffset, lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds);
     }
 
     // -------------------------------------------------------------------------
     // Chunk 0x20: MarisaSymbolTable + relabel map
     // -------------------------------------------------------------------------
 
-    private static String[] parseMarisaSymbolTable(byte[] data, long chunkFileOffset) throws IOException {
+    private static SymbolTable parseMarisaSymbolTable(byte[] data, long chunkFileOffset) throws IOException {
         if (data.length < 32) {
             throw new IOException("MarisaSymbolTable chunk too small");
         }
@@ -267,6 +322,8 @@ public final class GboardLmReader {
         int tblStart = relOff + 16;
 
         String[] words = new String[count];
+        String[] compoundPrefixes = new String[count];
+        String[] compoundSuffixes = new String[count];
         CharsetDecoder utf8 = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT);
@@ -286,12 +343,29 @@ public final class GboardLmReader {
                 utf8.reset();
                 if (isUsableVocabularyWord(decoded)) {
                     words[sym] = decoded;
+                } else {
+                    int dLen = decoded.length();
+                    if (dLen > 1 && decoded.endsWith("_") && !decoded.startsWith("_")) {
+                        String stem = decoded.substring(0, dLen - 1);
+                        if (isUsableCompoundPart(stem)) {
+                            compoundPrefixes[sym] = stem;
+                        }
+                    } else if (dLen > 1 && decoded.startsWith("_") && !decoded.endsWith("_")) {
+                        String stem = decoded.substring(1);
+                        if (isUsableCompoundPart(stem)) {
+                            compoundSuffixes[sym] = stem;
+                        }
+                    }
                 }
             } catch (CharacterCodingException ignored) {
                 utf8.reset();
             }
         }
-        return words;
+        return new SymbolTable(words, compoundPrefixes, compoundSuffixes);
+    }
+
+    private static boolean isUsableCompoundPart(String stem) {
+        return !stem.isEmpty() && Character.isLetter(stem.charAt(0)) && isUsableVocabularyWord(stem);
     }
 
     private static boolean hasControlBytePrefix(byte[] raw) {
@@ -323,12 +397,13 @@ public final class GboardLmReader {
     // -------------------------------------------------------------------------
 
     private static LmDictionaries parseCompactLm(
-            String[] symWords,
+            SymbolTable symbols,
             byte[] data,
             long chunkFileOffset,
             String lang,
             boolean hasDedicatedUmlautKeys,
-            int maxBigrams
+            int maxBigrams,
+            int maxCompounds
     ) throws IOException {
         if (data.length < 120) {
             throw new IOException("CompactLmFst chunk too small");
@@ -373,6 +448,7 @@ public final class GboardLmReader {
             throw new IOException("NGramFst arrays exceed chunk bounds");
         }
 
+        String[] symWords = symbols.cleanWords;
         int numComp = numWords - numTail;
         int[] compToSym = new int[numComp];
         int symCap = Math.max(numWords, symWords.length);
@@ -430,29 +506,214 @@ public final class GboardLmReader {
         }
         float denomLn = Math.max(15.5f, (qMax - qMin) * scale * 1.1f);
 
-        int initCap = Math.min(Math.max(4096, cleanCount * 2), 360_000);
+        int initCap = Math.min(
+                Math.max(4096, cleanCount * (maxCompounds > 0 ? 4 : 2)),
+                460_000);
         MultiSwipeTrie trie = new MultiSwipeTrie(initCap);
+        Set<String> cleanLower = (maxCompounds > 0) ? new HashSet<>(Math.max(16, cleanCount * 2)) : null;
         for (int sym = 0; sym < usableLimit; sym++) {
             String word = symWords[sym];
             if (word == null) continue;
-            int q = symToQ[sym];
-            float deltaLn = Math.max(0f, (q - qMin) * scale);
-            int freqByte = Math.max(1, Math.min(255, Math.round(255f * (1f - deltaLn / denomLn))));
+            if (cleanLower != null) {
+                cleanLower.add(word.toLowerCase(Locale.ROOT));
+            }
+            int freqByte = quantizeFreqByte(symToQ[sym], qMin, scale, denomLn);
             boolean isProper = Character.isUpperCase(word.charAt(0));
             MultiSwipeDictionaryLoader.insertWordIntoTrie(
                     trie, word, freqByte, isProper, lang, hasDedicatedUmlautKeys);
         }
+
+        int l1States = countL1States(buf, oCtxBv, sInt);
+        int compoundCount = extractCompounds(
+                trie, symbols, cleanLower, usableLimit, compToSym, compIdx, symToQ,
+                buf, l1States, oFutBv, futBits, oCtxWords, oFutWords, oFutWeights,
+                qMin, scale, denomLn, lang, hasDedicatedUmlautKeys, maxCompounds);
         trie.compact();
 
         // Extract Level-1 bigram transitions using ctx_bv_ + fut_bv_.
         MultiSwipeBigramTable bigrams = new MultiSwipeBigramTable();
         int bigramCount = extractBigrams(
                 bigrams, symWords, usableLimit, compToSym, compIdx,
-                buf, oCtxBv, sInt, oFutBv, futBits,
+                buf, l1States, oFutBv, futBits,
                 oCtxWords, oFutWords, oFutWeights,
                 scale, maxBigrams);
 
-        return new LmDictionaries(trie, bigrams, cleanCount, bigramCount);
+        return new LmDictionaries(trie, bigrams, cleanCount, bigramCount, compoundCount);
+    }
+
+    private static int quantizeFreqByte(int q, int qMin, float scale, float denomLn) {
+        float deltaLn = Math.max(0f, (q - qMin) * scale);
+        return Math.max(1, Math.min(255, Math.round(255f * (1f - deltaLn / denomLn))));
+    }
+
+    private static int countL1States(ByteBuffer buf, int oCtxBv, int numStates) {
+        if (numStates <= 1) return 0;
+        // In ctx_bv_, bit 0=1, bit 1=0 (super-root), followed by consecutive 1s for Level-1 context states 1..l1States.
+        int ctxBits = 2 * numStates + 1;
+        int l1States = 0;
+        int cPos = 2;
+        while (cPos < ctxBits && getBit(buf, oCtxBv, cPos)) {
+            l1States++;
+            cPos++;
+        }
+        return l1States;
+    }
+
+    private interface Level1StateVisitor {
+        void visitState(int prevSym, int rangeStart, int rangeEnd);
+    }
+
+    private static void visitLevel1StateFutures(
+            int l1States,
+            int[] compToSym,
+            int compCount,
+            ByteBuffer buf,
+            int oFutBv,
+            int futBits,
+            int oCtxWords,
+            Level1StateVisitor visitor
+    ) {
+        if (l1States <= 0) return;
+        int zeros = 0;
+        int ones = 0;
+        int rangeStart = 0;
+        int numWords64 = (futBits + 63) / 64;
+        for (int wi = 0; wi < numWords64; wi++) {
+            long word = buf.getLong(oFutBv + wi * 8);
+            int baseBit = wi << 6;
+            int validBits = Math.min(64, futBits - baseBit);
+            for (int b = 0; b < validBits; b++) {
+                if (((word >>> b) & 1L) != 0L) {
+                    ones++;
+                } else {
+                    int stateIdx = zeros - 1;
+                    if (stateIdx >= 1 && stateIdx <= l1States) {
+                        int prevCid = buf.getShort(oCtxWords + stateIdx * 2) & 0xFFFF;
+                        if (prevCid < compCount) {
+                            visitor.visitState(compToSym[prevCid], rangeStart, ones);
+                        }
+                    }
+                    zeros++;
+                    rangeStart = ones;
+                    if (zeros > l1States + 1) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    private static int extractCompounds(
+            MultiSwipeTrie trie,
+            SymbolTable symbols,
+            Set<String> cleanLower,
+            int usableLimit,
+            int[] compToSym,
+            int compCount,
+            int[] symToQ,
+            ByteBuffer buf,
+            int l1States,
+            int oFutBv,
+            int futBits,
+            int oCtxWords,
+            int oFutWords,
+            int oFutWeights,
+            int qMin,
+            float scale,
+            float denomLn,
+            String lang,
+            boolean hasDedicatedUmlautKeys,
+            int maxCompounds
+    ) {
+        if (maxCompounds <= 0 || l1States <= 0 || cleanLower == null) {
+            return 0;
+        }
+        String[] prefixes = symbols.compoundPrefixes;
+        String[] suffixes = symbols.compoundSuffixes;
+
+        // Pass 1: histogram joint (unigram_prefix + bigram_edge) q weights without string allocations.
+        int[] hist = new int[MAX_JOINT_COMPOUND_Q + 1];
+        int[] totalEdges = new int[1];
+        visitLevel1StateFutures(l1States, compToSym, compCount, buf, oFutBv, futBits, oCtxWords,
+                (prevSym, rangeStart, rangeEnd) -> {
+                    if (prevSym >= usableLimit || prefixes[prevSym] == null) return;
+                    int pq = symToQ[prevSym];
+                    for (int fi = rangeStart; fi < rangeEnd; fi++) {
+                        int nextCid = buf.getShort(oFutWords + fi * 2) & 0xFFFF;
+                        if (nextCid >= compCount) continue;
+                        int nextSym = compToSym[nextCid];
+                        if (nextSym >= usableLimit || suffixes[nextSym] == null) continue;
+                        int fq = buf.get(oFutWeights + fi) & 0xFF;
+                        int jointQ = Math.min(MAX_JOINT_COMPOUND_Q, pq + fq);
+                        hist[jointQ]++;
+                        totalEdges[0]++;
+                    }
+                });
+
+        if (totalEdges[0] == 0) {
+            return 0;
+        }
+
+        int qCutoff = MAX_JOINT_COMPOUND_Q;
+        if (totalEdges[0] > maxCompounds) {
+            int acc = 0;
+            qCutoff = -1;
+            for (int q = 0; q <= MAX_JOINT_COMPOUND_Q; q++) {
+                if (acc + hist[q] > maxCompounds) {
+                    break;
+                }
+                acc += hist[q];
+                qCutoff = q;
+            }
+            if (qCutoff < 0) {
+                return 0;
+            }
+        }
+        final int finalQCutoff = qCutoff;
+
+        // Pass 2: join qualifying X_ -> _Y pairs and insert non-colliding words into the trie.
+        Set<String> insertedLower = new HashSet<>();
+        visitLevel1StateFutures(l1States, compToSym, compCount, buf, oFutBv, futBits, oCtxWords,
+                (prevSym, rangeStart, rangeEnd) -> {
+                    if (prevSym >= usableLimit) return;
+                    String prefix = prefixes[prevSym];
+                    if (prefix == null) return;
+                    int pq = symToQ[prevSym];
+                    for (int fi = rangeStart; fi < rangeEnd; fi++) {
+                        int nextCid = buf.getShort(oFutWords + fi * 2) & 0xFFFF;
+                        if (nextCid >= compCount) continue;
+                        int nextSym = compToSym[nextCid];
+                        if (nextSym >= usableLimit) continue;
+                        String suffix = suffixes[nextSym];
+                        if (suffix == null) continue;
+                        int fq = buf.get(oFutWeights + fi) & 0xFF;
+                        int jointQ = Math.min(MAX_JOINT_COMPOUND_Q, pq + fq);
+                        if (jointQ > finalQCutoff) continue;
+
+                        String joined = joinCompoundWord(prefix, suffix);
+                        String lower = joined.toLowerCase(Locale.ROOT);
+                        if (cleanLower.contains(lower)) continue;
+
+                        int freqByte = quantizeFreqByte(jointQ, qMin, scale, denomLn);
+                        boolean isProper = Character.isUpperCase(joined.charAt(0));
+                        MultiSwipeDictionaryLoader.insertWordIntoTrie(
+                                trie, joined, freqByte, isProper, lang, hasDedicatedUmlautKeys);
+                        insertedLower.add(lower);
+                    }
+                });
+        return insertedLower.size();
+    }
+
+    static String joinCompoundWord(String prefix, String suffix) {
+        if (prefix.endsWith("-")) {
+            return prefix + suffix;
+        }
+        if (Character.isUpperCase(suffix.charAt(0))) {
+            return Character.toUpperCase(prefix.charAt(0))
+                    + prefix.substring(1).toLowerCase(Locale.ROOT)
+                    + suffix.toLowerCase(Locale.ROOT);
+        }
+        return prefix.toLowerCase(Locale.ROOT) + suffix;
     }
 
     private static int extractBigrams(
@@ -462,8 +723,7 @@ public final class GboardLmReader {
             int[] compToSym,
             int compCount,
             ByteBuffer buf,
-            int oCtxBv,
-            int numStates,
+            int l1States,
             int oFutBv,
             int futBits,
             int oCtxWords,
@@ -472,20 +732,7 @@ public final class GboardLmReader {
             float scale,
             int maxBigrams
     ) {
-        if (maxBigrams <= 0 || numStates <= 1) {
-            table.freeze();
-            return 0;
-        }
-
-        // In ctx_bv_, bit 0=1, bit 1=0 (super-root), followed by consecutive 1s for Level-1 context states 1..l1States.
-        int ctxBits = 2 * numStates + 1;
-        int l1States = 0;
-        int cPos = 2;
-        while (cPos < ctxBits && getBit(buf, oCtxBv, cPos)) {
-            l1States++;
-            cPos++;
-        }
-        if (l1States <= 0) {
+        if (maxBigrams <= 0 || l1States <= 0) {
             table.freeze();
             return 0;
         }
@@ -542,59 +789,33 @@ public final class GboardLmReader {
             MultiSwipeBigramTable outTable,
             float scale
     ) {
-        int zeros = 0;
-        int ones = 0;
-        int rangeStart = 0;
-        int total = 0;
+        int[] total = new int[1];
+        visitLevel1StateFutures(l1States, compToSym, compCount, buf, oFutBv, futBits, oCtxWords,
+                (prevSym, rangeStart, rangeEnd) -> {
+                    String prevWord = (prevSym < usableLimit) ? symWords[prevSym] : null;
+                    if (prevWord == null) return;
+                    for (int fi = rangeStart; fi < rangeEnd; fi++) {
+                        int nextCid = buf.getShort(oFutWords + fi * 2) & 0xFFFF;
+                        if (nextCid >= compCount) continue;
+                        int nextSym = compToSym[nextCid];
+                        String nextWord = (nextSym < usableLimit) ? symWords[nextSym] : null;
+                        if (nextWord == null) continue;
 
-        int numWords64 = (futBits + 63) / 64;
-        for (int wi = 0; wi < numWords64; wi++) {
-            long word = buf.getLong(oFutBv + wi * 8);
-            int baseBit = wi << 6;
-            int validBits = Math.min(64, futBits - baseBit);
-            for (int b = 0; b < validBits; b++) {
-                if (((word >>> b) & 1L) != 0L) {
-                    ones++;
-                } else {
-                    int stateIdx = zeros - 1;
-                    if (stateIdx >= 1 && stateIdx <= l1States) {
-                        int prevCid = buf.getShort(oCtxWords + stateIdx * 2) & 0xFFFF;
-                        if (prevCid < compCount) {
-                            int prevSym = compToSym[prevCid];
-                            String prevWord = (prevSym < usableLimit) ? symWords[prevSym] : null;
-                            if (prevWord != null) {
-                                for (int fi = rangeStart; fi < ones; fi++) {
-                                    int nextCid = buf.getShort(oFutWords + fi * 2) & 0xFFFF;
-                                    if (nextCid >= compCount) continue;
-                                    int nextSym = compToSym[nextCid];
-                                    String nextWord = (nextSym < usableLimit) ? symWords[nextSym] : null;
-                                    if (nextWord == null) continue;
-
-                                    int q = buf.get(oFutWeights + fi) & 0xFF;
-                                    if (q <= qCutoff) {
-                                        total++;
-                                        if (outHist != null) {
-                                            outHist[q]++;
-                                        }
-                                        if (outTable != null) {
-                                            int count = Math.max(1, (int) Math.round(
-                                                    DEFAULT_BIGRAM_SCALE_COUNT * Math.exp(-q * scale)));
-                                            outTable.put(prevWord, nextWord, count);
-                                        }
-                                    }
-                                }
+                        int q = buf.get(oFutWeights + fi) & 0xFF;
+                        if (q <= qCutoff) {
+                            total[0]++;
+                            if (outHist != null) {
+                                outHist[q]++;
+                            }
+                            if (outTable != null) {
+                                int count = Math.max(1, (int) Math.round(
+                                        DEFAULT_BIGRAM_SCALE_COUNT * Math.exp(-q * scale)));
+                                outTable.put(prevWord, nextWord, count);
                             }
                         }
                     }
-                    zeros++;
-                    rangeStart = ones;
-                    if (zeros > l1States + 1) {
-                        return total;
-                    }
-                }
-            }
-        }
-        return total;
+                });
+        return total[0];
     }
 
     // -------------------------------------------------------------------------

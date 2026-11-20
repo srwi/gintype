@@ -274,6 +274,7 @@ public final class GboardMultiSwipeDictionaryManager {
         long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
         Log.i(TAG, "Loaded Gboard LM for '" + key + "' from " + lmFile.getName()
                 + " in " + elapsedMs + " ms (words=" + dicts.cleanWordCount
+                + ", compounds=" + dicts.compoundWordCount
                 + ", bigrams=" + dicts.bigramCount + ")");
         return new LanguagePack(
                 key,
