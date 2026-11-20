@@ -172,7 +172,7 @@ public class GboardMultiSwipeSettingsTest {
                         "Combine single-finger strokes", "Summary", false, v -> {},
                         "Combine", "Summary", "150 ms", () -> {},
                         "Merge preceding taps", "Summary", true, v -> {},
-                        "TapDelay", "Summary", "750 ms", () -> {},
+                        "TapDelay", "Summary", "150 ms", () -> {},
                         "Keep short tapped words separate", "Summary", true, v -> {},
                         "Backspace behavior", "Summary", "Delete whole word (Default)", () -> {});
         assertEquals(7, gestureRows.size());
@@ -188,20 +188,20 @@ public class GboardMultiSwipeSettingsTest {
                         "Combine single-finger strokes", "Summary", true, v -> {},
                         "Combine", "Summary", "150 ms", () -> {},
                         "Merge preceding taps", "Summary", false, v -> {},
-                        "TapDelay", "Summary", "750 ms", () -> {},
+                        "TapDelay", "Summary", "150 ms", () -> {},
                         "Keep short tapped words separate", "Summary", false, v -> {},
                         "Backspace behavior", "Summary", "Delete whole word (Default)", () -> {});
         assertFalse(tapMergeDisabledRows.get(4).isEnabled());
         assertFalse(tapMergeDisabledRows.get(5).isEnabled());
 
-        assertFalse(GboardMultiSwipeSettings.readSmartTapSwipeSplitEnabled(prefs));
-        assertTrue(GboardMultiSwipeSettings.writeSmartTapSwipeSplitEnabled(prefs, true));
         assertTrue(GboardMultiSwipeSettings.readSmartTapSwipeSplitEnabled(prefs));
+        assertTrue(GboardMultiSwipeSettings.writeSmartTapSwipeSplitEnabled(prefs, false));
+        assertFalse(GboardMultiSwipeSettings.readSmartTapSwipeSplitEnabled(prefs));
 
         assertTrue(GboardMultiSwipeSettings.writeBackspaceMode(
                 prefs, GboardMultiSwipeSettings.BACKSPACE_MODE_LAST_INPUT));
         assertTrue(GboardMultiSwipeSettings.resetToDefaults(prefs));
-        assertFalse(GboardMultiSwipeSettings.readSmartTapSwipeSplitEnabled(prefs));
+        assertTrue(GboardMultiSwipeSettings.readSmartTapSwipeSplitEnabled(prefs));
         assertEquals(GboardMultiSwipeSettings.BACKSPACE_MODE_WHOLE_WORD,
                 GboardMultiSwipeSettings.readBackspaceMode(prefs));
         assertEquals(2400, KineticaConstants.beamMaxAttemptsForWidth(1024));

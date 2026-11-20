@@ -274,8 +274,38 @@ public class TypingEffectsEngineTest {
 
     @Test
     public void trampolineKeyboardWarpMeshPinsEdgesPullsInteriorAndRebounds() {
+        TypingEffectsConfig defaults = TypingEffectsConfig.defaults();
+        assertFalse("Keyboard warp should be disabled by default", defaults.keyboardWarpEnabled);
+
         TypingEffectsEngine engine = new TypingEffectsEngine(2.0f, new Random(11L));
-        engine.setConfig(TypingEffectsConfig.defaults());
+        engine.setConfig(new TypingEffectsConfig(
+                defaults.enabled,
+                defaults.rainbowTrailEnabled,
+                defaults.trailGlowEnabled,
+                defaults.glitterEnabled,
+                defaults.tapExplosionEnabled,
+                defaults.releaseExplosionEnabled,
+                defaults.shockwaveRingEnabled,
+                defaults.keyHighlightEnabled,
+                true,
+                defaults.windEnabled,
+                defaults.colorPalette,
+                defaults.explosionStyle,
+                defaults.glitterStyle,
+                defaults.keyHighlightStyle,
+                defaults.trailWidthDp,
+                defaults.trailFadeMs,
+                defaults.rainbowSpeedPercent,
+                defaults.particleCount,
+                defaults.glitterDensity,
+                defaults.particleSizePercent,
+                defaults.particleLifetimeMs,
+                defaults.particleSpeedPercent,
+                defaults.keyHighlightDurationMs,
+                defaults.warpStrengthPercent,
+                defaults.warpRadiusDp,
+                defaults.windIntensity,
+                defaults.windSpreadDp));
 
         int w = 800;
         int h = 400;

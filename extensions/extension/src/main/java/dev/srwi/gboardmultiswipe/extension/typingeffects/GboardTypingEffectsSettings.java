@@ -49,7 +49,7 @@ public final class GboardTypingEffectsSettings {
     public static final boolean DEFAULT_RELEASE_EXPLOSION = true;
     public static final boolean DEFAULT_SHOCKWAVE_RING = true;
     public static final boolean DEFAULT_KEY_HIGHLIGHT = true;
-    public static final boolean DEFAULT_KEYBOARD_WARP = true;
+    public static final boolean DEFAULT_KEYBOARD_WARP = false;
     public static final boolean DEFAULT_WIND = true;
 
     public static final String DEFAULT_COLOR_PALETTE = TypingEffectsConfig.PALETTE_RAINBOW;

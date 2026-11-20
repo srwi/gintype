@@ -52,8 +52,8 @@ public final class GboardMultiSwipeSettings {
     public static final boolean DEFAULT_TAP_TO_MULTISWIPE_ENABLED = true;
     public static final int MIN_TAP_TO_MULTISWIPE_DELAY_MS = 100;
     public static final int MAX_TAP_TO_MULTISWIPE_DELAY_MS = 2000;
-    public static final int DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS = 750;
-    public static final boolean DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED = false;
+    public static final int DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS = 150;
+    public static final boolean DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED = true;
     public static final boolean DEFAULT_SPACEBAR_TIMER_INDICATOR = false;
     public static final boolean DEFAULT_WORD_READY_VIBRATION = false;
     public static final int MIN_BEAM_WIDTH = 32;
