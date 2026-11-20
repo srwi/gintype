@@ -43,7 +43,11 @@ public final class GboardLmReader {
     /** Cap synthesized 2-part compounds ({@code X_ -> _Y}) to bound trie growth and heap usage. */
     static final int DEFAULT_MAX_COMPOUNDS = 35_000;
 
+    /** Cap synthesized 3-part compounds ({@code X_ -> _Y_ -> _Z}) to top high-frequency entries. */
+    static final int DEFAULT_MAX_TRIPLE_COMPOUNDS = 3_000;
+
     private static final int MAX_JOINT_COMPOUND_Q = 510;
+    private static final int MAX_TRIPLE_COMPOUND_Q = 765;
     private static final int DEFAULT_BIGRAM_SCALE_COUNT = 100_000;
 
     private GboardLmReader() {}
@@ -118,6 +122,17 @@ public final class GboardLmReader {
             int maxBigrams,
             int maxCompounds
     ) throws IOException {
+        return read(lmFile, lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds, DEFAULT_MAX_TRIPLE_COMPOUNDS);
+    }
+
+    public static LmDictionaries read(
+            File lmFile,
+            String lang,
+            boolean hasDedicatedUmlautKeys,
+            int maxBigrams,
+            int maxCompounds,
+            int maxTripleCompounds
+    ) throws IOException {
         try (RandomAccessFile raf = new RandomAccessFile(lmFile, "r");
              FileChannel ch = raf.getChannel()) {
             long fileLen = ch.size();
@@ -170,7 +185,8 @@ public final class GboardLmReader {
             byte[] symData = readChunkBytes(ch, symOff, symSize);
             byte[] fstData = readChunkBytes(ch, fstOff, fstSize);
             return parseChunks(
-                    symData, symOff, fstData, fstOff, lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds);
+                    symData, symOff, fstData, fstOff,
+                    lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds, maxTripleCompounds);
         }
     }
 
@@ -183,7 +199,8 @@ public final class GboardLmReader {
             boolean hasDedicatedUmlautKeys
     ) throws IOException {
         return readFromBytes(
-                readAllBytes(stream), lang, hasDedicatedUmlautKeys, DEFAULT_MAX_BIGRAMS, DEFAULT_MAX_COMPOUNDS);
+                readAllBytes(stream), lang, hasDedicatedUmlautKeys,
+                DEFAULT_MAX_BIGRAMS, DEFAULT_MAX_COMPOUNDS, DEFAULT_MAX_TRIPLE_COMPOUNDS);
     }
 
     public static LmDictionaries readFromBytes(
@@ -192,7 +209,9 @@ public final class GboardLmReader {
             boolean hasDedicatedUmlautKeys,
             int maxBigrams
     ) throws IOException {
-        return readFromBytes(lmBytes, lang, hasDedicatedUmlautKeys, maxBigrams, DEFAULT_MAX_COMPOUNDS);
+        return readFromBytes(
+                lmBytes, lang, hasDedicatedUmlautKeys,
+                maxBigrams, DEFAULT_MAX_COMPOUNDS, DEFAULT_MAX_TRIPLE_COMPOUNDS);
     }
 
     public static LmDictionaries readFromBytes(
@@ -201,6 +220,19 @@ public final class GboardLmReader {
             boolean hasDedicatedUmlautKeys,
             int maxBigrams,
             int maxCompounds
+    ) throws IOException {
+        return readFromBytes(
+                lmBytes, lang, hasDedicatedUmlautKeys,
+                maxBigrams, maxCompounds, DEFAULT_MAX_TRIPLE_COMPOUNDS);
+    }
+
+    public static LmDictionaries readFromBytes(
+            byte[] lmBytes,
+            String lang,
+            boolean hasDedicatedUmlautKeys,
+            int maxBigrams,
+            int maxCompounds,
+            int maxTripleCompounds
     ) throws IOException {
         if (lmBytes.length < 16) {
             throw new IOException("LM buffer too small");
@@ -239,17 +271,26 @@ public final class GboardLmReader {
             throw new IOException("Missing required LM chunks (0x20=" + (symData != null)
                     + ", 0x2=" + (fstData != null) + ")");
         }
-        return parseChunks(symData, symOff, fstData, fstOff, lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds);
+        return parseChunks(
+                symData, symOff, fstData, fstOff,
+                lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds, maxTripleCompounds);
     }
 
     private static final class SymbolTable {
         final String[] cleanWords;
         final String[] compoundPrefixes;
+        final String[] compoundInfixes;
         final String[] compoundSuffixes;
 
-        SymbolTable(String[] cleanWords, String[] compoundPrefixes, String[] compoundSuffixes) {
+        SymbolTable(
+                String[] cleanWords,
+                String[] compoundPrefixes,
+                String[] compoundInfixes,
+                String[] compoundSuffixes
+        ) {
             this.cleanWords = cleanWords;
             this.compoundPrefixes = compoundPrefixes;
+            this.compoundInfixes = compoundInfixes;
             this.compoundSuffixes = compoundSuffixes;
         }
     }
@@ -262,11 +303,13 @@ public final class GboardLmReader {
             String lang,
             boolean hasDedicatedUmlautKeys,
             int maxBigrams,
-            int maxCompounds
+            int maxCompounds,
+            int maxTripleCompounds
     ) throws IOException {
         SymbolTable symbols = parseMarisaSymbolTable(symData, symFileOffset);
         return parseCompactLm(
-                symbols, fstData, fstFileOffset, lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds);
+                symbols, fstData, fstFileOffset,
+                lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds, maxTripleCompounds);
     }
 
     // -------------------------------------------------------------------------
@@ -323,6 +366,7 @@ public final class GboardLmReader {
 
         String[] words = new String[count];
         String[] compoundPrefixes = new String[count];
+        String[] compoundInfixes = new String[count];
         String[] compoundSuffixes = new String[count];
         CharsetDecoder utf8 = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
@@ -345,7 +389,12 @@ public final class GboardLmReader {
                     words[sym] = decoded;
                 } else {
                     int dLen = decoded.length();
-                    if (dLen > 1 && decoded.endsWith("_") && !decoded.startsWith("_")) {
+                    if (dLen > 2 && decoded.startsWith("_") && decoded.endsWith("_")) {
+                        String stem = decoded.substring(1, dLen - 1);
+                        if (isUsableCompoundPart(stem)) {
+                            compoundInfixes[sym] = stem;
+                        }
+                    } else if (dLen > 1 && decoded.endsWith("_") && !decoded.startsWith("_")) {
                         String stem = decoded.substring(0, dLen - 1);
                         if (isUsableCompoundPart(stem)) {
                             compoundPrefixes[sym] = stem;
@@ -361,7 +410,7 @@ public final class GboardLmReader {
                 utf8.reset();
             }
         }
-        return new SymbolTable(words, compoundPrefixes, compoundSuffixes);
+        return new SymbolTable(words, compoundPrefixes, compoundInfixes, compoundSuffixes);
     }
 
     private static boolean isUsableCompoundPart(String stem) {
@@ -403,7 +452,8 @@ public final class GboardLmReader {
             String lang,
             boolean hasDedicatedUmlautKeys,
             int maxBigrams,
-            int maxCompounds
+            int maxCompounds,
+            int maxTripleCompounds
     ) throws IOException {
         if (data.length < 120) {
             throw new IOException("CompactLmFst chunk too small");
@@ -507,10 +557,12 @@ public final class GboardLmReader {
         float denomLn = Math.max(15.5f, (qMax - qMin) * scale * 1.1f);
 
         int initCap = Math.min(
-                Math.max(4096, cleanCount * (maxCompounds > 0 ? 4 : 2)),
+                Math.max(4096, cleanCount * ((maxCompounds > 0 || maxTripleCompounds > 0) ? 4 : 2)),
                 460_000);
         MultiSwipeTrie trie = new MultiSwipeTrie(initCap);
-        Set<String> cleanLower = (maxCompounds > 0) ? new HashSet<>(Math.max(16, cleanCount * 2)) : null;
+        Set<String> cleanLower = (maxCompounds > 0 || maxTripleCompounds > 0)
+                ? new HashSet<>(Math.max(16, cleanCount * 2))
+                : null;
         for (int sym = 0; sym < usableLimit; sym++) {
             String word = symWords[sym];
             if (word == null) continue;
@@ -527,7 +579,7 @@ public final class GboardLmReader {
         int compoundCount = extractCompounds(
                 trie, symbols, cleanLower, usableLimit, compToSym, compIdx, symToQ,
                 buf, l1States, oFutBv, futBits, oCtxWords, oFutWords, oFutWeights,
-                qMin, scale, denomLn, lang, hasDedicatedUmlautKeys, maxCompounds);
+                qMin, scale, denomLn, lang, hasDedicatedUmlautKeys, maxCompounds, maxTripleCompounds);
         trie.compact();
 
         // Extract Level-1 bigram transitions using ctx_bv_ + fut_bv_.
@@ -603,6 +655,55 @@ public final class GboardLmReader {
         }
     }
 
+    private static final class InfixEdgeList {
+        final int[] head;
+        int[] next;
+        int[] sym;
+        int[] weight;
+        int count = 0;
+
+        InfixEdgeList(int keySpace, int initialCapacity) {
+            this.head = new int[keySpace];
+            Arrays.fill(this.head, -1);
+            this.next = new int[initialCapacity];
+            this.sym = new int[initialCapacity];
+            this.weight = new int[initialCapacity];
+        }
+
+        void add(int keySym, int targetSym, int qWeight) {
+            if (count == next.length) {
+                int newCap = next.length * 2;
+                next = Arrays.copyOf(next, newCap);
+                sym = Arrays.copyOf(sym, newCap);
+                weight = Arrays.copyOf(weight, newCap);
+            }
+            int idx = count++;
+            sym[idx] = targetSym;
+            weight[idx] = qWeight;
+            next[idx] = head[keySym];
+            head[keySym] = idx;
+        }
+    }
+
+    private static int findCompoundCutoff(int[] hist, int maxIdx, int totalEdges, int maxCount) {
+        if (maxCount <= 0 || totalEdges == 0) {
+            return -1;
+        }
+        if (totalEdges <= maxCount) {
+            return maxIdx;
+        }
+        int acc = 0;
+        int qCutoff = -1;
+        for (int q = 0; q <= maxIdx; q++) {
+            if (acc + hist[q] > maxCount) {
+                break;
+            }
+            acc += hist[q];
+            qCutoff = q;
+        }
+        return qCutoff;
+    }
+
     private static int extractCompounds(
             MultiSwipeTrie trie,
             SymbolTable symbols,
@@ -623,97 +724,187 @@ public final class GboardLmReader {
             float denomLn,
             String lang,
             boolean hasDedicatedUmlautKeys,
-            int maxCompounds
+            int maxCompounds,
+            int maxTripleCompounds
     ) {
-        if (maxCompounds <= 0 || l1States <= 0 || cleanLower == null) {
+        if ((maxCompounds <= 0 && maxTripleCompounds <= 0) || l1States <= 0 || cleanLower == null) {
             return 0;
         }
         String[] prefixes = symbols.compoundPrefixes;
+        String[] infixes = symbols.compoundInfixes;
         String[] suffixes = symbols.compoundSuffixes;
 
-        // Pass 1: histogram joint (unigram_prefix + bigram_edge) q weights without string allocations.
-        int[] hist = new int[MAX_JOINT_COMPOUND_Q + 1];
-        int[] totalEdges = new int[1];
-        visitLevel1StateFutures(l1States, compToSym, compCount, buf, oFutBv, futBits, oCtxWords,
-                (prevSym, rangeStart, rangeEnd) -> {
-                    if (prevSym >= usableLimit || prefixes[prevSym] == null) return;
-                    int pq = symToQ[prevSym];
-                    for (int fi = rangeStart; fi < rangeEnd; fi++) {
-                        int nextCid = buf.getShort(oFutWords + fi * 2) & 0xFFFF;
-                        if (nextCid >= compCount) continue;
-                        int nextSym = compToSym[nextCid];
-                        if (nextSym >= usableLimit || suffixes[nextSym] == null) continue;
-                        int fq = buf.get(oFutWeights + fi) & 0xFF;
-                        int jointQ = Math.min(MAX_JOINT_COMPOUND_Q, pq + fq);
-                        hist[jointQ]++;
-                        totalEdges[0]++;
-                    }
-                });
+        // Pass 1: histogram 2-part weights and (if enabled) collect prefix->infix & infix->suffix edges.
+        int[] hist2 = new int[MAX_JOINT_COMPOUND_Q + 1];
+        int[] totalEdges2 = new int[1];
+        InfixEdgeList pToI = (maxTripleCompounds > 0) ? new InfixEdgeList(usableLimit, 2048) : null;
+        InfixEdgeList iToS = (maxTripleCompounds > 0) ? new InfixEdgeList(usableLimit, 2048) : null;
 
-        if (totalEdges[0] == 0) {
-            return 0;
-        }
-
-        int qCutoff = MAX_JOINT_COMPOUND_Q;
-        if (totalEdges[0] > maxCompounds) {
-            int acc = 0;
-            qCutoff = -1;
-            for (int q = 0; q <= MAX_JOINT_COMPOUND_Q; q++) {
-                if (acc + hist[q] > maxCompounds) {
-                    break;
-                }
-                acc += hist[q];
-                qCutoff = q;
-            }
-            if (qCutoff < 0) {
-                return 0;
-            }
-        }
-        final int finalQCutoff = qCutoff;
-
-        // Pass 2: join qualifying X_ -> _Y pairs and insert non-colliding words into the trie.
-        Set<String> insertedLower = new HashSet<>();
         visitLevel1StateFutures(l1States, compToSym, compCount, buf, oFutBv, futBits, oCtxWords,
                 (prevSym, rangeStart, rangeEnd) -> {
                     if (prevSym >= usableLimit) return;
-                    String prefix = prefixes[prevSym];
-                    if (prefix == null) return;
+                    boolean isPrefix = prefixes[prevSym] != null;
+                    boolean isInfix = !isPrefix && pToI != null && infixes[prevSym] != null;
+                    if (!isPrefix && !isInfix) return;
+
                     int pq = symToQ[prevSym];
                     for (int fi = rangeStart; fi < rangeEnd; fi++) {
                         int nextCid = buf.getShort(oFutWords + fi * 2) & 0xFFFF;
                         if (nextCid >= compCount) continue;
                         int nextSym = compToSym[nextCid];
                         if (nextSym >= usableLimit) continue;
-                        String suffix = suffixes[nextSym];
-                        if (suffix == null) continue;
                         int fq = buf.get(oFutWeights + fi) & 0xFF;
-                        int jointQ = Math.min(MAX_JOINT_COMPOUND_Q, pq + fq);
-                        if (jointQ > finalQCutoff) continue;
 
-                        String joined = joinCompoundWord(prefix, suffix);
-                        String lower = joined.toLowerCase(Locale.ROOT);
-                        if (cleanLower.contains(lower)) continue;
-
-                        int freqByte = quantizeFreqByte(jointQ, qMin, scale, denomLn);
-                        boolean isProper = Character.isUpperCase(joined.charAt(0));
-                        MultiSwipeDictionaryLoader.insertWordIntoTrie(
-                                trie, joined, freqByte, isProper, lang, hasDedicatedUmlautKeys);
-                        insertedLower.add(lower);
+                        if (isPrefix) {
+                            if (maxCompounds > 0 && suffixes[nextSym] != null) {
+                                int jointQ = Math.min(MAX_JOINT_COMPOUND_Q, pq + fq);
+                                hist2[jointQ]++;
+                                totalEdges2[0]++;
+                            } else if (pToI != null && infixes[nextSym] != null) {
+                                pToI.add(nextSym, prevSym, pq + fq);
+                            }
+                        } else if (suffixes[nextSym] != null) {
+                            iToS.add(prevSym, nextSym, fq);
+                        }
                     }
                 });
-        return insertedLower.size();
+
+        Set<String> inserted2Lower = new HashSet<>();
+        int qCutoff2 = findCompoundCutoff(hist2, MAX_JOINT_COMPOUND_Q, totalEdges2[0], maxCompounds);
+        if (qCutoff2 >= 0) {
+            visitLevel1StateFutures(l1States, compToSym, compCount, buf, oFutBv, futBits, oCtxWords,
+                    (prevSym, rangeStart, rangeEnd) -> {
+                        if (prevSym >= usableLimit) return;
+                        String prefix = prefixes[prevSym];
+                        if (prefix == null) return;
+                        int pq = symToQ[prevSym];
+                        for (int fi = rangeStart; fi < rangeEnd; fi++) {
+                            int nextCid = buf.getShort(oFutWords + fi * 2) & 0xFFFF;
+                            if (nextCid >= compCount) continue;
+                            int nextSym = compToSym[nextCid];
+                            if (nextSym >= usableLimit) continue;
+                            String suffix = suffixes[nextSym];
+                            if (suffix == null) continue;
+                            int fq = buf.get(oFutWeights + fi) & 0xFF;
+                            int jointQ = Math.min(MAX_JOINT_COMPOUND_Q, pq + fq);
+                            if (jointQ > qCutoff2) continue;
+
+                            String joined = joinCompoundWords(prefix, suffix);
+                            String lower = joined.toLowerCase(Locale.ROOT);
+                            if (cleanLower.contains(lower)) continue;
+
+                            int freqByte = quantizeFreqByte(jointQ, qMin, scale, denomLn);
+                            boolean isProper = Character.isUpperCase(joined.charAt(0));
+                            MultiSwipeDictionaryLoader.insertWordIntoTrie(
+                                    trie, joined, freqByte, isProper, lang, hasDedicatedUmlautKeys);
+                            inserted2Lower.add(lower);
+                        }
+                    });
+        }
+
+        int tripleCount = extractTripleCompounds(
+                trie, prefixes, infixes, suffixes, cleanLower, inserted2Lower,
+                usableLimit, pToI, iToS, qMin, scale, denomLn,
+                lang, hasDedicatedUmlautKeys, maxTripleCompounds);
+        return inserted2Lower.size() + tripleCount;
+    }
+
+    private static int extractTripleCompounds(
+            MultiSwipeTrie trie,
+            String[] prefixes,
+            String[] infixes,
+            String[] suffixes,
+            Set<String> cleanLower,
+            Set<String> inserted2Lower,
+            int usableLimit,
+            InfixEdgeList pToI,
+            InfixEdgeList iToS,
+            int qMin,
+            float scale,
+            float denomLn,
+            String lang,
+            boolean hasDedicatedUmlautKeys,
+            int maxTripleCompounds
+    ) {
+        if (maxTripleCompounds <= 0 || pToI == null || iToS == null || pToI.count == 0 || iToS.count == 0) {
+            return 0;
+        }
+        int[] hist3 = new int[MAX_TRIPLE_COMPOUND_Q + 1];
+        int totalTriples = 0;
+        for (int isym = 0; isym < usableLimit; isym++) {
+            int pIdx = pToI.head[isym];
+            int sHead = iToS.head[isym];
+            if (pIdx == -1 || sHead == -1) continue;
+            while (pIdx != -1) {
+                int qPrefixInfix = pToI.weight[pIdx];
+                for (int sIdx = sHead; sIdx != -1; sIdx = iToS.next[sIdx]) {
+                    int jointQ = Math.min(MAX_TRIPLE_COMPOUND_Q, qPrefixInfix + iToS.weight[sIdx]);
+                    hist3[jointQ]++;
+                    totalTriples++;
+                }
+                pIdx = pToI.next[pIdx];
+            }
+        }
+
+        int qCutoff3 = findCompoundCutoff(hist3, MAX_TRIPLE_COMPOUND_Q, totalTriples, maxTripleCompounds);
+        if (qCutoff3 < 0) {
+            return 0;
+        }
+
+        Set<String> inserted3Lower = new HashSet<>();
+        for (int isym = 0; isym < usableLimit; isym++) {
+            int pIdx = pToI.head[isym];
+            int sHead = iToS.head[isym];
+            if (pIdx == -1 || sHead == -1) continue;
+            String infix = infixes[isym];
+            while (pIdx != -1) {
+                int qPrefixInfix = pToI.weight[pIdx];
+                String prefix = prefixes[pToI.sym[pIdx]];
+                for (int sIdx = sHead; sIdx != -1; sIdx = iToS.next[sIdx]) {
+                    int jointQ = Math.min(MAX_TRIPLE_COMPOUND_Q, qPrefixInfix + iToS.weight[sIdx]);
+                    if (jointQ > qCutoff3) continue;
+
+                    String joined = joinCompoundWords(prefix, infix, suffixes[iToS.sym[sIdx]]);
+                    String lower = joined.toLowerCase(Locale.ROOT);
+                    if (cleanLower.contains(lower) || inserted2Lower.contains(lower)) continue;
+
+                    int freqByte = quantizeFreqByte(jointQ, qMin, scale, denomLn);
+                    boolean isProper = Character.isUpperCase(joined.charAt(0));
+                    MultiSwipeDictionaryLoader.insertWordIntoTrie(
+                            trie, joined, freqByte, isProper, lang, hasDedicatedUmlautKeys);
+                    inserted3Lower.add(lower);
+                }
+                pIdx = pToI.next[pIdx];
+            }
+        }
+        return inserted3Lower.size();
     }
 
     static String joinCompoundWord(String prefix, String suffix) {
-        if (prefix.endsWith("-")) {
-            return prefix + suffix;
+        return joinCompoundWords(prefix, suffix);
+    }
+
+    static String joinCompoundWords(String... parts) {
+        boolean capitalizeStart = Character.isUpperCase(parts[parts.length - 1].charAt(0));
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i];
+            if (i == 0) {
+                if (part.endsWith("-")) {
+                    sb.append(part);
+                } else if (capitalizeStart) {
+                    sb.append(Character.toUpperCase(part.charAt(0)))
+                            .append(part.substring(1).toLowerCase(Locale.ROOT));
+                } else {
+                    sb.append(part.toLowerCase(Locale.ROOT));
+                }
+            } else if (parts[i - 1].endsWith("-")) {
+                sb.append(part);
+            } else {
+                sb.append(part.toLowerCase(Locale.ROOT));
+            }
         }
-        if (Character.isUpperCase(suffix.charAt(0))) {
-            return Character.toUpperCase(prefix.charAt(0))
-                    + prefix.substring(1).toLowerCase(Locale.ROOT)
-                    + suffix.toLowerCase(Locale.ROOT);
-        }
-        return prefix.toLowerCase(Locale.ROOT) + suffix;
+        return sb.toString();
     }
 
     private static int extractBigrams(

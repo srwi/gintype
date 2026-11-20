@@ -224,6 +224,69 @@ public class GboardLmReaderTest {
         assertEquals("Teilzeit", GboardLmReader.joinCompoundWord("Teil", "Zeit"));
         assertEquals("Ölmühle", GboardLmReader.joinCompoundWord("Öl", "Mühle"));
         assertEquals("Nacht-Fotos", GboardLmReader.joinCompoundWord("Nacht-", "Fotos"));
+        assertEquals(
+                "Datenschutzerklärung",
+                GboardLmReader.joinCompoundWords("Daten", "Schutz", "Erklärung"));
+        assertEquals(
+                "versandkostenfrei",
+                GboardLmReader.joinCompoundWords("Versand", "kosten", "frei"));
+        assertEquals(
+                "Rheinland-Pfalz",
+                GboardLmReader.joinCompoundWords("Rhein", "Land-", "Pfalz"));
+        assertEquals(
+                "Antivirus-Software",
+                GboardLmReader.joinCompoundWords("Anti", "Virus-", "Software"));
+        assertEquals(
+                "Besucher-Shopbewertung",
+                GboardLmReader.joinCompoundWords("Besucher-", "Shop", "Bewertung"));
+    }
+
+    @Test
+    public void synthesizesTopTripleCompoundsFromInfixChainsWithCap() throws Exception {
+        List<LmSymbolSpec> symbols = Arrays.asList(
+                new LmSymbolSpec("<epsilon>".getBytes(StandardCharsets.UTF_8), 255, false),
+                new LmSymbolSpec("und".getBytes(StandardCharsets.UTF_8), 60, true),
+                new LmSymbolSpec("Daten_".getBytes(StandardCharsets.UTF_8), 110, true),
+                new LmSymbolSpec("Versand_".getBytes(StandardCharsets.UTF_8), 120, true),
+                new LmSymbolSpec("Selten_".getBytes(StandardCharsets.UTF_8), 195, true),
+                new LmSymbolSpec("_Schutz_".getBytes(StandardCharsets.UTF_8), 100, true),
+                new LmSymbolSpec("_kosten_".getBytes(StandardCharsets.UTF_8), 105, true),
+                new LmSymbolSpec("_Erklärung".getBytes(StandardCharsets.UTF_8), 95, true),
+                new LmSymbolSpec("_frei".getBytes(StandardCharsets.UTF_8), 90, true),
+                new LmSymbolSpec("_Fall".getBytes(StandardCharsets.UTF_8), 130, true)
+        );
+        List<LmBigramSpec> bigrams = Arrays.asList(
+                new LmBigramSpec("Daten_", "_Schutz_", 20),       // pq+fq1 = 130
+                new LmBigramSpec("Versand_", "_kosten_", 22),     // pq+fq1 = 142
+                new LmBigramSpec("Selten_", "_Schutz_", 40),      // pq+fq1 = 235
+                new LmBigramSpec("_Schutz_", "_Erklärung", 45),   // Daten -> Erklärung joint_q = 175
+                new LmBigramSpec("_Schutz_", "_Fall", 60),        // Selten -> Fall joint_q = 295 (dropped by cap=2)
+                new LmBigramSpec("_kosten_", "_frei", 19)         // Versand -> frei joint_q = 161
+        );
+
+        byte[] lmBytes = buildSyntheticLm(symbols, bigrams, 0.0676536f, 5);
+        GboardLmReader.LmDictionaries dicts = GboardLmReader.readFromBytes(
+                lmBytes, "de", true, GboardLmReader.DEFAULT_MAX_BIGRAMS, 0, 2);
+
+        assertEquals(1, dicts.cleanWordCount);
+        assertEquals(2, dicts.compoundWordCount);
+
+        List<MultiSwipeTrie.WordForm> dse =
+                dicts.trie.getWordForms(dicts.trie.findNode("datenschutzerklarung"));
+        assertEquals(1, dse.size());
+        assertEquals("Datenschutzerklärung", dse.get(0).displayWord);
+        assertTrue(dse.get(0).isProperNoun);
+
+        List<MultiSwipeTrie.WordForm> vkf =
+                dicts.trie.getWordForms(dicts.trie.findNode("versandkostenfrei"));
+        assertEquals(1, vkf.size());
+        assertEquals("versandkostenfrei", vkf.get(0).displayWord);
+        assertFalse(vkf.get(0).isProperNoun);
+
+        // Excluded weaker triples and standalone infix/suffix tokens
+        assertEquals(0, dicts.trie.lookupFrequency("seltenschutzfall"));
+        assertEquals(0, dicts.trie.lookupFrequency("datenschutzfall"));
+        assertEquals(0, dicts.trie.lookupFrequency("schutz"));
     }
 
     // -------------------------------------------------------------------------
