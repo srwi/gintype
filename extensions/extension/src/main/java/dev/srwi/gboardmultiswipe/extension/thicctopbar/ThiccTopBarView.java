@@ -928,11 +928,42 @@ public class ThiccTopBarView extends HorizontalScrollView {
             currentWheelView.setIsActiveWord(historyIndex < 0);
         }
         if (historyIndex >= 0) {
-            centerOnColumn(historyIndex);
+            ensureColumnVisible(historyIndex);
         }
     }
 
-    public void centerOnColumn(int columnIndex) {
+    /**
+     * Computes the minimal horizontal {@code scrollX} needed to make the column at
+     * {@code [targetLeft, targetRight]} completely visible within the viewport
+     * {@code [currentScrollX, currentScrollX + barWidth]}, clamped to {@code [0, maxScrollX]}.
+     * If the column is already completely visible, {@code currentScrollX} is returned unchanged.
+     */
+    static int computeEnsureVisibleScrollX(
+            int targetLeft,
+            int targetRight,
+            int currentScrollX,
+            int barWidth,
+            int contentWidth) {
+        if (barWidth <= 0 || contentWidth <= 0) {
+            return Math.max(0, currentScrollX);
+        }
+        int maxScrollX = Math.max(0, contentWidth - barWidth);
+        int clampedCurrent = Math.max(0, Math.min(maxScrollX, currentScrollX));
+        int targetWidth = targetRight - targetLeft;
+        int desiredScrollX = clampedCurrent;
+        if (targetWidth >= barWidth) {
+            if (targetLeft > clampedCurrent || targetRight < clampedCurrent + barWidth) {
+                desiredScrollX = targetLeft;
+            }
+        } else if (targetLeft < clampedCurrent) {
+            desiredScrollX = targetLeft;
+        } else if (targetRight > clampedCurrent + barWidth) {
+            desiredScrollX = targetRight - barWidth;
+        }
+        return Math.max(0, Math.min(maxScrollX, desiredScrollX));
+    }
+
+    public void ensureColumnVisible(int columnIndex) {
         cancelEntranceAnimation();
         post(() -> {
             int barWidth = getWidth();
@@ -948,13 +979,14 @@ public class ThiccTopBarView extends HorizontalScrollView {
             }
             if (target == null) return;
             if (target.getWidth() == 0 && target.getLeft() == 0) {
-                post(() -> centerOnColumn(columnIndex));
+                post(() -> ensureColumnVisible(columnIndex));
                 return;
             }
 
-            int targetCenter = contentLayout.getLeft() + (target.getLeft() + target.getRight()) / 2;
-            int maxScrollX = Math.max(0, contentLayout.getWidth() - barWidth);
-            int scrollX = Math.max(0, Math.min(maxScrollX, targetCenter - barWidth / 2));
+            int targetLeft = contentLayout.getLeft() + target.getLeft();
+            int targetRight = contentLayout.getLeft() + target.getRight();
+            int scrollX = computeEnsureVisibleScrollX(
+                    targetLeft, targetRight, getScrollX(), barWidth, contentLayout.getWidth());
             animateScrollTo(scrollX);
         });
     }

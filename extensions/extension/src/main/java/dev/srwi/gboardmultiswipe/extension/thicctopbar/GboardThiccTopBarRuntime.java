@@ -1372,7 +1372,7 @@ public final class GboardThiccTopBarRuntime {
             }
             if (!ThiccTopBarTextHelper.hasSelection(holderView)) {
                 barView.clearHistorySelection();
-                barView.centerOnColumn(0);
+                barView.ensureColumnVisible(0);
             } else {
                 int colIdx = ThiccTopBarTextHelper.getWordIndexAtCursor(holderView, SENTENCE_BUFFER);
                 if (colIdx >= 0 && colIdx < barView.getHistoryWheelCount()) {
@@ -1380,7 +1380,7 @@ public final class GboardThiccTopBarRuntime {
                 } else {
                     barView.clearHistorySelection();
                     if (colIdx >= 0) {
-                        barView.centerOnColumn(colIdx);
+                        barView.ensureColumnVisible(colIdx);
                     }
                 }
             }
