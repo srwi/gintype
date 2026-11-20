@@ -23,7 +23,14 @@ MultiSwipe uses the gesture-decoding algorithm from the [Kinetica implementation
 - **Sentence branch history**: Flick back through earlier sentence contexts and restore previous wording cleanly.
 - **Jump-to-end shortcut**: Quickly jump back to the latest active suggestions with a single tap.
 
-### 3. Package Rename (Side-by-Side Installation)
+### 3. Typing Effects (Animations)
+- **Animated swipe trails**: Draws vibrant, color-cycling swipe trails with an optional glow layer, configurable trail width, fade duration, and cycle speed.
+- **Glitter & particle explosions**: Emits trailing glitter particles (`Sparkles`, `Sparks`, `Confetti`, or `Mixed`) and triggers tap/release particle bursts (`Sparks Ring`, `Sparkles`, `Confetti`, or `All Out`) with optional expanding shockwave rings.
+- **Key highlights**: Animates pressed keys with `Neon Glow`, `Plasma Pulse`, or `Soft Fill` effects and adjustable highlight duration.
+- **Keyboard warp & wind streams**: Adds interactive touch-area warp distortion and flowing wind streams during swipes, with tunable warp strength/radius and wind intensity/spread.
+- **Color palettes & in-app tuning**: Choose between **Rainbow**, **Neon**, **Fire**, **Galaxy**, and **Pastel** palettes and fine-tune every animation toggle, particle count, size, speed, and lifetime in **Gboard Settings > MultiSwipe & Thicc Top Bar**.
+
+### 4. Package Rename (Side-by-Side Installation)
 - Enabled by default so non-rooted phones can install the patched keyboard **alongside** official Play Store Gboard (`dev.srwi.com.google.android.inputmethod.latin`), complete with a customizable app name (`Gboard MultiSwipe` by default).
 - Can be disabled if you prefer an in-place replacement (requires root/mount or matching signatures).
 
@@ -44,6 +51,7 @@ Select a clean supported Gboard installer, then choose the patches you want:
 
 - **Thicc Top Bar** for vertical word suggestions and sentence history
 - **MultiSwipe** for two-finger and tap-plus-swipe typing
+- **Typing Effects** for animated swipe trails, glitter, explosions, key highlights, and warp/wind effects
 - **Package Rename** for side-by-side installation on non-rooted devices
 
 After patching, install the generated APK. Enable the keyboard in **Android Settings > System > Keyboard > On-screen keyboard**, switch to it, and open **Gboard Settings > MultiSwipe & Thicc Top Bar** to configure the patches.
