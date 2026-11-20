@@ -22,6 +22,7 @@ final class GboardSettingsSearchIndexData {
             {0, R.string.gboard_patches_multiswipe_combine_delay_title, R.string.gboard_patches_multiswipe_combine_delay_summary, 0},
             {0, R.string.gboard_patches_multiswipe_tap_to_multiswipe_enabled_title, R.string.gboard_patches_multiswipe_tap_to_multiswipe_enabled_summary, 0},
             {0, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_title, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_summary, 0},
+            {0, R.string.gboard_patches_multiswipe_smart_tap_swipe_split_enabled_title, R.string.gboard_patches_multiswipe_smart_tap_swipe_split_enabled_summary, 0},
             {0, R.string.gboard_patches_multiswipe_backspace_mode_title, R.string.gboard_patches_multiswipe_backspace_mode_summary, 0},
             {0, R.string.gboard_patches_multiswipe_auto_space_title, R.string.gboard_patches_multiswipe_auto_space_summary, 0},
             {0, R.string.gboard_patches_multiswipe_space_placement_title, R.string.gboard_patches_multiswipe_space_placement_summary, 0},

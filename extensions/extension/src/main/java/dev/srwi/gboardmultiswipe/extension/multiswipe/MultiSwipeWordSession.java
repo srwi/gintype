@@ -37,6 +37,7 @@ final class MultiSwipeWordSession {
         final boolean autoSpaceBeforeWord;
         final int tapToMultiSwipeDelayMs;
         final String backspaceMode;
+        final boolean smartTapSwipeSplitEnabled;
 
         SettingsSnapshot(
                 boolean enabled,
@@ -100,6 +101,22 @@ final class MultiSwipeWordSession {
                 int tapToMultiSwipeDelayMs,
                 String backspaceMode
         ) {
+            this(enabled, autoSpaceEnabled, autoSpaceDelayMs, singleTouchCombineDelayMs,
+                    doubleSpacePeriodEnabled, autoSpaceBeforeWord, tapToMultiSwipeDelayMs,
+                    backspaceMode, GboardMultiSwipeSettings.DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED);
+        }
+
+        SettingsSnapshot(
+                boolean enabled,
+                boolean autoSpaceEnabled,
+                int autoSpaceDelayMs,
+                int singleTouchCombineDelayMs,
+                boolean doubleSpacePeriodEnabled,
+                boolean autoSpaceBeforeWord,
+                int tapToMultiSwipeDelayMs,
+                String backspaceMode,
+                boolean smartTapSwipeSplitEnabled
+        ) {
             this.enabled = enabled;
             this.autoSpaceEnabled = autoSpaceEnabled;
             this.autoSpaceDelayMs = autoSpaceDelayMs;
@@ -108,6 +125,7 @@ final class MultiSwipeWordSession {
             this.autoSpaceBeforeWord = autoSpaceBeforeWord;
             this.tapToMultiSwipeDelayMs = tapToMultiSwipeDelayMs;
             this.backspaceMode = GboardMultiSwipeSettings.sanitizeBackspaceMode(backspaceMode);
+            this.smartTapSwipeSplitEnabled = smartTapSwipeSplitEnabled;
         }
     }
 
@@ -131,6 +149,18 @@ final class MultiSwipeWordSession {
 
     interface DecodePort {
         List<WordCandidate> decode(List<MultiSwipeInputToken> tokens, String prevWord);
+
+        default String activeLanguage() {
+            return "en";
+        }
+
+        default int lookupWordFrequency(String word) {
+            return 0;
+        }
+
+        default float lookupBigramScore(String prevWord, String word) {
+            return 0f;
+        }
     }
 
     interface LifecycleCallbacks {
@@ -1249,6 +1279,77 @@ final class MultiSwipeWordSession {
 
         if (shouldDecodeNow) {
             List<WordCandidate> preDecodedCandidates = null;
+            if (settings.smartTapSwipeSplitEnabled
+                    && decoder != null
+                    && !multiswipeWordActive
+                    && containsSwipeToken(completedTokens)
+                    && (promoteMultiTouchPassive
+                            || (promoteSingleTouchCombine
+                                    && !singleTouchCombineBuffer.hasSwipeToken))) {
+                boolean usingSingleTouchBuffer = promoteSingleTouchCombine && !promoteMultiTouchPassive;
+                List<MultiSwipeInputToken> tapTokens = usingSingleTouchBuffer
+                        ? singleTouchCombineBuffer.tokens
+                        : passiveTapBuffer.tokens;
+                String tapBaseline = usingSingleTouchBuffer
+                        ? singleTouchCombineBuffer.baselineText
+                        : passiveTapBuffer.baselineText;
+                String rawPrefix = extractTypedPrefixSinceBaseline(tapBaseline, textSnapshotAtActionDown);
+                if (SmartTapSwipeSplitJudge.isEligibleTapPrefix(rawPrefix)) {
+                    String liveSnapshot = (editor != null) ? editor.readTextBeforeCursorSnapshot() : null;
+                    String prevWordBeforePrefix = extractPreviousWord(
+                            tapBaseline, liveSnapshot, lastCommittedWord);
+                    List<MultiSwipeInputToken> combinedTokens =
+                            new ArrayList<>(tapTokens.size() + completedTokens.size());
+                    combinedTokens.addAll(tapTokens);
+                    combinedTokens.addAll(completedTokens);
+                    List<WordCandidate> combinedCandidates =
+                            decoder.decode(combinedTokens, prevWordBeforePrefix);
+                    String lang = decoder.activeLanguage();
+                    List<WordCandidate> splitCandidates = decoder.decode(
+                            completedTokens, SmartTapSwipeSplitJudge.contextForm(rawPrefix, lang));
+                    if (SmartTapSwipeSplitJudge.shouldSplit(
+                            rawPrefix,
+                            lang,
+                            decoder.lookupWordFrequency(rawPrefix),
+                            decoder.lookupBigramScore(prevWordBeforePrefix, rawPrefix),
+                            combinedCandidates,
+                            splitCandidates)) {
+                        passiveTapBuffer.clear();
+                        singleTouchCombineBuffer.clear();
+                        multiswipeTakeoverActive = true;
+                        multiswipeWordActive = true;
+                        if (callbacks != null) {
+                            callbacks.onTrailAccentChanged(true);
+                            callbacks.onNativeTopBarBlankChanged(true);
+                            callbacks.onTakeoverActivatedOnFinish();
+                        }
+                        promotedTapPrefix = null;
+                        wordTokens.addAll(completedTokens);
+                        completedTokens.clear();
+                        decodeAndPreview(
+                                settings,
+                                editor,
+                                decoder,
+                                callbacks,
+                                splitCandidates,
+                                textSnapshotAtActionDown,
+                                true);
+                        if (settings.autoSpaceEnabled) {
+                            if (callbacks != null) {
+                                callbacks.onCancelAutospaceTimer();
+                            }
+                            autospaceTimerPending = true;
+                            if (callbacks != null) {
+                                callbacks.onScheduleAutospaceTimer(settings.autoSpaceDelayMs);
+                            }
+                        } else {
+                            autospaceTimerPending = false;
+                        }
+                        return;
+                    }
+                    preDecodedCandidates = combinedCandidates;
+                }
+            }
             // MS-02 / MS-03: With Auto-Space ON, probe sequential 1-finger combinations first so a
             // 0-candidate miss lets rapid stock 1-finger typing proceed untouched.
             // With Auto-Space OFF, no Space means same word, so MultiSwipe takes over and retains
@@ -1265,9 +1366,11 @@ final class MultiSwipeWordSession {
                         probeBaseline,
                         (editor != null) ? editor.readTextBeforeCursorSnapshot() : null,
                         lastCommittedWord);
-                preDecodedCandidates = (decoder != null)
-                        ? decoder.decode(probeWordTokens, probePrevWord)
-                        : null;
+                if (preDecodedCandidates == null) {
+                    preDecodedCandidates = (decoder != null)
+                            ? decoder.decode(probeWordTokens, probePrevWord)
+                            : null;
+                }
                 if (preDecodedCandidates == null || preDecodedCandidates.isEmpty()) {
                     singleTouchCombineBuffer.clear();
                     handleStockFallback(
@@ -1450,6 +1553,25 @@ final class MultiSwipeWordSession {
             List<WordCandidate> preDecodedCandidates,
             String snapshotBeforePromotion
     ) {
+        decodeAndPreview(
+                settings,
+                editor,
+                decoder,
+                callbacks,
+                preDecodedCandidates,
+                snapshotBeforePromotion,
+                false);
+    }
+
+    private void decodeAndPreview(
+            SettingsSnapshot settings,
+            EditorAdapter editor,
+            DecodePort decoder,
+            LifecycleCallbacks callbacks,
+            List<WordCandidate> preDecodedCandidates,
+            String snapshotBeforePromotion,
+            boolean forceLeadingSpace
+    ) {
         if (decoder == null && preDecodedCandidates == null) return;
         String liveSnapshot = (editor != null) ? editor.readTextBeforeCursorSnapshot() : null;
         String prevWord = extractPreviousWord(textSnapshotAtActionDown, liveSnapshot, lastCommittedWord);
@@ -1485,7 +1607,9 @@ final class MultiSwipeWordSession {
 
         boolean prependLeadingSpace = !leadingSpaceEvaluated
                 && !suppressNextLeadingSpace
-                && shouldPrependLeadingSpace(textSnapshotAtActionDown, settings.autoSpaceEnabled);
+                && (forceLeadingSpace
+                        || shouldPrependLeadingSpace(
+                                textSnapshotAtActionDown, settings.autoSpaceEnabled));
         boolean attachingAfterDeletion = isAttachingAfterDeletion(
                 textSnapshotAtActionDown, prependLeadingSpace, suppressNextLeadingSpace);
 

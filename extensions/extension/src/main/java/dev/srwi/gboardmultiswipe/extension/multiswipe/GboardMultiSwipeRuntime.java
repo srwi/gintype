@@ -1381,10 +1381,12 @@ public final class GboardMultiSwipeRuntime {
         String backspaceMode = (context != null)
                 ? GboardMultiSwipeSettings.readBackspaceMode(context)
                 : GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE;
+        boolean smartTapSwipeSplitEnabled = (context != null)
+                && GboardMultiSwipeSettings.readSmartTapSwipeSplitEnabled(context);
         return new MultiSwipeWordSession.SettingsSnapshot(
                 enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs,
                 doubleSpacePeriodEnabled, autoSpaceBeforeWord, tapToMultiSwipeDelayMs,
-                backspaceMode);
+                backspaceMode, smartTapSwipeSplitEnabled);
     }
 
     private static boolean readDoubleSpacePeriodEnabled(Context context) {
@@ -1531,24 +1533,66 @@ public final class GboardMultiSwipeRuntime {
             HandlerSession session,
             String activeLang
     ) {
-        return (tokens, prevWord) -> {
-            try {
-                LanguagePack pack = GboardMultiSwipeDictionaryManager.loadBlockingIfNeeded(
-                        context, activeLang, session.geometry.hasDedicatedUmlauts());
-                if (pack == null) {
+        return new MultiSwipeWordSession.DecodePort() {
+            @Override
+            public List<WordCandidate> decode(List<MultiSwipeInputToken> tokens, String prevWord) {
+                try {
+                    LanguagePack pack = GboardMultiSwipeDictionaryManager.loadBlockingIfNeeded(
+                            context, activeLang, session.geometry.hasDedicatedUmlauts());
+                    if (pack == null) {
+                        return Collections.emptyList();
+                    }
+                    GboardMultiSwipeSettings.syncDecoderConstants(context);
+                    KineticaDtwDecoder decoder = new KineticaDtwDecoder();
+                    pack.rwLock.readLock().lock();
+                    try {
+                        return decoder.decode(tokens, pack.trie, pack.bigrams, session.geometry, prevWord);
+                    } finally {
+                        pack.rwLock.readLock().unlock();
+                    }
+                } catch (Throwable t) {
+                    Log.e(TAG, "decodePort failed", t);
                     return Collections.emptyList();
                 }
-                GboardMultiSwipeSettings.syncDecoderConstants(context);
-                KineticaDtwDecoder decoder = new KineticaDtwDecoder();
+            }
+
+            @Override
+            public String activeLanguage() {
+                return activeLang != null ? activeLang : "en";
+            }
+
+            @Override
+            public int lookupWordFrequency(String word) {
+                if (word == null || word.isEmpty()) return 0;
+                LanguagePack pack = GboardMultiSwipeDictionaryManager.getLoadedIfReady(
+                        activeLang, session.geometry.hasDedicatedUmlauts());
+                if (pack == null) {
+                    pack = GboardMultiSwipeDictionaryManager.loadBlockingIfNeeded(
+                            context, activeLang, session.geometry.hasDedicatedUmlauts());
+                }
+                if (pack == null || pack.trie == null) return 0;
                 pack.rwLock.readLock().lock();
                 try {
-                    return decoder.decode(tokens, pack.trie, pack.bigrams, session.geometry, prevWord);
+                    return pack.trie.lookupFrequency(word);
                 } finally {
                     pack.rwLock.readLock().unlock();
                 }
-            } catch (Throwable t) {
-                Log.e(TAG, "decodePort failed", t);
-                return Collections.emptyList();
+            }
+
+            @Override
+            public float lookupBigramScore(String prevWord, String word) {
+                if (prevWord == null || prevWord.isEmpty() || word == null || word.isEmpty()) {
+                    return 0f;
+                }
+                LanguagePack pack = GboardMultiSwipeDictionaryManager.getLoadedIfReady(
+                        activeLang, session.geometry.hasDedicatedUmlauts());
+                if (pack == null || pack.bigrams == null) return 0f;
+                pack.rwLock.readLock().lock();
+                try {
+                    return pack.bigrams.score(prevWord, word);
+                } finally {
+                    pack.rwLock.readLock().unlock();
+                }
             }
         };
     }

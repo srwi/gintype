@@ -302,6 +302,12 @@
     <string name="gboard_patches_multiswipe_tap_to_multiswipe_delay_summary">
         <translation locale="en">How long recent letter taps count toward a two-finger swipe</translation>
         </string>
+    <string name="gboard_patches_multiswipe_smart_tap_swipe_split_enabled_title">
+        <translation locale="en">Keep short tapped words separate</translation>
+        </string>
+    <string name="gboard_patches_multiswipe_smart_tap_swipe_split_enabled_summary">
+        <translation locale="en">Insert a space instead of combining when a 1–3 letter tap prefix and the following swipe make more sense as separate words</translation>
+        </string>
     <string name="gboard_patches_multiswipe_spacebar_timer_indicator_title">
         <translation locale="en">Show countdown on spacebar</translation>
         </string>

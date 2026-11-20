@@ -1285,6 +1285,125 @@ public class MultiSwipeIntegrationTest {
         assertFalse(session.hasPendingTapPrefixInEditor());
     }
 
+    @Test
+    public void smartTapSwipeSplitSeparatesShortTappedWordBeforeMultiAndSingleSwipe() {
+        SettingsSnapshot splitOn = new SettingsSnapshot(
+                true, true, 300, 150, true, false, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE, true);
+        DecodePort germanDecoder = new DecodePort() {
+            @Override
+            public List<WordCandidate> decode(List<MultiSwipeInputToken> tokens, String prevWord) {
+                if (tokens.size() > 2) {
+                    // Combined "so" + swipe "gut" produces no valid word
+                    return Collections.emptyList();
+                }
+                return Collections.singletonList(cand("gut", 0.65f));
+            }
+
+            @Override
+            public String activeLanguage() {
+                return "de";
+            }
+
+            @Override
+            public int lookupWordFrequency(String word) {
+                return "so".equalsIgnoreCase(word) ? 140 : 0;
+            }
+        };
+
+        // MS-08: tap "so" then immediate multi-touch swipe "gut" -> "so gut"
+        performStockTap('s', 1000L, splitOn, germanDecoder);
+        performStockTap('o', 1060L, splitOn, germanDecoder);
+        assertEquals("so", editor.text());
+        performTwoFingerSwipe(1120L, splitOn, germanDecoder);
+        assertEquals("so gut", editor.text());
+
+        // Reset and verify MS-09 (single-touch tap "so" + single-touch swipe "gut") -> "so gut"
+        session.finalizeAutospace(true, editor, callbacks);
+        assertEquals("so gut ", editor.text());
+        performStockTap('s', 2000L, splitOn, germanDecoder);
+        performStockTap('o', 2060L, splitOn, germanDecoder);
+        performSingleSwipe(2120L, splitOn, germanDecoder);
+        assertEquals("so gut so gut", editor.text());
+    }
+
+    @Test
+    public void smartTapSwipeSplitKeepsValidCombinedWordAndHonorsDisabledToggle() {
+        SettingsSnapshot splitOn = new SettingsSnapshot(
+                true, true, 300, 150, true, false, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE, true);
+        DecodePort combinedWinsDecoder = new DecodePort() {
+            @Override
+            public List<WordCandidate> decode(List<MultiSwipeInputToken> tokens, String prevWord) {
+                return tokens.size() > 2
+                        ? Collections.singletonList(cand("sofort", 0.60f))
+                        : Collections.singletonList(cand("fort", 0.55f));
+            }
+
+            @Override
+            public String activeLanguage() {
+                return "de";
+            }
+
+            @Override
+            public int lookupWordFrequency(String word) {
+                return "so".equalsIgnoreCase(word) ? 140 : 0;
+            }
+        };
+
+        // "so" + swipe "fort" stays combined as "Sofort" (capitalized at start of field)
+        performStockTap('s', 1000L, splitOn, combinedWinsDecoder);
+        performStockTap('o', 1060L, splitOn, combinedWinsDecoder);
+        performTwoFingerSwipe(1120L, splitOn, combinedWinsDecoder);
+        assertEquals("Sofort", editor.text());
+
+        // With toggle OFF, even when combined fails or is weak, MS-08 combines instead of splitting
+        session.finalizeAutospace(true, editor, callbacks);
+        editor.reset();
+        SettingsSnapshot splitOff = new SettingsSnapshot(
+                true, true, 300, 150, true, false, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE, false);
+        DecodePort splitWouldWinDecoder = new DecodePort() {
+            @Override
+            public List<WordCandidate> decode(List<MultiSwipeInputToken> tokens, String prevWord) {
+                return tokens.size() > 2
+                        ? Collections.singletonList(cand("sogut", 0.05f))
+                        : Collections.singletonList(cand("gut", 0.65f));
+            }
+
+            @Override
+            public int lookupWordFrequency(String word) {
+                return 140;
+            }
+        };
+        performStockTap('s', 2000L, splitOff, splitWouldWinDecoder);
+        performStockTap('o', 2060L, splitOff, splitWouldWinDecoder);
+        performTwoFingerSwipe(2120L, splitOff, splitWouldWinDecoder);
+        assertEquals("Sogut", editor.text());
+    }
+
+    private void performStockTap(
+            char ch,
+            long downMs,
+            SettingsSnapshot settings,
+            DecodePort decoder
+    ) {
+        KeySpec k = key(ch);
+        session.onActionDown(0, k.centerX, k.centerY, downMs, settings, editor, callbacks);
+        session.onActionUp(downMs + 30L, settings, editor, decoder, callbacks);
+        editor.stockType(String.valueOf(ch));
+    }
+
+    private void performSingleSwipe(
+            long startMs,
+            SettingsSnapshot settings,
+            DecodePort decoder
+    ) {
+        session.onActionDown(0, letterAX, letterAY, startMs, settings, editor, callbacks);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, startMs + 30L, session.geometry);
+        session.onActionUp(startMs + 60L, settings, editor, decoder, callbacks);
+    }
+
     private boolean performBackspaceTap(
             long downMs,
             SettingsSnapshot settings,

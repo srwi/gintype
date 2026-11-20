@@ -23,6 +23,8 @@ public final class GboardMultiSwipeSettings {
             "pref_multiswipe_tap_to_multiswipe_enabled";
     public static final String PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS =
             "pref_multiswipe_tap_to_multiswipe_delay_ms";
+    public static final String PREF_KEY_SMART_TAP_SWIPE_SPLIT_ENABLED =
+            "pref_multiswipe_smart_tap_swipe_split_enabled";
     public static final String PREF_KEY_SPACEBAR_TIMER_INDICATOR =
             "pref_multiswipe_spacebar_timer_indicator";
     public static final String PREF_KEY_WORD_READY_VIBRATION =
@@ -51,6 +53,7 @@ public final class GboardMultiSwipeSettings {
     public static final int MIN_TAP_TO_MULTISWIPE_DELAY_MS = 100;
     public static final int MAX_TAP_TO_MULTISWIPE_DELAY_MS = 2000;
     public static final int DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS = 750;
+    public static final boolean DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED = false;
     public static final boolean DEFAULT_SPACEBAR_TIMER_INDICATOR = false;
     public static final boolean DEFAULT_WORD_READY_VIBRATION = false;
     public static final int MIN_BEAM_WIDTH = 32;
@@ -148,6 +151,11 @@ public final class GboardMultiSwipeSettings {
             if (editor == null) editor = preferences.edit();
             editor.putInt(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS, DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS);
         }
+        if (!preferences.contains(PREF_KEY_SMART_TAP_SWIPE_SPLIT_ENABLED)) {
+            if (editor == null) editor = preferences.edit();
+            editor.putBoolean(
+                    PREF_KEY_SMART_TAP_SWIPE_SPLIT_ENABLED, DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED);
+        }
         if (!preferences.contains(PREF_KEY_SPACEBAR_TIMER_INDICATOR)) {
             if (editor == null) editor = preferences.edit();
             editor.putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR);
@@ -197,6 +205,9 @@ public final class GboardMultiSwipeSettings {
                     .putInt(PREF_KEY_SINGLE_TOUCH_COMBINE_DELAY_MS, DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS)
                     .putBoolean(PREF_KEY_TAP_TO_MULTISWIPE_ENABLED, DEFAULT_TAP_TO_MULTISWIPE_ENABLED)
                     .putInt(PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS, DEFAULT_TAP_TO_MULTISWIPE_DELAY_MS)
+                    .putBoolean(
+                            PREF_KEY_SMART_TAP_SWIPE_SPLIT_ENABLED,
+                            DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED)
                     .putBoolean(PREF_KEY_SPACEBAR_TIMER_INDICATOR, DEFAULT_SPACEBAR_TIMER_INDICATOR)
                     .putBoolean(PREF_KEY_WORD_READY_VIBRATION, DEFAULT_WORD_READY_VIBRATION)
                     .putString(PREF_KEY_BACKSPACE_MODE, DEFAULT_BACKSPACE_MODE)
@@ -404,6 +415,26 @@ public final class GboardMultiSwipeSettings {
     public static boolean writeTapToMultiSwipeDelayMs(SharedPreferences preferences, int delayMs) {
         return writeInt(preferences, PREF_KEY_TAP_TO_MULTISWIPE_DELAY_MS,
                 delayMs, MIN_TAP_TO_MULTISWIPE_DELAY_MS, MAX_TAP_TO_MULTISWIPE_DELAY_MS);
+    }
+
+    public static boolean readSmartTapSwipeSplitEnabled(Context context) {
+        return GboardBooleanFlagSettings.readEnabled(
+                resolvePreferences(context),
+                PREF_KEY_SMART_TAP_SWIPE_SPLIT_ENABLED,
+                DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED);
+    }
+
+    public static boolean readSmartTapSwipeSplitEnabled(SharedPreferences preferences) {
+        return GboardBooleanFlagSettings.readEnabled(
+                preferences,
+                PREF_KEY_SMART_TAP_SWIPE_SPLIT_ENABLED,
+                DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED);
+    }
+
+    public static boolean writeSmartTapSwipeSplitEnabled(
+            SharedPreferences preferences, boolean enabled) {
+        return GboardBooleanFlagSettings.writeEnabled(
+                preferences, PREF_KEY_SMART_TAP_SWIPE_SPLIT_ENABLED, enabled);
     }
 
     public static String readBackspaceMode(Context context) {

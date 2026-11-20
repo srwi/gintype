@@ -63,6 +63,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
     private final String tapToMultiSwipeEnabledSummary;
     private final String tapToMultiSwipeDelayTitle;
     private final String tapToMultiSwipeDelaySummary;
+    private final String smartTapSwipeSplitEnabledTitle;
+    private final String smartTapSwipeSplitEnabledSummary;
     private final String spacebarTimerIndicatorTitle;
     private final String spacebarTimerIndicatorSummary;
     private final String wordReadyVibrationTitle;
@@ -115,6 +117,10 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                 text(context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_title);
         tapToMultiSwipeDelaySummary =
                 text(context, R.string.gboard_patches_multiswipe_tap_to_multiswipe_delay_summary);
+        smartTapSwipeSplitEnabledTitle =
+                text(context, R.string.gboard_patches_multiswipe_smart_tap_swipe_split_enabled_title);
+        smartTapSwipeSplitEnabledSummary =
+                text(context, R.string.gboard_patches_multiswipe_smart_tap_swipe_split_enabled_summary);
         spacebarTimerIndicatorTitle =
                 text(context, R.string.gboard_patches_multiswipe_spacebar_timer_indicator_title);
         spacebarTimerIndicatorSummary =
@@ -188,6 +194,8 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                     GboardMultiSwipeSettings.readTapToMultiSwipeEnabled(preferences);
             int tapToMultiSwipeDelayMs =
                     GboardMultiSwipeSettings.readTapToMultiSwipeDelayMs(preferences);
+            boolean smartTapSwipeSplitEnabled =
+                    GboardMultiSwipeSettings.readSmartTapSwipeSplitEnabled(preferences);
             boolean spacebarTimerIndicatorEnabled =
                     GboardMultiSwipeSettings.readSpacebarTimerIndicatorEnabled(preferences);
             boolean wordReadyVibrationEnabled =
@@ -246,6 +254,11 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                             this::formatTapToMultiSwipeDelayLabel,
                             v -> GboardMultiSwipeSettings.writeTapToMultiSwipeDelayMs(
                                     preferences, v)),
+                    smartTapSwipeSplitEnabledTitle,
+                    smartTapSwipeSplitEnabledSummary,
+                    smartTapSwipeSplitEnabled,
+                    value -> GboardMultiSwipeSettings.writeSmartTapSwipeSplitEnabled(
+                            preferences, value),
                     backspaceModeTitle,
                     backspaceModeSummary,
                     formatBackspaceModeLabel(backspaceMode),
@@ -534,7 +547,67 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
             String backspaceModeSummary,
             String backspaceModeValueLabel,
             Runnable onSelectBackspaceMode) {
-        List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>(6);
+        return buildGestureRows(
+                enabledTitle,
+                enabledSummary,
+                enabled,
+                onToggleEnabled,
+                combineEnabledTitle,
+                combineEnabledSummary,
+                combineEnabled,
+                onToggleCombineEnabled,
+                combineDelayTitle,
+                combineDelaySummary,
+                combineValueLabel,
+                onSelectCombineDelay,
+                tapToMultiSwipeEnabledTitle,
+                tapToMultiSwipeEnabledSummary,
+                tapToMultiSwipeEnabled,
+                onToggleTapToMultiSwipeEnabled,
+                tapToMultiSwipeDelayTitle,
+                tapToMultiSwipeDelaySummary,
+                tapToMultiSwipeValueLabel,
+                onSelectTapToMultiSwipeDelay,
+                "",
+                "",
+                GboardMultiSwipeSettings.DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED,
+                value -> {},
+                backspaceModeTitle,
+                backspaceModeSummary,
+                backspaceModeValueLabel,
+                onSelectBackspaceMode);
+    }
+
+    static List<GboardPatchesSettingsContract.Row> buildGestureRows(
+            String enabledTitle,
+            String enabledSummary,
+            boolean enabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleEnabled,
+            String combineEnabledTitle,
+            String combineEnabledSummary,
+            boolean combineEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleCombineEnabled,
+            String combineDelayTitle,
+            String combineDelaySummary,
+            String combineValueLabel,
+            Runnable onSelectCombineDelay,
+            String tapToMultiSwipeEnabledTitle,
+            String tapToMultiSwipeEnabledSummary,
+            boolean tapToMultiSwipeEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleTapToMultiSwipeEnabled,
+            String tapToMultiSwipeDelayTitle,
+            String tapToMultiSwipeDelaySummary,
+            String tapToMultiSwipeValueLabel,
+            Runnable onSelectTapToMultiSwipeDelay,
+            String smartTapSwipeSplitEnabledTitle,
+            String smartTapSwipeSplitEnabledSummary,
+            boolean smartTapSwipeSplitEnabled,
+            GboardPatchesSettingsContract.ToggleAction onToggleSmartTapSwipeSplitEnabled,
+            String backspaceModeTitle,
+            String backspaceModeSummary,
+            String backspaceModeValueLabel,
+            Runnable onSelectBackspaceMode) {
+        List<GboardPatchesSettingsContract.Row> rows = new ArrayList<>(7);
         rows.add(new GboardPatchesSettingsContract.ToggleRow(
                 enabledTitle,
                 enabledSummary,
@@ -565,6 +638,12 @@ public final class GboardMultiSwipeSettingsFeature implements GboardPatchesSetti
                 tapToMultiSwipeValueLabel,
                 enabled && tapToMultiSwipeEnabled,
                 onSelectTapToMultiSwipeDelay));
+        rows.add(new GboardPatchesSettingsContract.ToggleRow(
+                smartTapSwipeSplitEnabledTitle,
+                smartTapSwipeSplitEnabledSummary,
+                enabled && tapToMultiSwipeEnabled,
+                smartTapSwipeSplitEnabled,
+                onToggleSmartTapSwipeSplitEnabled));
         rows.add(new GboardPatchesSettingsContract.SelectorRow(
                 backspaceModeTitle,
                 backspaceModeSummary,
