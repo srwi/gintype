@@ -1,6 +1,7 @@
 package dev.srwi.gboardmultiswipe.extension.multiswipe;
 
 import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeInputToken.WordCandidate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -11,14 +12,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Evaluates whether a short pure-tap prefix (1–3 letters) followed by a swipe should stay
- * separate with a space instead of being combined into a single word.
+ * Evaluates whether a pure-tap prefix (1–6 letters) followed by a swipe should split at a word
+ * boundary {@code k} (1–4 letters) instead of being combined into a single word.
  */
 final class SmartTapSwipeSplitJudge {
 
     static final int MIN_PREFIX_LEN = 1;
-    static final int MAX_PREFIX_LEN = 3;
+    static final int MAX_SPLIT_LEFT_LEN = 4;
+    static final int MAX_BUFFER_PREFIX_LEN = 6;
     static final int MIN_PREFIX_FREQ_2_3 = 8;
+    static final int MIN_PREFIX_FREQ_4 = 30;
     static final float MIN_SPLIT_SWIPE_SCORE = 0.08f;
 
     static final float ONE_LETTER_RATIO = 1.40f;
@@ -26,8 +29,30 @@ final class SmartTapSwipeSplitJudge {
     static final float MULTI_LETTER_RATIO = 1.25f;
     static final float MULTI_LETTER_MARGIN = 0.08f;
     static final float BIGRAM_BONUS = 0.04f;
+    static final float FULL_PREFIX_BONUS = 0.06f;
+    static final float FREQ_RANK_BONUS = 0.03f;
 
     private static final Map<String, Set<String>> ONE_LETTER_WORDS_BY_LANG = buildOneLetterMap();
+
+    static final class Evaluation {
+        final int splitIndex;
+        final List<WordCandidate> combinedCandidates;
+        final List<WordCandidate> splitCandidates;
+
+        Evaluation(
+                int splitIndex,
+                List<WordCandidate> combinedCandidates,
+                List<WordCandidate> splitCandidates
+        ) {
+            this.splitIndex = splitIndex;
+            this.combinedCandidates = combinedCandidates;
+            this.splitCandidates = splitCandidates;
+        }
+
+        boolean isSplit() {
+            return splitIndex > 0;
+        }
+    }
 
     private SmartTapSwipeSplitJudge() {}
 
@@ -72,7 +97,7 @@ final class SmartTapSwipeSplitJudge {
     static boolean isEligibleTapPrefix(String rawPrefix) {
         if (rawPrefix == null) return false;
         int len = rawPrefix.length();
-        if (len < MIN_PREFIX_LEN || len > MAX_PREFIX_LEN) return false;
+        if (len < MIN_PREFIX_LEN || len > MAX_BUFFER_PREFIX_LEN) return false;
         for (int i = 0; i < len; i++) {
             if (!Character.isLetter(rawPrefix.charAt(i))) {
                 return false;
@@ -81,14 +106,24 @@ final class SmartTapSwipeSplitJudge {
         return true;
     }
 
-    static boolean canStandAlone(String rawPrefix, String lang, int prefixFreq) {
-        if (!isEligibleTapPrefix(rawPrefix)) return false;
-        String lower = rawPrefix.toLowerCase(Locale.ROOT);
-        if (lower.length() == 1) {
+    static boolean canStandAlone(String word, String lang, int freq) {
+        if (word == null) return false;
+        int len = word.length();
+        if (len < MIN_PREFIX_LEN || len > MAX_SPLIT_LEFT_LEN) return false;
+        for (int i = 0; i < len; i++) {
+            if (!Character.isLetter(word.charAt(i))) {
+                return false;
+            }
+        }
+        String lower = word.toLowerCase(Locale.ROOT);
+        if (len == 1) {
             Set<String> allowed = ONE_LETTER_WORDS_BY_LANG.get(normalizeLang(lang));
             return allowed != null && allowed.contains(lower);
         }
-        return prefixFreq >= MIN_PREFIX_FREQ_2_3;
+        if (len == MAX_SPLIT_LEFT_LEN) {
+            return freq >= MIN_PREFIX_FREQ_4;
+        }
+        return freq >= MIN_PREFIX_FREQ_2_3;
     }
 
     static String contextForm(String rawPrefix, String lang) {
@@ -100,14 +135,14 @@ final class SmartTapSwipeSplitJudge {
     }
 
     static boolean shouldSplit(
-            String rawPrefix,
+            String leftWord,
             String lang,
-            int prefixFreq,
-            float prefixBigramScore,
+            int leftFreq,
+            float leftBigramScore,
             List<WordCandidate> combinedCandidates,
             List<WordCandidate> splitCandidates
     ) {
-        if (!canStandAlone(rawPrefix, lang, prefixFreq)) {
+        if (!canStandAlone(leftWord, lang, leftFreq)) {
             return false;
         }
         if (splitCandidates == null || splitCandidates.isEmpty()) {
@@ -125,10 +160,93 @@ final class SmartTapSwipeSplitJudge {
         if (combinedTop == null || combinedTop.word == null || combinedTop.word.isEmpty()) {
             return true;
         }
-        float effectiveSplit = splitTop.totalScore + Math.max(0f, prefixBigramScore) * BIGRAM_BONUS;
-        if (rawPrefix.length() == 1) {
+        float effectiveSplit = splitTop.totalScore + Math.max(0f, leftBigramScore) * BIGRAM_BONUS;
+        if (leftWord.length() == 1) {
             return effectiveSplit >= combinedTop.totalScore * ONE_LETTER_RATIO + ONE_LETTER_MARGIN;
         }
         return effectiveSplit >= combinedTop.totalScore * MULTI_LETTER_RATIO + MULTI_LETTER_MARGIN;
+    }
+
+    static Evaluation evaluateBestSplit(
+            String rawPrefix,
+            List<MultiSwipeInputToken> tapTokens,
+            List<MultiSwipeInputToken> swipeTokens,
+            String prevWordBeforePrefix,
+            MultiSwipeWordSession.DecodePort decoder
+    ) {
+        if (!isEligibleTapPrefix(rawPrefix)
+                || tapTokens == null
+                || tapTokens.isEmpty()
+                || swipeTokens == null
+                || swipeTokens.isEmpty()
+                || decoder == null) {
+            return new Evaluation(0, null, null);
+        }
+
+        List<MultiSwipeInputToken> combinedTokens =
+                new ArrayList<>(tapTokens.size() + swipeTokens.size());
+        combinedTokens.addAll(tapTokens);
+        combinedTokens.addAll(swipeTokens);
+        List<WordCandidate> combinedCandidates =
+                decoder.decode(combinedTokens, prevWordBeforePrefix);
+
+        String lang = decoder.activeLanguage();
+        int prefixLen = rawPrefix.length();
+        boolean alignedTokens = (prefixLen == tapTokens.size());
+        int maxCut = Math.min(MAX_SPLIT_LEFT_LEN, prefixLen);
+
+        int bestCut = 0;
+        float bestRankScore = Float.NEGATIVE_INFINITY;
+        List<WordCandidate> bestSplitCandidates = null;
+
+        for (int k = 1; k <= maxCut; k++) {
+            boolean isFullPrefix = (k == prefixLen);
+            if (!isFullPrefix && !alignedTokens) {
+                continue;
+            }
+            String leftWord = rawPrefix.substring(0, k);
+            int leftFreq = decoder.lookupWordFrequency(leftWord);
+            if (!canStandAlone(leftWord, lang, leftFreq)) {
+                continue;
+            }
+
+            List<MultiSwipeInputToken> rightTokens;
+            if (isFullPrefix) {
+                rightTokens = swipeTokens;
+            } else {
+                rightTokens = new ArrayList<>((tapTokens.size() - k) + swipeTokens.size());
+                for (int i = k; i < tapTokens.size(); i++) {
+                    rightTokens.add(tapTokens.get(i));
+                }
+                rightTokens.addAll(swipeTokens);
+            }
+
+            List<WordCandidate> rightCandidates =
+                    decoder.decode(rightTokens, contextForm(leftWord, lang));
+            float leftBigram = decoder.lookupBigramScore(prevWordBeforePrefix, leftWord);
+            if (!shouldSplit(
+                    leftWord,
+                    lang,
+                    leftFreq,
+                    leftBigram,
+                    combinedCandidates,
+                    rightCandidates)) {
+                continue;
+            }
+
+            float rightTopScore = rightCandidates.get(0).totalScore;
+            float freqNorm = Math.min(255, Math.max(0, leftFreq)) / 255.0f;
+            float rankScore = rightTopScore
+                    + freqNorm * FREQ_RANK_BONUS
+                    + Math.max(0f, leftBigram) * BIGRAM_BONUS
+                    + (isFullPrefix ? FULL_PREFIX_BONUS : 0f);
+            if (rankScore > bestRankScore) {
+                bestRankScore = rankScore;
+                bestCut = k;
+                bestSplitCandidates = rightCandidates;
+            }
+        }
+
+        return new Evaluation(bestCut, combinedCandidates, bestSplitCandidates);
     }
 }

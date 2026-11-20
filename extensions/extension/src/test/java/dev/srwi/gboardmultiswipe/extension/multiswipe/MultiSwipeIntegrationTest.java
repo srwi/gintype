@@ -1382,6 +1382,50 @@ public class MultiSwipeIntegrationTest {
         assertEquals("Sogut", editor.text());
     }
 
+    @Test
+    public void smartTapSwipeSplitCutsMidTapPrefixForSheWouldAndKeepsFollowingTapAttached() {
+        session.finalizeAutospace(true, editor, callbacks);
+        editor.reset();
+        SettingsSnapshot splitOn = new SettingsSnapshot(
+                true, true, 300, 150, true, false, 750,
+                GboardMultiSwipeSettings.DEFAULT_BACKSPACE_MODE, true);
+        DecodePort sheWouldDecoder = new DecodePort() {
+            @Override
+            public List<WordCandidate> decode(List<MultiSwipeInputToken> tokens, String prevWord) {
+                // Combined 5-token ("shew" + swipe) -> weak "shrikes"
+                if (tokens.size() >= 5 && tokens.get(0).character == 's') {
+                    return Collections.singletonList(cand("shrikes", 0.10f));
+                }
+                // Split ("w" + swipe) -> "would"
+                if (tokens.size() >= 2 && tokens.get(0).character == 'w') {
+                    return Collections.singletonList(cand("would", 0.85f));
+                }
+                return Collections.emptyList();
+            }
+
+            @Override
+            public String activeLanguage() {
+                return "en";
+            }
+
+            @Override
+            public int lookupWordFrequency(String word) {
+                if ("she".equalsIgnoreCase(word)) return 210;
+                if ("shew".equalsIgnoreCase(word)) return 2;
+                return 0;
+            }
+        };
+
+        // Tap "s", "h", "e", "w" then swipe "oul" -> splits after "she", keeps "w" + swipe -> "she would"
+        performStockTap('s', 1000L, splitOn, sheWouldDecoder);
+        performStockTap('h', 1050L, splitOn, sheWouldDecoder);
+        performStockTap('e', 1100L, splitOn, sheWouldDecoder);
+        performStockTap('w', 1150L, splitOn, sheWouldDecoder);
+        assertEquals("shew", editor.text());
+        performSingleSwipe(1200L, splitOn, sheWouldDecoder);
+        assertEquals("she would", editor.text());
+    }
+
     private void performStockTap(
             char ch,
             long downMs,

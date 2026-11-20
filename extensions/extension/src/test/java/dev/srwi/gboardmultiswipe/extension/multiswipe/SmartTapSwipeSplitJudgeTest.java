@@ -5,6 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import dev.srwi.gboardmultiswipe.extension.multiswipe.MultiSwipeInputToken.WordCandidate;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import org.junit.Test;
@@ -88,7 +89,96 @@ public class SmartTapSwipeSplitJudgeTest {
     public void rejectsNonLetterOrOverlongPrefixes() {
         assertFalse(SmartTapSwipeSplitJudge.isEligibleTapPrefix(""));
         assertFalse(SmartTapSwipeSplitJudge.isEligibleTapPrefix("a1"));
-        assertFalse(SmartTapSwipeSplitJudge.isEligibleTapPrefix("weil"));
+        assertFalse(SmartTapSwipeSplitJudge.isEligibleTapPrefix("abcdefg"));
         assertTrue(SmartTapSwipeSplitJudge.isEligibleTapPrefix("gut"));
+        assertTrue(SmartTapSwipeSplitJudge.isEligibleTapPrefix("shew"));
+
+        assertTrue(SmartTapSwipeSplitJudge.canStandAlone("them", "en", 150));
+        assertFalse(SmartTapSwipeSplitJudge.canStandAlone("shew", "en", 10));
+    }
+
+    @Test
+    public void evaluatesMidTapCutForSheWouldAndPrefersFullPrefixForThemIs() {
+        List<MultiSwipeInputToken> shewTaps = Arrays.asList(
+                MultiSwipeInputToken.tap(0, 's', 10f, 10f, 10L, 15L),
+                MultiSwipeInputToken.tap(0, 'h', 20f, 10f, 20L, 25L),
+                MultiSwipeInputToken.tap(0, 'e', 30f, 10f, 30L, 35L),
+                MultiSwipeInputToken.tap(0, 'w', 40f, 10f, 40L, 45L));
+        List<MultiSwipeInputToken> oulSwipe = Collections.singletonList(
+                MultiSwipeInputToken.swipe(0, Collections.emptyList(), 50f, 50L, 100L));
+
+        MultiSwipeWordSession.DecodePort sheWouldDecoder = new MultiSwipeWordSession.DecodePort() {
+            @Override
+            public List<WordCandidate> decode(List<MultiSwipeInputToken> tokens, String prevWord) {
+                if (tokens.size() == 5) {
+                    return Collections.singletonList(cand("shrikes", 0.10f));
+                }
+                if (tokens.size() == 2 && tokens.get(0).character == 'w') {
+                    return Collections.singletonList(cand("would", 0.85f));
+                }
+                return Collections.emptyList();
+            }
+
+            @Override
+            public String activeLanguage() {
+                return "en";
+            }
+
+            @Override
+            public int lookupWordFrequency(String word) {
+                if ("she".equalsIgnoreCase(word)) return 210;
+                if ("shew".equalsIgnoreCase(word)) return 2;
+                return 0;
+            }
+        };
+
+        SmartTapSwipeSplitJudge.Evaluation sheEval = SmartTapSwipeSplitJudge.evaluateBestSplit(
+                "shew", shewTaps, oulSwipe, "", sheWouldDecoder);
+        assertTrue(sheEval.isSplit());
+        assertEquals(3, sheEval.splitIndex);
+        assertEquals("would", sheEval.splitCandidates.get(0).word);
+
+        // "them" + swipe "is" should prefer k=4 ("them" + "is") over k=3 ("the" + "miss")
+        List<MultiSwipeInputToken> themTaps = Arrays.asList(
+                MultiSwipeInputToken.tap(0, 't', 10f, 10f, 10L, 15L),
+                MultiSwipeInputToken.tap(0, 'h', 20f, 10f, 20L, 25L),
+                MultiSwipeInputToken.tap(0, 'e', 30f, 10f, 30L, 35L),
+                MultiSwipeInputToken.tap(0, 'm', 40f, 10f, 40L, 45L));
+        List<MultiSwipeInputToken> isSwipe = Collections.singletonList(
+                MultiSwipeInputToken.swipe(0, Collections.emptyList(), 50f, 50L, 100L));
+
+        MultiSwipeWordSession.DecodePort themIsDecoder = new MultiSwipeWordSession.DecodePort() {
+            @Override
+            public List<WordCandidate> decode(List<MultiSwipeInputToken> tokens, String prevWord) {
+                if (tokens.size() == 5) {
+                    return Collections.emptyList();
+                }
+                if (tokens.size() == 1) {
+                    return Collections.singletonList(cand("is", 0.70f));
+                }
+                if (tokens.size() == 2 && tokens.get(0).character == 'm') {
+                    return Collections.singletonList(cand("miss", 0.70f));
+                }
+                return Collections.emptyList();
+            }
+
+            @Override
+            public String activeLanguage() {
+                return "en";
+            }
+
+            @Override
+            public int lookupWordFrequency(String word) {
+                if ("the".equalsIgnoreCase(word)) return 255;
+                if ("them".equalsIgnoreCase(word)) return 200;
+                return 0;
+            }
+        };
+
+        SmartTapSwipeSplitJudge.Evaluation themEval = SmartTapSwipeSplitJudge.evaluateBestSplit(
+                "them", themTaps, isSwipe, "", themIsDecoder);
+        assertTrue(themEval.isSplit());
+        assertEquals(4, themEval.splitIndex);
+        assertEquals("is", themEval.splitCandidates.get(0).word);
     }
 }

@@ -1298,22 +1298,25 @@ final class MultiSwipeWordSession {
                     String liveSnapshot = (editor != null) ? editor.readTextBeforeCursorSnapshot() : null;
                     String prevWordBeforePrefix = extractPreviousWord(
                             tapBaseline, liveSnapshot, lastCommittedWord);
-                    List<MultiSwipeInputToken> combinedTokens =
-                            new ArrayList<>(tapTokens.size() + completedTokens.size());
-                    combinedTokens.addAll(tapTokens);
-                    combinedTokens.addAll(completedTokens);
-                    List<WordCandidate> combinedCandidates =
-                            decoder.decode(combinedTokens, prevWordBeforePrefix);
-                    String lang = decoder.activeLanguage();
-                    List<WordCandidate> splitCandidates = decoder.decode(
-                            completedTokens, SmartTapSwipeSplitJudge.contextForm(rawPrefix, lang));
-                    if (SmartTapSwipeSplitJudge.shouldSplit(
-                            rawPrefix,
-                            lang,
-                            decoder.lookupWordFrequency(rawPrefix),
-                            decoder.lookupBigramScore(prevWordBeforePrefix, rawPrefix),
-                            combinedCandidates,
-                            splitCandidates)) {
+                    SmartTapSwipeSplitJudge.Evaluation eval =
+                            SmartTapSwipeSplitJudge.evaluateBestSplit(
+                                    rawPrefix,
+                                    tapTokens,
+                                    completedTokens,
+                                    prevWordBeforePrefix,
+                                    decoder);
+                    if (eval.isSplit()) {
+                        int cut = eval.splitIndex;
+                        String splitBaseline = (cut == rawPrefix.length())
+                                ? textSnapshotAtActionDown
+                                : (tapBaseline != null ? tapBaseline : "")
+                                        + rawPrefix.substring(0, cut);
+                        List<MultiSwipeInputToken> remainingRightTaps = new ArrayList<>();
+                        if (cut < rawPrefix.length() && rawPrefix.length() == tapTokens.size()) {
+                            for (int i = cut; i < tapTokens.size(); i++) {
+                                remainingRightTaps.add(tapTokens.get(i));
+                            }
+                        }
                         passiveTapBuffer.clear();
                         singleTouchCombineBuffer.clear();
                         multiswipeTakeoverActive = true;
@@ -1324,6 +1327,8 @@ final class MultiSwipeWordSession {
                             callbacks.onTakeoverActivatedOnFinish();
                         }
                         promotedTapPrefix = null;
+                        textSnapshotAtActionDown = splitBaseline;
+                        wordTokens.addAll(remainingRightTaps);
                         wordTokens.addAll(completedTokens);
                         completedTokens.clear();
                         decodeAndPreview(
@@ -1331,8 +1336,8 @@ final class MultiSwipeWordSession {
                                 editor,
                                 decoder,
                                 callbacks,
-                                splitCandidates,
-                                textSnapshotAtActionDown,
+                                eval.splitCandidates,
+                                splitBaseline,
                                 true);
                         if (settings.autoSpaceEnabled) {
                             if (callbacks != null) {
@@ -1347,7 +1352,7 @@ final class MultiSwipeWordSession {
                         }
                         return;
                     }
-                    preDecodedCandidates = combinedCandidates;
+                    preDecodedCandidates = eval.combinedCandidates;
                 }
             }
             // MS-02 / MS-03: With Auto-Space ON, probe sequential 1-finger combinations first so a
