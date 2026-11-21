@@ -31,7 +31,7 @@ class GboardCustomHoldPopupsSmaliCompilationTest {
     fun `verify onPopupShown hook compiles for TouchActionBundle showPopup`() {
         val smali = RuntimeCallEmitter.invoke(
             RuntimeCallId.CUSTOM_HOLD_POPUPS_RUNTIME_ON_POPUP_SHOWN,
-            "v0",
+            "p0 .. p0",
         )
         val instructions = InlineSmaliCompiler.compile(
             instructions = smali,

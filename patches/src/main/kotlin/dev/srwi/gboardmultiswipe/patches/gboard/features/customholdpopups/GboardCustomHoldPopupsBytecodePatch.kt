@@ -4,6 +4,9 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
+import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.gboardPatchesExtensionCarrierPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.isMethodReference
 import dev.srwi.gboardmultiswipe.patches.gboard.shared.mutableClass
@@ -74,13 +77,16 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
         if (existingPopupShownHooks == 0) {
             val popupShownInvoke = RuntimeCallEmitter.invoke(
                 RuntimeCallId.CUSTOM_HOLD_POPUPS_RUNTIME_ON_POPUP_SHOWN,
-                "v0",
+                "p0 .. p0",
             )
             val instructions = showPopupMethod.implementation?.instructions?.toList()
                 ?: throw PatchException("No implementation in $TOUCH_ACTION_BUNDLE_CLASS->D(J)V")
             val returnIndices = instructions.mapIndexedNotNull { idx, insn ->
-                if (insn.opcode.name == "RETURN_VOID") idx else null
+                if (insn.opcode == Opcode.RETURN_VOID) idx else null
             }.sortedDescending()
+            if (returnIndices.isEmpty()) {
+                throw PatchException("No return-void instruction in $TOUCH_ACTION_BUNDLE_CLASS->D(J)V")
+            }
             for (returnIdx in returnIndices) {
                 showPopupMethod.addInstructions(returnIdx, popupShownInvoke)
             }
@@ -107,12 +113,15 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
             )
             val instructions = handleMoveMethod.implementation?.instructions?.toList()
                 ?: throw PatchException("No implementation in $POPUP_MANAGER_CLASS->c(F, F, Z)Z")
-            val returnIndices = instructions.mapIndexedNotNull { idx, insn ->
-                if (insn.opcode.name == "RETURN") idx else null
-            }.sortedDescending()
-            for (returnIdx in returnIndices) {
-                handleMoveMethod.addInstructions(returnIdx, selectionUpdatedInvoke)
+            val selectedKeyFieldPutIndex = instructions.indexOfFirst { insn ->
+                if (insn.opcode != Opcode.IPUT_OBJECT) return@indexOfFirst false
+                val ref = (insn as? ReferenceInstruction)?.reference as? FieldReference ?: return@indexOfFirst false
+                ref.definingClass == POPUP_MANAGER_CLASS && ref.name == "f"
             }
+            if (selectedKeyFieldPutIndex < 0) {
+                throw PatchException("No iput-object Lqsl;->f in $POPUP_MANAGER_CLASS->c(F, F, Z)Z")
+            }
+            handleMoveMethod.addInstructions(selectedKeyFieldPutIndex + 1, selectionUpdatedInvoke)
         }
 
         // 4. Lqsl.a(J)V & Lqsl.close()V — cancel 2s hold timer when popup hides or closes

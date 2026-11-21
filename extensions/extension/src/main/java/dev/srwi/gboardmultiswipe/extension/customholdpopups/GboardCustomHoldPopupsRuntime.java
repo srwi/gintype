@@ -58,6 +58,7 @@ public final class GboardCustomHoldPopupsRuntime {
 
     public static final int PENCIL_SENTINEL_KEY_CODE = -777777;
     public static final int DEFAULT_POPUP_LAYOUT_THEME_ATTR = 0x7f040280;
+    private static final String EDIT_ICON_DRAWABLE_NAME = "gboard_custom_hold_popups_edit";
     private static final long SETTINGS_REFRESH_INTERVAL_MS = 400L;
 
     /**
@@ -234,6 +235,7 @@ public final class GboardCustomHoldPopupsRuntime {
     private static volatile Method popupHideMethod;             // Lqsl.a(J)V
 
     private static volatile Context cachedContext;
+    private static volatile int cachedEditIconResId = -1;
     private static volatile boolean cachedEnabled = GboardCustomHoldPopupsSettings.DEFAULT_ENABLED;
     private static volatile int cachedHoldDurationMs =
             GboardCustomHoldPopupsSettings.DEFAULT_HOLD_DURATION_MS;
@@ -879,7 +881,7 @@ public final class GboardCustomHoldPopupsRuntime {
             newPopupLabels.add(displayAdded);
         }
 
-        // 3. Trailing Pencil (✎) option to add a new symbol
+        // 3. Trailing Edit/Add option to add a new symbol
         Object pencilKd = createKeyData(
                 PENCIL_SENTINEL_KEY_CODE,
                 commitIntention,
@@ -894,10 +896,15 @@ public final class GboardCustomHoldPopupsRuntime {
                         -1,
                         true));
         newKeyDatas.add(pencilKd);
-        newPopupLabels.add(GboardCustomHoldPopupsSettings.PENCIL_SYMBOL);
 
         int itemCount = newKeyDatas.size();
         int[] newPopupIcons = new int[itemCount];
+        int editIconResId = resolveEditIconResId(cachedContext);
+        if (editIconResId != 0) {
+            newPopupIcons[itemCount - 1] = editIconResId;
+        } else {
+            newPopupLabels.add(GboardCustomHoldPopupsSettings.PENCIL_SYMBOL);
+        }
         Object keyDatasImmutable = toImmutableList(newKeyDatas.toArray(new Object[0]));
         Object popupLabelsImmutable = toImmutableList(newPopupLabels.toArray(new Object[0]));
 
@@ -969,6 +976,24 @@ public final class GboardCustomHoldPopupsRuntime {
     private static Object createKeyData(int keyCode, Object intention, Object data)
             throws Exception {
         return keyDataCtor.newInstance(keyCode, intention, data, Integer.MAX_VALUE);
+    }
+
+    private static int resolveEditIconResId(Context context) {
+        int cached = cachedEditIconResId;
+        if (cached >= 0) {
+            return cached;
+        }
+        if (context == null) {
+            return 0;
+        }
+        try {
+            int resId = context.getResources().getIdentifier(
+                    EDIT_ICON_DRAWABLE_NAME, "drawable", context.getPackageName());
+            cachedEditIconResId = resId;
+            return resId;
+        } catch (Throwable ignored) {
+            return 0;
+        }
     }
 
     private static Object toImmutableList(Object[] array) throws Exception {
