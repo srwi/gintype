@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -149,18 +150,22 @@ public final class GboardCustomHoldPopupsRuntime {
         }
     }
 
+    // Use IdentityHashMap for SoftKeyDef and KeyData (Lqbc) instances so lookups are based on
+    // object identity (===) rather than value equality (.equals()), preventing collisions when
+    // different keys share an identical KeyData value (such as the trailing ✎ sentinel KeyData).
     private static final Map<Object, Object> AUGMENTED_TO_ORIGINAL_DEF =
-            Collections.synchronizedMap(new WeakHashMap<Object, Object>());
+            Collections.synchronizedMap(new IdentityHashMap<Object, Object>());
     private static final Map<Object, String> AUGMENTED_DEF_BASE_KEY =
-            Collections.synchronizedMap(new WeakHashMap<Object, String>());
+            Collections.synchronizedMap(new IdentityHashMap<Object, String>());
     private static final Map<Object, PopupItemMeta> KEY_DATA_META =
-            Collections.synchronizedMap(new WeakHashMap<Object, PopupItemMeta>());
+            Collections.synchronizedMap(new IdentityHashMap<Object, PopupItemMeta>());
     private static final Map<Object, Object> ACTIVE_SOFT_KEY_VIEWS =
             Collections.synchronizedMap(new WeakHashMap<Object, Object>());
     private static final Map<Object, ActivePopupState> ACTIVE_POPUPS_BY_MANAGER =
-            Collections.synchronizedMap(new WeakHashMap<Object, ActivePopupState>());
+            Collections.synchronizedMap(new IdentityHashMap<Object, ActivePopupState>());
     private static final Set<Object> CONSUMED_BUNDLES =
-            Collections.synchronizedSet(new HashSet<Object>());
+            Collections.synchronizedSet(Collections.newSetFromMap(
+                    new IdentityHashMap<Object, Boolean>()));
 
     private static volatile boolean reflectionReady = false;
     private static volatile boolean reflectionFailed = false;
@@ -428,7 +433,12 @@ public final class GboardCustomHoldPopupsRuntime {
 
             // 1. Released on Pencil (✎) -> suppress commit and open Editor Dialog in Add mode!
             if ((meta != null && meta.pencilAddOption) || keyCode == PENCIL_SENTINEL_KEY_CODE) {
-                String baseKey = meta != null ? meta.baseKey : resolveBaseKeyFromDef(softKeyDefObj);
+                // Always prefer resolving the base key directly from the pressed SoftKeyDef
+                // (or TouchActionBundle's SoftKeyView), falling back to meta.baseKey if needed.
+                String baseKey = resolveBaseKeyFromDefOrBundle(softKeyDefObj, touchActionBundleObj);
+                if ((baseKey == null || baseKey.isEmpty()) && meta != null) {
+                    baseKey = meta.baseKey;
+                }
                 if (baseKey != null && !baseKey.isEmpty()) {
                     Context ctx = resolveContext(basicHandlerObj, touchActionBundleObj);
                     launchEditorDialogFromKeyboard(
@@ -538,10 +548,14 @@ public final class GboardCustomHoldPopupsRuntime {
             Context ctx = resolveContext(null, state.touchActionBundle);
             triggerEditHapticFeedback(ctx, state.touchActionBundle, popupManager);
 
+            String effectiveBaseKey = (state.baseKey != null && !state.baseKey.isEmpty())
+                    ? state.baseKey
+                    : meta.baseKey;
+
             launchEditorDialogFromKeyboard(
                     ctx,
                     GboardCustomHoldPopupsEditorDialog.MODE_EDIT,
-                    meta.baseKey,
+                    effectiveBaseKey,
                     meta.currentSymbol,
                     meta.originalDefaultSymbol,
                     meta.userAdded,
@@ -1132,6 +1146,35 @@ public final class GboardCustomHoldPopupsRuntime {
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    private static String resolveBaseKeyFromDefOrBundle(
+            Object softKeyDefObj,
+            Object touchActionBundleObj) {
+        String fromDef = resolveBaseKeyFromDef(softKeyDefObj);
+        if (fromDef != null && !fromDef.isEmpty()) {
+            return fromDef;
+        }
+        if (touchActionBundleObj != null) {
+            try {
+                ensureBundleAndPopupReflection(touchActionBundleObj, null);
+                if (bundleSoftKeyViewField != null) {
+                    Object skv = bundleSoftKeyViewField.get(touchActionBundleObj);
+                    if (skv != null) {
+                        ensureSoftKeyViewReflection(skv);
+                        if (softKeyViewDefField != null) {
+                            Object def = softKeyViewDefField.get(skv);
+                            String fromViewDef = resolveBaseKeyFromDef(def);
+                            if (fromViewDef != null && !fromViewDef.isEmpty()) {
+                                return fromViewDef;
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
     }
 
     private static String resolveBaseKeyFromDef(Object softKeyDefObj) {
