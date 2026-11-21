@@ -26,6 +26,10 @@ class GboardPublishedPatchCatalogContractTest {
             gboardTypingEffectsPatch,
             registrations.single { patch -> patch.name == "Typing Effects" },
         )
+        assertSame(
+            gboardCustomHoldPopupsPatch,
+            registrations.single { patch -> patch.name == "Custom Hold Popups" },
+        )
     }
 
     @Test

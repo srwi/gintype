@@ -34,6 +34,7 @@ public final class GboardPatchesIcons {
     public static final int KEYBOARD = 19;
     public static final int GESTURE = 20;
     public static final int TOP_BAR = 21;
+    public static final int EDIT = 22;
 
     private static final float VIEWPORT = 24f;
 
@@ -114,6 +115,10 @@ public final class GboardPatchesIcons {
                         + "m1 3.5v2h4v-2H5zm5.5 0v2h3v-2h-3zm4.5 0v2h4v-2h-4z"
                         + "M3 14.5h5v2H3v-2zm6.5 0h5v2h-5v-2zm6.5 0h5v2h-5v-2z"
                         + "M5 18.5h14v2H5v-2z";
+            case EDIT:
+                return "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"
+                        + "M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34"
+                        + "c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z";
             default:
                 return null;
         }

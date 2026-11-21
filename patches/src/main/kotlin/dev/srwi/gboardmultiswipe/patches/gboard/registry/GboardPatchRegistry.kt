@@ -10,6 +10,8 @@ import dev.srwi.gboardmultiswipe.patches.gboard.features.packagerename.gboardPac
 import dev.srwi.gboardmultiswipe.patches.gboard.features.packagerename.isValidGboardAppDisplayName
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
+import dev.srwi.gboardmultiswipe.patches.gboard.features.customholdpopups.gboardCustomHoldPopupsBytecodePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.customholdpopups.gboardCustomHoldPopupsFeatureMarkerPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarBytecodePatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarFeatureMarkerPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeBytecodePatch
@@ -88,6 +90,22 @@ val gboardTypingEffectsPatch = gboardPublicResourcePatch(
 }
 
 @Suppress("unused")
+val gboardCustomHoldPopupsPatch = gboardPublicResourcePatch(
+    featureId = "custom_hold_popups",
+    name = "Custom Hold Popups",
+    description = "Edit and add custom characters, symbols, emojis, and text snippets to key long-press hold popups across all keyboard languages.",
+    default = true,
+) {
+    compatibleWith(COMPATIBILITY_GBOARD)
+
+    dependsOn(
+        gboardPatchesSettingsPatch,
+        gboardCustomHoldPopupsFeatureMarkerPatch,
+        gboardCustomHoldPopupsBytecodePatch,
+    )
+}
+
+@Suppress("unused")
 val gboardPackageRenamePatch = gboardPublicResourcePatch(
     featureId = "package_rename",
     name = "Package Rename",
@@ -124,6 +142,7 @@ val gboardPackageRenamePatch = gboardPublicResourcePatch(
 
 object GboardPublishedPatchCatalog {
     val morpheRegistrations: Set<Patch<*>> = linkedSetOf(
+        gboardCustomHoldPopupsPatch,
         gboardMultiSwipePatch,
         gboardPackageRenamePatch,
         gboardThiccTopBarPatch,

@@ -17,6 +17,11 @@ internal enum class RuntimeCallId(internal val encodedAbi: String) {
     TYPING_EFFECTS_RUNTIME_ON_KEYBOARD_TOUCH_EVENT("Ldev/srwi/gboardmultiswipe/extension/typingeffects/GboardTypingEffectsRuntime;->onKeyboardTouchEvent(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
     TYPING_EFFECTS_RUNTIME_ON_KEYBOARD_DETACHED("Ldev/srwi/gboardmultiswipe/extension/typingeffects/GboardTypingEffectsRuntime;->onKeyboardDetached(Ljava/lang/Object;)V"),
     TYPING_EFFECTS_RUNTIME_SHOULD_SUPPRESS_STOCK_TRAIL("Ldev/srwi/gboardmultiswipe/extension/typingeffects/GboardTypingEffectsRuntime;->shouldSuppressStockGestureTrail(Ljava/lang/Object;)Z"),
+    CUSTOM_HOLD_POPUPS_RUNTIME_TRANSFORM_SOFT_KEY_DEF("Ldev/srwi/gboardmultiswipe/extension/customholdpopups/GboardCustomHoldPopupsRuntime;->transformSoftKeyDef(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"),
+    CUSTOM_HOLD_POPUPS_RUNTIME_ON_POPUP_SHOWN("Ldev/srwi/gboardmultiswipe/extension/customholdpopups/GboardCustomHoldPopupsRuntime;->onPopupShown(Ljava/lang/Object;)V"),
+    CUSTOM_HOLD_POPUPS_RUNTIME_ON_POPUP_SELECTION_UPDATED("Ldev/srwi/gboardmultiswipe/extension/customholdpopups/GboardCustomHoldPopupsRuntime;->onPopupSelectionUpdated(Ljava/lang/Object;Z)V"),
+    CUSTOM_HOLD_POPUPS_RUNTIME_ON_POPUP_HIDDEN("Ldev/srwi/gboardmultiswipe/extension/customholdpopups/GboardCustomHoldPopupsRuntime;->onPopupHidden(Ljava/lang/Object;)V"),
+    CUSTOM_HOLD_POPUPS_RUNTIME_SHOULD_INTERCEPT_KEY_DATA_DISPATCH("Ldev/srwi/gboardmultiswipe/extension/customholdpopups/GboardCustomHoldPopupsRuntime;->shouldInterceptKeyDataDispatch(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z"),
 }
 
 internal data class RuntimeAbi(

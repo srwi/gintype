@@ -1,5 +1,7 @@
 package dev.srwi.gboardmultiswipe.patches.gboard.registry
 
+import dev.srwi.gboardmultiswipe.patches.gboard.features.customholdpopups.gboardCustomHoldPopupsBytecodePatch
+import dev.srwi.gboardmultiswipe.patches.gboard.features.customholdpopups.gboardCustomHoldPopupsFeatureMarkerPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarBytecodePatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.thicctopbar.gboardThiccTopBarFeatureMarkerPatch
 import dev.srwi.gboardmultiswipe.patches.gboard.features.multiswipe.gboardMultiSwipeBytecodePatch
@@ -20,10 +22,12 @@ class GboardRuntimePatchesContractTest {
         }
         val multiswipe = registrations.single { patch -> patch.name == "MultiSwipe" }
         val typingEffects = registrations.single { patch -> patch.name == "Typing Effects" }
+        val customHoldPopups = registrations.single { patch -> patch.name == "Custom Hold Popups" }
 
         assertSame(gboardThiccTopBarPatch, matrix)
         assertSame(gboardMultiSwipePatch, multiswipe)
         assertSame(gboardTypingEffectsPatch, typingEffects)
+        assertSame(gboardCustomHoldPopupsPatch, customHoldPopups)
 
         val generated = generatedPublishedPatches().associateBy { patch ->
             patch["name"].asString
@@ -31,6 +35,7 @@ class GboardRuntimePatchesContractTest {
         assertTrue(generated.getValue(matrix.name!!)["use"].asBoolean)
         assertTrue(generated.getValue(multiswipe.name!!)["use"].asBoolean)
         assertTrue(generated.getValue(typingEffects.name!!)["use"].asBoolean)
+        assertTrue(generated.getValue(customHoldPopups.name!!)["use"].asBoolean)
     }
 
     @Test
@@ -54,6 +59,13 @@ class GboardRuntimePatchesContractTest {
         })
         assertTrue(gboardTypingEffectsPatch.dependencies.any { dependency ->
             dependency === gboardTypingEffectsBytecodePatch
+        })
+
+        assertTrue(gboardCustomHoldPopupsPatch.dependencies.any { dependency ->
+            dependency === gboardCustomHoldPopupsFeatureMarkerPatch
+        })
+        assertTrue(gboardCustomHoldPopupsPatch.dependencies.any { dependency ->
+            dependency === gboardCustomHoldPopupsBytecodePatch
         })
     }
 

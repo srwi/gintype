@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import dev.srwi.gboardmultiswipe.extension.customholdpopups.GboardCustomHoldPopupsSettingsFeature;
 import dev.srwi.gboardmultiswipe.extension.thicctopbar.GboardThiccTopBarSettingsFeature;
 import dev.srwi.gboardmultiswipe.extension.multiswipe.GboardMultiSwipeSettingsFeature;
 import dev.srwi.gboardmultiswipe.extension.typingeffects.GboardTypingEffectsSettingsFeature;
@@ -32,7 +33,8 @@ public final class GboardPatchesSettingsFeatureRegistry {
         return Collections.unmodifiableList(Arrays.asList(
                 new GboardMultiSwipeSettingsFeature(context),
                 new GboardThiccTopBarSettingsFeature(context),
-                new GboardTypingEffectsSettingsFeature(context)));
+                new GboardTypingEffectsSettingsFeature(context),
+                new GboardCustomHoldPopupsSettingsFeature(context)));
     }
 
     private static void addIfAvailable(Context context,

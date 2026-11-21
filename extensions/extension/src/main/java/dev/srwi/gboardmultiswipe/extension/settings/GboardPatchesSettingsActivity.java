@@ -99,6 +99,7 @@ import java.util.concurrent.RejectedExecutionException;
 
 import dev.srwi.gboardmultiswipe.extension.R;
 import dev.srwi.gboardmultiswipe.extension.BuildConfig;
+import dev.srwi.gboardmultiswipe.extension.customholdpopups.GboardCustomHoldPopupsEditorDialog;
 // GboardExportFileNames is now in this package
 import dev.srwi.gboardmultiswipe.extension.settings.keyboardpreview.GboardKeyboardPreviewController;
 import dev.srwi.gboardmultiswipe.extension.settings.search.GboardSettingsSearchEngine;
@@ -108,6 +109,18 @@ public final class GboardPatchesSettingsActivity extends Activity
     private static final String TAG = "GboardPatches";
     public static final String EXTRA_NAVIGATION_PATH =
             "dev.srwi.gboardmultiswipe.extension.extra.PATCHES_NAVIGATION_PATH";
+    public static final String EXTRA_HOLD_POPUP_EDITOR_MODE =
+            "dev.srwi.gboardmultiswipe.extension.extra.HOLD_POPUP_EDITOR_MODE";
+    public static final String EXTRA_HOLD_POPUP_BASE_KEY =
+            "dev.srwi.gboardmultiswipe.extension.extra.HOLD_POPUP_BASE_KEY";
+    public static final String EXTRA_HOLD_POPUP_CURRENT_SYMBOL =
+            "dev.srwi.gboardmultiswipe.extension.extra.HOLD_POPUP_CURRENT_SYMBOL";
+    public static final String EXTRA_HOLD_POPUP_ORIGINAL_SYMBOL =
+            "dev.srwi.gboardmultiswipe.extension.extra.HOLD_POPUP_ORIGINAL_SYMBOL";
+    public static final String EXTRA_HOLD_POPUP_IS_USER_ADDED =
+            "dev.srwi.gboardmultiswipe.extension.extra.HOLD_POPUP_IS_USER_ADDED";
+    public static final String EXTRA_HOLD_POPUP_ADDED_INDEX =
+            "dev.srwi.gboardmultiswipe.extension.extra.HOLD_POPUP_ADDED_INDEX";
     private static final String ENTER_PREF_HEADER_EXTRA = "ENTER_PREF_HEADER";
     private static final String GBOARD_SETTINGS_ACTIVITY_CLASS =
             "com.google.android.apps.inputmethod.latin.preference.SettingsActivity";
@@ -4060,7 +4073,32 @@ public final class GboardPatchesSettingsActivity extends Activity
     }
 
     private boolean restoreNavigationPathFromIntent(Intent intent) {
+        final String editorMode = intent.getStringExtra(EXTRA_HOLD_POPUP_EDITOR_MODE);
+        final String editorBaseKey = intent.getStringExtra(EXTRA_HOLD_POPUP_BASE_KEY);
+        final String editorCurrentSymbol = intent.getStringExtra(EXTRA_HOLD_POPUP_CURRENT_SYMBOL);
+        final String editorOriginalSymbol = intent.getStringExtra(EXTRA_HOLD_POPUP_ORIGINAL_SYMBOL);
+        final boolean editorUserAdded =
+                intent.getBooleanExtra(EXTRA_HOLD_POPUP_IS_USER_ADDED, false);
+        final int editorAddedIndex =
+                intent.getIntExtra(EXTRA_HOLD_POPUP_ADDED_INDEX, -1);
+        if (editorMode != null) {
+            intent.removeExtra(EXTRA_HOLD_POPUP_EDITOR_MODE);
+            intent.removeExtra(EXTRA_HOLD_POPUP_BASE_KEY);
+            intent.removeExtra(EXTRA_HOLD_POPUP_CURRENT_SYMBOL);
+            intent.removeExtra(EXTRA_HOLD_POPUP_ORIGINAL_SYMBOL);
+            intent.removeExtra(EXTRA_HOLD_POPUP_IS_USER_ADDED);
+            intent.removeExtra(EXTRA_HOLD_POPUP_ADDED_INDEX);
+        }
         if (!intent.hasExtra(EXTRA_NAVIGATION_PATH)) {
+            if (editorMode != null && editorBaseKey != null && !editorBaseKey.isEmpty()) {
+                scheduleHoldPopupEditorDialogFromIntent(
+                        editorMode,
+                        editorBaseKey,
+                        editorCurrentSymbol,
+                        editorOriginalSymbol,
+                        editorUserAdded,
+                        editorAddedIndex);
+            }
             return false;
         }
         ArrayList<String> pathIds = intent.getStringArrayListExtra(EXTRA_NAVIGATION_PATH);
@@ -4077,8 +4115,39 @@ public final class GboardPatchesSettingsActivity extends Activity
             requestScrollPositionOnNextScreenApply(0);
             applyOrchestration(settingsOrchestrator.accept(
                     GboardPatchesSettingsOrchestrator.Event.replacePath(resolvedPath)));
+            if (editorMode != null && editorBaseKey != null && !editorBaseKey.isEmpty()) {
+                scheduleHoldPopupEditorDialogFromIntent(
+                        editorMode,
+                        editorBaseKey,
+                        editorCurrentSymbol,
+                        editorOriginalSymbol,
+                        editorUserAdded,
+                        editorAddedIndex);
+            }
         });
         return true;
+    }
+
+    private void scheduleHoldPopupEditorDialogFromIntent(
+            String mode,
+            String baseKey,
+            String currentSymbol,
+            String originalSymbol,
+            boolean userAdded,
+            int addedIndex) {
+        postToDecorView(() -> showManagedDialog(onDismiss -> {
+            AlertDialog dialog = GboardCustomHoldPopupsEditorDialog.show(
+                    this,
+                    mode,
+                    baseKey,
+                    currentSymbol,
+                    originalSymbol,
+                    userAdded,
+                    addedIndex,
+                    this::refresh,
+                    onDismiss);
+            return dialog != null;
+        }));
     }
 
     private int currentScrollY() {

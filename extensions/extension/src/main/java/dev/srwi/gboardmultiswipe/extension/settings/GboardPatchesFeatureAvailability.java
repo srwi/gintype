@@ -13,6 +13,8 @@ public final class GboardPatchesFeatureAvailability {
             "dev.srwi.gboardmultiswipe.feature.multiswipe";
     public static final String FEATURE_TYPING_EFFECTS =
             "dev.srwi.gboardmultiswipe.feature.typing_effects";
+    public static final String FEATURE_CUSTOM_HOLD_POPUPS =
+            "dev.srwi.gboardmultiswipe.feature.custom_hold_popups";
 
     private static final String TAG = "GboardPatches";
 
