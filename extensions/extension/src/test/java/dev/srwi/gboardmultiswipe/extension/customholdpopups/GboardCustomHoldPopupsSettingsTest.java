@@ -84,22 +84,23 @@ public class GboardCustomHoldPopupsSettingsTest {
     @Test
     public void testEligibleBaseKeyFilterExcludesFunctionKeysAndIncludesNormalKeys() {
         // Normal letters, digits, punctuation, and symbols are eligible
-        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("a", 'a'));
-        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("Z", 'Z'));
-        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("ä", -10000));
+        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("a", -10043)); // ALPHABET
+        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("Z", -10043)); // ALPHABET
+        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("ä", -10009)); // PLAIN_TEXT
         assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("5", '5'));
-        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString(".", '.'));
-        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString(",", ','));
-        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("?", '?'));
-        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("@", '@'));
-        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("€", -10000));
+        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString(".", 56));     // PERIOD
+        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString(",", 55));     // COMMA
+        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("?", -10009));
+        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("@", -10009));
+        assertTrue(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("€", -10027)); // SHORT_TEXT
 
         // Function and special keys are excluded
         assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString(" ", 62));     // Spacebar
         assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("a", 67));     // Backspace keyCode
         assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("a", 66));     // Enter keyCode
         assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("a", 59));     // Shift keyCode
-        assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("?123", -10000)); // Multi-char label
+        assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("?123", -10009)); // Multi-char label
+        assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("a", -10000)); // SWITCH_LANGUAGE
         assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("a", -10127)); // Negative IME action
         assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString("", 'a'));
         assertFalse(GboardCustomHoldPopupsRuntime.isEligibleBaseKeyString(null, 'a'));

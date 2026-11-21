@@ -710,8 +710,16 @@ public final class GboardCustomHoldPopupsRuntime {
             // KEYCODE_SPACE (62), KEYCODE_ENTER (66), KEYCODE_DEL (67), KEYCODE_SHIFT_LEFT/RIGHT (59/60)
             return false;
         }
-        // Exclude negative system/IME keyCodes except standard text commit codes (-10000, -10029, -10042)
-        if (keyCode < 0 && keyCode != -10000 && keyCode != -10029 && keyCode != -10042) {
+        // Exclude negative system/IME keyCodes except Gboard text-input keyCodes:
+        // -10043 = ALPHABET, -10009 = PLAIN_TEXT, -10027 = SHORT_TEXT,
+        // -10139 = ALPHABET_LONG_PRESS, -10142 = DEAD_KEY, -60001 = PLAIN_TEXT_MOZC_AS_IS
+        if (keyCode < 0
+                && keyCode != -10043
+                && keyCode != -10009
+                && keyCode != -10027
+                && keyCode != -10139
+                && keyCode != -10142
+                && keyCode != -60001) {
             return false;
         }
         int codePoints = text.codePointCount(0, text.length());
