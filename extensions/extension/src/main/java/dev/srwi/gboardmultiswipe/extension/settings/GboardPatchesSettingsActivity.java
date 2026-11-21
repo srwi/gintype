@@ -4587,21 +4587,74 @@ public final class GboardPatchesSettingsActivity extends Activity
 
     private View createCommandRow(GboardPatchesSettingsContract.CommandRow rowModel) {
         LinearLayout row = buildBaseRow();
-        addLeadingIcon(row, rowModel);
+        String leadingBadge = rowModel.getLeadingBadgeText();
+        TextView badgeView = null;
+        if (leadingBadge != null && !leadingBadge.isEmpty()) {
+            badgeView = buildLeadingKeyBadge(leadingBadge);
+            row.addView(badgeView);
+        } else {
+            addLeadingIcon(row, rowModel);
+        }
         LinearLayout textColumn = buildRowTextColumn(true);
         TextView titleView = buildRowTitle(rowModel.getTitle());
+        if (TextUtils.isEmpty(rowModel.getTitle())) {
+            titleView.setVisibility(View.GONE);
+        }
         TextView summaryView = buildRowSummary(rowModel.getSummary(), false);
         textColumn.addView(titleView);
         textColumn.addView(summaryView);
         addPreviewBelowSummary(textColumn, rowModel);
         row.addView(textColumn);
+        String trailingText = rowModel.getTrailingText();
+        TextView trailingView = null;
+        if (trailingText != null && !trailingText.isEmpty()) {
+            trailingView = new TextView(this);
+            trailingView.setText(trailingText);
+            trailingView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f);
+            trailingView.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            trailingView.setTextColor(primaryTextColor(rowModel.isEnabled()));
+            trailingView.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams trailingParams = trailingLayoutParams(dp(12));
+            trailingParams.gravity = Gravity.CENTER_VERTICAL;
+            row.addView(trailingView, trailingParams);
+        }
         bindActionRowState(row, titleView, summaryView, null, rowModel.isEnabled());
+        if (badgeView != null) {
+            badgeView.setAlpha(rowModel.isEnabled() ? 1f : DISABLED_CONTENT_ALPHA);
+        }
+        if (trailingView != null) {
+            trailingView.setTextColor(primaryTextColor(rowModel.isEnabled()));
+        }
         row.setOnClickListener(view -> {
             if (row.isEnabled()) {
                 runSafely("handle command row", rowModel.getAction());
             }
         });
         return row;
+    }
+
+    private TextView buildLeadingKeyBadge(String label) {
+        boolean nightMode = (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        TextView badge = new TextView(this);
+        badge.setText(label);
+        badge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f);
+        badge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        badge.setTextColor(palette.accent);
+        badge.setGravity(Gravity.CENTER);
+        badge.setMinWidth(dp(40));
+        badge.setMinHeight(dp(40));
+        badge.setPadding(dp(10), dp(4), dp(10), dp(4));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(blendAlpha(palette.accent, nightMode ? 0.20f : 0.14f));
+        bg.setCornerRadius(dp(12));
+        badge.setBackground(bg);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.gravity = Gravity.CENTER_VERTICAL;
+        params.rightMargin = dp(14);
+        badge.setLayoutParams(params);
+        return badge;
     }
 
     private View createDangerRow(GboardPatchesSettingsContract.DangerRow rowModel) {

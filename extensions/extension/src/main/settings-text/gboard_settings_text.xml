@@ -730,7 +730,7 @@
         <translation locale="en">Enable Custom Hold Popups</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_enabled_summary">
-        <translation locale="en">Show custom hold popup symbols, the pencil (✎) add option, and 2-second hold-to-edit on character, number, and punctuation keys</translation>
+        <translation locale="en">Show custom hold popup symbols, the edit icon, and 2-second hold-to-edit on character, number, and punctuation keys</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_hold_duration_title">
         <translation locale="en">Hold-to-edit duration</translation>
@@ -742,10 +742,10 @@
         <translation locale="en">No custom hold bindings yet</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_empty_summary">
-        <translation locale="en">Long-press any key on the keyboard and release on ✎ to add a new symbol, or hold stationary on a popup symbol for 2 seconds to edit it.</translation>
+        <translation locale="en">Long-press any key on the keyboard and release on the edit icon to add a new symbol, or hold stationary on a popup symbol for 2 seconds to edit it.</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_entry_modified_title">
-        <translation locale="en">Key &quot;%1$s&quot; → %2$s</translation>
+        <translation locale="en">Key &quot;%1$s&quot;: %2$s → %3$s</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_entry_modified_summary">
         <translation locale="en">Modified default symbol (original: %1$s) • Tap to edit or reset</translation>
@@ -760,7 +760,7 @@
         <translation locale="en">Add hold symbol for &quot;%1$s&quot;</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_dialog_add_subtitle">
-        <translation locale="en">Enter a character, symbol, emoji, or text snippet to add to the long-press popup of key &quot;%1$s&quot; across all keyboard languages.</translation>
+        <translation locale="en">Enter a character, symbol, emoji, or text snippet to add to the long-press popup of key &quot;%1$s&quot;.</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_dialog_edit_title">
         <translation locale="en">Edit hold symbol for &quot;%1$s&quot;</translation>

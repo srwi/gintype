@@ -1,9 +1,17 @@
 package dev.srwi.gboardmultiswipe.extension.customholdpopups;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
+import android.content.res.TypedArray;
+import android.graphics.Canvas;
+import android.graphics.ColorFilter;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
+import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
 import android.os.Build;
 import android.os.Handler;
@@ -15,6 +23,9 @@ import android.os.VibratorManager;
 import android.util.Log;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewGroupOverlay;
+import android.view.animation.LinearInterpolator;
 import android.view.inputmethod.InputConnection;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesFeatureAvailability;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsActivity;
@@ -22,6 +33,7 @@ import dev.srwi.gboardmultiswipe.extension.thicctopbar.ThiccTopBarGboardReflecto
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -97,6 +109,9 @@ public final class GboardCustomHoldPopupsRuntime {
         final String baseKey;
         Object currentSelectedKeyData;
         Runnable holdRunnable;
+        ValueAnimator countdownAnimator;
+        ViewGroupOverlay countdownOverlay;
+        HoldCountdownDrawable countdownDrawable;
 
         ActivePopupState(
                 Object touchActionBundle,
@@ -228,6 +243,7 @@ public final class GboardCustomHoldPopupsRuntime {
     private static volatile Field bundleActionDefField;         // Lqin.n : ActionDef
     private static volatile Field bundlePopupManagerField;      // Lqin.q : Lqsl
     private static volatile Method bundleClosePopupMethod;      // Lqin.C()V
+    private static volatile Field popupViewField;               // Lqsl.e : View
     private static volatile Field popupSelectedKeyDataField;    // Lqsl.f : Lqbc
     private static volatile Field popupContextField;            // Lqsl.a : Context
     private static volatile Field popupKeyboardViewField;       // Lqsl.r : SoftKeyboardView
@@ -502,6 +518,7 @@ public final class GboardCustomHoldPopupsRuntime {
         };
         state.holdRunnable = timerTask;
         postDelayedToMainThread(timerTask, holdDurationMs);
+        startCountdownIndicator(state, holdDurationMs);
     }
 
     private static void onHoldToEditTimerFired(
@@ -509,6 +526,7 @@ public final class GboardCustomHoldPopupsRuntime {
             Object expectedKeyData,
             PopupItemMeta meta) {
         try {
+            stopCountdownIndicator(state);
             Object popupManager = state.popupManager;
             if (popupManager == null) return;
             if (popupIsShowingMethod != null) {
@@ -604,9 +622,300 @@ public final class GboardCustomHoldPopupsRuntime {
     }
 
     private static void cancelStateTimerOnly(ActivePopupState state) {
-        if (state != null && state.holdRunnable != null) {
-            removeMainThreadCallbacks(state.holdRunnable);
-            state.holdRunnable = null;
+        if (state != null) {
+            if (state.holdRunnable != null) {
+                removeMainThreadCallbacks(state.holdRunnable);
+                state.holdRunnable = null;
+            }
+            stopCountdownIndicator(state);
+        }
+    }
+
+    private static void startCountdownIndicator(ActivePopupState state, int holdDurationMs) {
+        if (state == null || state.popupManager == null || popupViewField == null) {
+            return;
+        }
+        Runnable startAction = () -> {
+            if (state.holdRunnable == null) {
+                return;
+            }
+            try {
+                Object popupViewObj = popupViewField.get(state.popupManager);
+                if (!(popupViewObj instanceof View)) {
+                    return;
+                }
+                View popupView = (View) popupViewObj;
+                View rootView = popupView.getRootView();
+                if (!(rootView instanceof ViewGroup)) {
+                    return;
+                }
+                View targetView = findSelectedPopupItemView(popupView);
+                if (targetView == null) {
+                    targetView = popupView;
+                }
+
+                ViewGroup rootGroup = (ViewGroup) rootView;
+                ViewGroupOverlay overlay = rootGroup.getOverlay();
+                if (overlay == null) {
+                    return;
+                }
+
+                int startDelayMs = Math.min(600, Math.max(0, holdDurationMs - 300));
+                int animDurationMs = Math.max(1, holdDurationMs - startDelayMs);
+
+                float density = popupView.getResources().getDisplayMetrics().density;
+                int ringColor = resolveCountdownRingColor(popupView.getContext());
+                HoldCountdownDrawable drawable = new HoldCountdownDrawable(
+                        popupView, targetView, rootGroup, density, animDurationMs, ringColor);
+                drawable.setBounds(0, 0, rootGroup.getWidth(), rootGroup.getHeight());
+                overlay.add(drawable);
+
+                ValueAnimator animator = ValueAnimator.ofFloat(0f, 1f);
+                animator.setStartDelay(startDelayMs);
+                animator.setDuration(animDurationMs);
+                animator.setInterpolator(new LinearInterpolator());
+                animator.addUpdateListener(anim -> {
+                    Object val = anim.getAnimatedValue();
+                    if (val instanceof Float) {
+                        drawable.setFraction((Float) val);
+                    }
+                    if (rootGroup.getWidth() > 0 && rootGroup.getHeight() > 0) {
+                        drawable.setBounds(0, 0, rootGroup.getWidth(), rootGroup.getHeight());
+                    }
+                    drawable.invalidateSelf();
+                });
+
+                state.countdownOverlay = overlay;
+                state.countdownDrawable = drawable;
+                state.countdownAnimator = animator;
+                animator.start();
+            } catch (Throwable t) {
+                Log.w(TAG, "startCountdownIndicator failed", t);
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            startAction.run();
+        } else {
+            postToMainThread(startAction);
+        }
+    }
+
+    private static void stopCountdownIndicator(ActivePopupState state) {
+        if (state == null) return;
+        ValueAnimator animator = state.countdownAnimator;
+        ViewGroupOverlay overlay = state.countdownOverlay;
+        HoldCountdownDrawable drawable = state.countdownDrawable;
+        state.countdownAnimator = null;
+        state.countdownOverlay = null;
+        state.countdownDrawable = null;
+        if (animator == null && overlay == null && drawable == null) {
+            return;
+        }
+        Runnable stopAction = () -> {
+            if (animator != null) {
+                try {
+                    animator.cancel();
+                } catch (Throwable ignored) {
+                }
+            }
+            if (overlay != null && drawable != null) {
+                try {
+                    overlay.remove(drawable);
+                } catch (Throwable ignored) {
+                }
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            stopAction.run();
+        } else {
+            postToMainThread(stopAction);
+        }
+    }
+
+    private static View findSelectedPopupItemView(View popupView) {
+        if (popupView == null || popupView.getVisibility() != View.VISIBLE) {
+            return null;
+        }
+        ArrayDeque<View> queue = new ArrayDeque<View>();
+        queue.add(popupView);
+        while (!queue.isEmpty()) {
+            View current = queue.poll();
+            if (current == null || current.getVisibility() != View.VISIBLE) {
+                continue;
+            }
+            if (current != popupView && (current.isPressed() || current.isSelected())) {
+                return current;
+            }
+            if (current instanceof ViewGroup) {
+                ViewGroup vg = (ViewGroup) current;
+                for (int i = 0; i < vg.getChildCount(); i++) {
+                    queue.add(vg.getChildAt(i));
+                }
+            }
+        }
+        return popupView;
+    }
+
+    private static View findHighlightCircleView(View popupView, View itemView) {
+        if (popupView == null || itemView == null) {
+            return null;
+        }
+        int itemW = itemView.getWidth();
+        int itemH = itemView.getHeight();
+        if (itemW <= 0 || itemH <= 0) {
+            return null;
+        }
+        Class<?> cls = popupView.getClass();
+        for (String fieldName : new String[] { "f", "g" }) {
+            try {
+                Field f = findDeclaredFieldOrNull(cls, fieldName);
+                if (f == null) continue;
+                Object val = f.get(popupView);
+                if (val instanceof View) {
+                    View candidate = (View) val;
+                    if (candidate == popupView || candidate == itemView) continue;
+                    if (candidate.getVisibility() != View.VISIBLE) continue;
+                    int cw = candidate.getWidth();
+                    int ch = candidate.getHeight();
+                    if (cw > 0 && ch > 0
+                            && cw <= itemW * 1.25f
+                            && ch <= itemH * 1.25f) {
+                        return candidate;
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static int resolveCountdownRingColor(Context context) {
+        if (context == null) {
+            return 0xFF4285F4;
+        }
+        boolean nightMode = (context.getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                int resId = nightMode
+                        ? android.R.color.system_accent1_200
+                        : android.R.color.system_accent1_600;
+                return context.getColor(resId);
+            } catch (Throwable ignored) {
+            }
+        }
+        try {
+            TypedArray ta = context.obtainStyledAttributes(
+                    new int[] { android.R.attr.colorAccent });
+            try {
+                int accent = ta.getColor(0, 0);
+                if (accent != 0) {
+                    return accent;
+                }
+            } finally {
+                ta.recycle();
+            }
+        } catch (Throwable ignored) {
+        }
+        return nightMode ? 0xFFA8C7FA : 0xFF0B57D0;
+    }
+
+    private static final class HoldCountdownDrawable extends Drawable {
+        private static final int MAX_ALPHA = 230;
+        private static final float FADE_IN_MS = 150f;
+
+        private final View popupView;
+        private final View itemView;
+        private final View rootView;
+        private final int animDurationMs;
+        private View resolvedHighlightView;
+        private boolean highlightLookupDone = false;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final int[] targetLoc = new int[2];
+        private final int[] rootLoc = new int[2];
+        private volatile float fraction = 0f;
+
+        HoldCountdownDrawable(
+                View popupView,
+                View itemView,
+                View rootView,
+                float density,
+                int animDurationMs,
+                int ringColor) {
+            this.popupView = popupView;
+            this.itemView = itemView;
+            this.rootView = rootView;
+            this.animDurationMs = Math.max(1, animDurationMs);
+            this.paint.setStyle(Paint.Style.STROKE);
+            this.paint.setStrokeWidth(2.5f * density);
+            this.paint.setColor(ringColor);
+        }
+
+        void setFraction(float fraction) {
+            this.fraction = Math.max(0f, Math.min(1f, fraction));
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            if (fraction <= 0f) {
+                return;
+            }
+            if (!itemView.isAttachedToWindow() || !rootView.isAttachedToWindow()) {
+                return;
+            }
+            if (!highlightLookupDone && itemView.getWidth() > 0 && itemView.getHeight() > 0) {
+                highlightLookupDone = true;
+                resolvedHighlightView = findHighlightCircleView(popupView, itemView);
+            }
+            View measureView = (resolvedHighlightView != null
+                    && resolvedHighlightView.isAttachedToWindow()
+                    && resolvedHighlightView.getWidth() > 0
+                    && resolvedHighlightView.getHeight() > 0)
+                    ? resolvedHighlightView
+                    : itemView;
+            boolean exactHighlightBounds = measureView == resolvedHighlightView;
+
+            int w = measureView.getWidth();
+            int h = measureView.getHeight();
+            if (w <= 0 || h <= 0) {
+                return;
+            }
+            measureView.getLocationInWindow(targetLoc);
+            rootView.getLocationInWindow(rootLoc);
+
+            float centerX = (targetLoc[0] - rootLoc[0]) + (w * 0.5f);
+            float centerY = (targetLoc[1] - rootLoc[1]) + (h * 0.5f);
+
+            float targetRadius = exactHighlightBounds
+                    ? (Math.min(w, h) * 0.5f)
+                    : (Math.min(w, h) * 0.46f);
+            float startRadius = targetRadius * 1.85f;
+            float currentRadius = startRadius + (targetRadius - startRadius) * fraction;
+
+            float elapsedMs = fraction * animDurationMs;
+            float alphaFactor = Math.min(1f, elapsedMs / FADE_IN_MS);
+            int alpha = Math.round(MAX_ALPHA * alphaFactor);
+            if (alpha <= 0) {
+                return;
+            }
+            paint.setAlpha(alpha);
+            canvas.drawCircle(centerX, centerY, currentRadius, paint);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+            paint.setAlpha(alpha);
+        }
+
+        @Override
+        public void setColorFilter(ColorFilter colorFilter) {
+            paint.setColorFilter(colorFilter);
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public int getOpacity() {
+            return PixelFormat.TRANSLUCENT;
         }
     }
 
@@ -1447,6 +1756,7 @@ public final class GboardCustomHoldPopupsRuntime {
             if (popupManagerObj != null && popupSelectedKeyDataField == null) {
                 Class<?> pmCls = popupManagerObj.getClass();
                 popupContextField = findDeclaredFieldOrNull(pmCls, "a");
+                popupViewField = findDeclaredFieldOrNull(pmCls, "e");
                 popupSelectedKeyDataField = findDeclaredFieldOrNull(pmCls, "f");
                 popupKeyboardViewField = findDeclaredFieldOrNull(pmCls, "r");
                 try {

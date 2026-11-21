@@ -4,7 +4,14 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.TypedArray;
+import android.graphics.drawable.Drawable;
 import android.util.Log;
+import android.util.TypedValue;
+import android.view.ViewGroup;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import dev.srwi.gboardmultiswipe.extension.R;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesFeatureAvailability;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesIcons;
@@ -12,7 +19,6 @@ import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettings;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsContract;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardSettingsText;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -146,46 +152,57 @@ public final class GboardCustomHoldPopupsSettingsFeature
                     () -> showHoldDurationSliderDialog(host, preferences, holdDurationMs)));
 
             // 2. Custom Hold Bindings list section
-            List<GboardPatchesSettingsContract.Row> customRows =
-                    new ArrayList<GboardPatchesSettingsContract.Row>();
+            List<GboardPatchesSettingsContract.Section> sections =
+                    new ArrayList<GboardPatchesSettingsContract.Section>(3);
+            sections.add(new GboardPatchesSettingsContract.Section(sectionGeneral, generalRows));
+
             if (entries.isEmpty()) {
-                customRows.add(new GboardPatchesSettingsContract.DetailRow(
-                        emptyTitle,
-                        emptySummary,
-                        masterEnabled));
+                sections.add(new GboardPatchesSettingsContract.Section(
+                        sectionCustomizations,
+                        null,
+                        GboardPatchesSettingsContract.SectionStyle.DEFAULT,
+                        Collections.singletonList(new GboardPatchesSettingsContract.CustomViewRow(
+                                viewHost -> createEmptyInfoFooterView(
+                                        viewHost.getContext(), emptyTitle, emptySummary)))));
             } else {
+                List<GboardPatchesSettingsContract.Row> customRows =
+                        new ArrayList<GboardPatchesSettingsContract.Row>(entries.size());
                 for (GboardCustomHoldPopupsSettings.CustomEntry entry : entries) {
                     String displayKey = formatDisplayKey(entry.baseKey);
-                    String rowTitle = entry.userAdded
-                            ? String.format(Locale.US, entryAddedTitleTemplate,
-                                    displayKey, entry.replacementSymbol)
-                            : String.format(Locale.US, entryModifiedTitleTemplate,
-                                    displayKey, entry.replacementSymbol);
-                    String rowSummary = entry.userAdded
-                            ? entryAddedSummary
-                            : String.format(Locale.US, entryModifiedSummaryTemplate,
-                                    entry.originalSymbol);
+                    String changeText = entry.userAdded
+                            ? entry.replacementSymbol
+                            : (entry.originalSymbol + " → " + entry.replacementSymbol);
                     customRows.add(new GboardPatchesSettingsContract.CommandRow(
-                            rowTitle,
-                            rowSummary,
+                            "",
+                            null,
                             masterEnabled,
-                            () -> showEntryEditorDialog(host, entry)));
+                            () -> showEntryEditorDialog(host, entry),
+                            null,
+                            displayKey,
+                            changeText));
                 }
-            }
+                sections.add(new GboardPatchesSettingsContract.Section(
+                        sectionCustomizations, customRows));
 
-            // 3. Reset all custom bindings
-            List<GboardPatchesSettingsContract.Row> resetRows = Collections.singletonList(
-                    new GboardPatchesSettingsContract.DangerRow(
-                            resetTitle,
-                            resetSummary,
-                            !entries.isEmpty(),
-                            () -> {
-                                GboardCustomHoldPopupsSettings.resetAllCustomBindings(preferences);
-                                GboardPatchesSettingsContract.refresh(host);
-                                GboardPatchesSettingsContract.showMessage(host, resetDone);
-                            },
-                            resetConfirmTitle,
-                            resetConfirmMessage));
+                // 3. Reset all custom bindings (only shown when custom bindings exist)
+                List<GboardPatchesSettingsContract.Row> resetRows = Collections.singletonList(
+                        new GboardPatchesSettingsContract.DangerRow(
+                                resetTitle,
+                                resetSummary,
+                                true,
+                                () -> {
+                                    GboardCustomHoldPopupsSettings.resetAllCustomBindings(preferences);
+                                    GboardPatchesSettingsContract.refresh(host);
+                                    GboardPatchesSettingsContract.showMessage(host, resetDone);
+                                },
+                                resetConfirmTitle,
+                                resetConfirmMessage));
+                sections.add(new GboardPatchesSettingsContract.Section(
+                        null,
+                        null,
+                        GboardPatchesSettingsContract.SectionStyle.ADVANCED,
+                        resetRows));
+            }
 
             return new GboardPatchesSettingsContract.Screen(
                     title,
@@ -193,15 +210,7 @@ public final class GboardCustomHoldPopupsSettingsFeature
                     title,
                     summary,
                     Collections.emptyList(),
-                    Arrays.asList(
-                            new GboardPatchesSettingsContract.Section(sectionGeneral, generalRows),
-                            new GboardPatchesSettingsContract.Section(
-                                    sectionCustomizations, customRows),
-                            new GboardPatchesSettingsContract.Section(
-                                    null,
-                                    null,
-                                    GboardPatchesSettingsContract.SectionStyle.ADVANCED,
-                                    resetRows)),
+                    sections,
                     GboardPatchesSettingsContract.RefreshPolicy.none(),
                     GboardPatchesSettingsContract.PanelStyle.FLAT);
         } catch (Throwable throwable) {
@@ -305,6 +314,64 @@ public final class GboardCustomHoldPopupsSettingsFeature
                 errorSummary,
                 statusBlocks,
                 Collections.emptyList());
+    }
+
+    private static LinearLayout createEmptyInfoFooterView(
+            Context context, String emptyTitleText, String emptySummaryText) {
+        float density = context.getResources().getDisplayMetrics().density;
+        int dp16 = Math.round(16f * density);
+        int dp12 = Math.round(12f * density);
+        int dp8 = Math.round(8f * density);
+        int dp20 = Math.round(20f * density);
+
+        int secondaryColor = 0xFF757575;
+        TypedArray ta = context.obtainStyledAttributes(
+                new int[] { android.R.attr.textColorSecondary });
+        try {
+            secondaryColor = ta.getColor(0, secondaryColor);
+        } finally {
+            ta.recycle();
+        }
+
+        LinearLayout container = new LinearLayout(context);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        container.setPadding(dp16, dp8, dp16, dp12);
+
+        TextView emptyTitleView = new TextView(context);
+        emptyTitleView.setText(emptyTitleText);
+        emptyTitleView.setTextColor(secondaryColor);
+        emptyTitleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        titleParams.bottomMargin = dp12;
+        emptyTitleView.setLayoutParams(titleParams);
+        container.addView(emptyTitleView);
+
+        Drawable infoIcon = GboardPatchesIcons.create(
+                GboardPatchesIcons.INFO, secondaryColor, density);
+        if (infoIcon != null) {
+            ImageView iconView = new ImageView(context);
+            iconView.setImageDrawable(infoIcon);
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp20, dp20);
+            iconParams.bottomMargin = dp8;
+            iconView.setLayoutParams(iconParams);
+            container.addView(iconView);
+        }
+
+        TextView summaryView = new TextView(context);
+        summaryView.setText(emptySummaryText);
+        summaryView.setTextColor(secondaryColor);
+        summaryView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        summaryView.setLineSpacing(0f, 1.15f);
+        summaryView.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        container.addView(summaryView);
+        return container;
     }
 
     private static String text(Context context, int resourceId) {

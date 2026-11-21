@@ -1033,19 +1033,36 @@ public final class GboardPatchesSettingsContract {
 
     public static class CommandRow extends Row {
         private final Runnable action;
+        private final String leadingBadgeText;
+        private final String trailingText;
 
         public CommandRow(CharSequence title, String summary, boolean enabled, Runnable action) {
-            this(title, summary, enabled, action, null);
+            this(title, summary, enabled, action, null, null, null);
         }
 
         public CommandRow(CharSequence title, String summary, boolean enabled, Runnable action,
                 PreviewSpec previewSpec) {
+            this(title, summary, enabled, action, previewSpec, null, null);
+        }
+
+        public CommandRow(CharSequence title, String summary, boolean enabled, Runnable action,
+                PreviewSpec previewSpec, String leadingBadgeText, String trailingText) {
             super(title, summary, enabled, previewSpec);
             this.action = action;
+            this.leadingBadgeText = leadingBadgeText;
+            this.trailingText = trailingText;
         }
 
         public Runnable getAction() {
             return action;
+        }
+
+        public String getLeadingBadgeText() {
+            return leadingBadgeText;
+        }
+
+        public String getTrailingText() {
+            return trailingText;
         }
     }
 
