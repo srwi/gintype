@@ -56,7 +56,7 @@ public final class GboardCustomHoldPopupsRuntime {
     private static final String TAG = "GboardCustomHoldPopups";
 
     public static final int PENCIL_SENTINEL_KEY_CODE = -777777;
-    public static final int DEFAULT_POPUP_LAYOUT_THEME_ATTR = 0x7f040271; // 2130969201
+    public static final int DEFAULT_POPUP_LAYOUT_THEME_ATTR = 0x7f040280;
     private static final long SETTINGS_REFRESH_INTERVAL_MS = 400L;
 
     /**
@@ -235,7 +235,6 @@ public final class GboardCustomHoldPopupsRuntime {
     private static volatile Map<String, GboardCustomHoldPopupsSettings.KeyHoldRules> cachedRules =
             Collections.emptyMap();
     private static volatile long lastSettingsReadMs = 0L;
-    private static volatile int observedPopupLayoutId = DEFAULT_POPUP_LAYOUT_THEME_ATTR;
     private static volatile boolean refreshingKeyboards = false;
 
     private GboardCustomHoldPopupsRuntime() {
@@ -659,10 +658,6 @@ public final class GboardCustomHoldPopupsRuntime {
             // 2. If the key already has a LONG_PRESS ActionDef, verify it is not an icon-based
             // settings/IME switcher popup or special action popup.
             if (longPressActionDef != null) {
-                int popupLayout = actionDefPopupLayoutField.getInt(longPressActionDef);
-                if (popupLayout != 0) {
-                    observedPopupLayoutId = popupLayout;
-                }
                 int[] popupIcons = (int[]) actionDefPopupIconsField.get(longPressActionDef);
                 if (popupIcons != null) {
                     for (int iconId : popupIcons) {
@@ -890,7 +885,7 @@ public final class GboardCustomHoldPopupsRuntime {
         int popupLayoutId = existingLongPressDef != null
                 && actionDefPopupLayoutField.getInt(existingLongPressDef) != 0
                 ? actionDefPopupLayoutField.getInt(existingLongPressDef)
-                : observedPopupLayoutId;
+                : DEFAULT_POPUP_LAYOUT_THEME_ATTR;
         boolean alwaysShowPopup = true;
         boolean playMediaEffect = existingLongPressDef == null
                 || actionDefPlayMediaField.getBoolean(existingLongPressDef);
