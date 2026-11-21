@@ -38,6 +38,8 @@ public final class GboardCustomHoldPopupsSettingsFeature
     private final String sectionCustomizations;
     private final String enabledTitle;
     private final String enabledSummary;
+    private final String lockKeysTitle;
+    private final String lockKeysSummary;
     private final String emptyTitle;
     private final String emptySummary;
     private final String resetTitle;
@@ -56,6 +58,8 @@ public final class GboardCustomHoldPopupsSettingsFeature
                 text(context, R.string.gboard_patches_custom_hold_popups_section_customizations);
         enabledTitle = text(context, R.string.gboard_patches_custom_hold_popups_enabled_title);
         enabledSummary = text(context, R.string.gboard_patches_custom_hold_popups_enabled_summary);
+        lockKeysTitle = text(context, R.string.gboard_patches_custom_hold_popups_lock_keys_title);
+        lockKeysSummary = text(context, R.string.gboard_patches_custom_hold_popups_lock_keys_summary);
         emptyTitle = text(context, R.string.gboard_patches_custom_hold_popups_empty_title);
         emptySummary = text(context, R.string.gboard_patches_custom_hold_popups_empty_summary);
         resetTitle = text(context, R.string.gboard_patches_custom_hold_popups_reset_title);
@@ -110,18 +114,27 @@ public final class GboardCustomHoldPopupsSettingsFeature
             SharedPreferences preferences = GboardPatchesSettings.preferences(host.getContext());
             GboardCustomHoldPopupsSettings.ensureDefaults(preferences);
             boolean masterEnabled = GboardCustomHoldPopupsSettings.readEnabled(preferences);
+            boolean lockKeys = GboardCustomHoldPopupsSettings.readLockKeys(preferences);
             List<GboardCustomHoldPopupsSettings.CustomEntry> entries =
                     GboardCustomHoldPopupsSettings.listAllCustomEntries(preferences);
 
-            // 1. General section (Master switch)
-            List<GboardPatchesSettingsContract.Row> generalRows = Collections.singletonList(
-                    new GboardPatchesSettingsContract.SwitchRow(
-                            enabledTitle,
-                            enabledSummary,
-                            true,
-                            masterEnabled,
-                            checked -> saveBoolAndRefresh(host,
-                                    GboardCustomHoldPopupsSettings.writeEnabled(preferences, checked))));
+            // 1. General section (Master switch + Lock keys)
+            List<GboardPatchesSettingsContract.Row> generalRows =
+                    new ArrayList<GboardPatchesSettingsContract.Row>(2);
+            generalRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    enabledTitle,
+                    enabledSummary,
+                    true,
+                    masterEnabled,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardCustomHoldPopupsSettings.writeEnabled(preferences, checked))));
+            generalRows.add(new GboardPatchesSettingsContract.SwitchRow(
+                    lockKeysTitle,
+                    lockKeysSummary,
+                    masterEnabled,
+                    lockKeys,
+                    checked -> saveBoolAndRefresh(host,
+                            GboardCustomHoldPopupsSettings.writeLockKeys(preferences, checked))));
 
             // 2. Custom Hold Bindings list section
             List<GboardPatchesSettingsContract.Section> sections =

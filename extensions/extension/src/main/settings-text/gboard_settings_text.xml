@@ -732,6 +732,12 @@
     <string name="gboard_patches_custom_hold_popups_enabled_summary">
         <translation locale="en">Add or edit symbols when long-pressing keys on the keyboard</translation>
         </string>
+    <string name="gboard_patches_custom_hold_popups_lock_keys_title">
+        <translation locale="en">Lock keys</translation>
+        </string>
+    <string name="gboard_patches_custom_hold_popups_lock_keys_summary">
+        <translation locale="en">Hide the edit icon and disable hold-to-edit on the keyboard to prevent accidental changes</translation>
+        </string>
     <string name="gboard_patches_custom_hold_popups_empty_title">
         <translation locale="en">No custom hold bindings yet</translation>
         </string>

@@ -17,12 +17,14 @@ import java.util.Map;
 public final class GboardCustomHoldPopupsSettings {
 
     public static final String PREF_KEY_ENABLED = "pref_custom_hold_popups_enabled";
+    public static final String PREF_KEY_LOCK_KEYS = "pref_custom_hold_popups_lock_keys";
     public static final String PREF_KEY_HOLD_DURATION_MS =
             "pref_custom_hold_popups_hold_duration_ms";
     public static final String PREF_KEY_BINDINGS_JSON =
             "pref_custom_hold_popups_bindings_json";
 
     public static final boolean DEFAULT_ENABLED = true;
+    public static final boolean DEFAULT_LOCK_KEYS = false;
 
     public static final int MIN_HOLD_DURATION_MS = 1000;
     public static final int MAX_HOLD_DURATION_MS = 4000;
@@ -147,6 +149,8 @@ public final class GboardCustomHoldPopupsSettings {
     public static void ensureDefaults(SharedPreferences preferences) {
         GboardBooleanFlagSettings.ensureDefault(
                 preferences, PREF_KEY_ENABLED, DEFAULT_ENABLED);
+        GboardBooleanFlagSettings.ensureDefault(
+                preferences, PREF_KEY_LOCK_KEYS, DEFAULT_LOCK_KEYS);
         if (preferences == null) return;
         SharedPreferences.Editor editor = null;
         if (!preferences.contains(PREF_KEY_HOLD_DURATION_MS)) {
@@ -178,6 +182,26 @@ public final class GboardCustomHoldPopupsSettings {
     public static boolean writeEnabled(SharedPreferences preferences, boolean enabled) {
         boolean ok = GboardBooleanFlagSettings.writeEnabled(
                 preferences, PREF_KEY_ENABLED, enabled);
+        GboardCustomHoldPopupsRuntime.invalidateAndRefreshActiveKeyboards();
+        return ok;
+    }
+
+    public static boolean readLockKeys(Context context) {
+        try {
+            return readLockKeys(resolvePreferences(context));
+        } catch (Throwable ignored) {
+            return DEFAULT_LOCK_KEYS;
+        }
+    }
+
+    public static boolean readLockKeys(SharedPreferences preferences) {
+        return GboardBooleanFlagSettings.readEnabled(
+                preferences, PREF_KEY_LOCK_KEYS, DEFAULT_LOCK_KEYS);
+    }
+
+    public static boolean writeLockKeys(SharedPreferences preferences, boolean lockKeys) {
+        boolean ok = GboardBooleanFlagSettings.writeEnabled(
+                preferences, PREF_KEY_LOCK_KEYS, lockKeys);
         GboardCustomHoldPopupsRuntime.invalidateAndRefreshActiveKeyboards();
         return ok;
     }

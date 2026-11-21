@@ -253,6 +253,7 @@ public final class GboardCustomHoldPopupsRuntime {
     private static volatile Context cachedContext;
     private static volatile int cachedEditIconResId = -1;
     private static volatile boolean cachedEnabled = GboardCustomHoldPopupsSettings.DEFAULT_ENABLED;
+    private static volatile boolean cachedLockKeys = GboardCustomHoldPopupsSettings.DEFAULT_LOCK_KEYS;
     private static volatile int cachedHoldDurationMs =
             GboardCustomHoldPopupsSettings.DEFAULT_HOLD_DURATION_MS;
     private static volatile Map<String, GboardCustomHoldPopupsSettings.KeyHoldRules> cachedRules =
@@ -285,6 +286,7 @@ public final class GboardCustomHoldPopupsRuntime {
         }
         SharedPreferences prefs = GboardCustomHoldPopupsSettings.resolvePreferences(ctx);
         cachedEnabled = GboardCustomHoldPopupsSettings.readEnabled(prefs);
+        cachedLockKeys = GboardCustomHoldPopupsSettings.readLockKeys(prefs);
         cachedHoldDurationMs = GboardCustomHoldPopupsSettings.readHoldDurationMs(prefs);
         cachedRules = GboardCustomHoldPopupsSettings.readAllRules(prefs);
         lastSettingsReadMs = now;
@@ -494,7 +496,7 @@ public final class GboardCustomHoldPopupsRuntime {
             Object selectedKeyData) {
         cancelStateTimerOnly(state);
         state.currentSelectedKeyData = selectedKeyData;
-        if (selectedKeyData == null) {
+        if (selectedKeyData == null || cachedLockKeys) {
             return;
         }
         PopupItemMeta meta = resolvePopupItemMeta(state.baseKey, selectedKeyData);
@@ -1186,29 +1188,38 @@ public final class GboardCustomHoldPopupsRuntime {
             newPopupLabels.add(displayAdded);
         }
 
-        // 3. Trailing Edit/Add option to add a new symbol
-        Object pencilKd = createKeyData(
-                PENCIL_SENTINEL_KEY_CODE,
-                commitIntention,
-                GboardCustomHoldPopupsSettings.PENCIL_SYMBOL);
-        KEY_DATA_META.put(
-                pencilKd,
-                new PopupItemMeta(
-                        normalizedBaseKey,
-                        GboardCustomHoldPopupsSettings.PENCIL_SYMBOL,
-                        "",
-                        false,
-                        -1,
-                        true));
-        newKeyDatas.add(pencilKd);
+        // 3. Trailing Edit/Add option to add a new symbol (unless keys are locked)
+        boolean includeEditIcon = !cachedLockKeys;
+        if (includeEditIcon) {
+            Object pencilKd = createKeyData(
+                    PENCIL_SENTINEL_KEY_CODE,
+                    commitIntention,
+                    GboardCustomHoldPopupsSettings.PENCIL_SYMBOL);
+            KEY_DATA_META.put(
+                    pencilKd,
+                    new PopupItemMeta(
+                            normalizedBaseKey,
+                            GboardCustomHoldPopupsSettings.PENCIL_SYMBOL,
+                            "",
+                            false,
+                            -1,
+                            true));
+            newKeyDatas.add(pencilKd);
+        }
+
+        if (newKeyDatas.isEmpty()) {
+            return originalSoftKeyDef;
+        }
 
         int itemCount = newKeyDatas.size();
         int[] newPopupIcons = new int[itemCount];
-        int editIconResId = resolveEditIconResId(cachedContext);
-        if (editIconResId != 0) {
-            newPopupIcons[itemCount - 1] = editIconResId;
-        } else {
-            newPopupLabels.add(GboardCustomHoldPopupsSettings.PENCIL_SYMBOL);
+        if (includeEditIcon) {
+            int editIconResId = resolveEditIconResId(cachedContext);
+            if (editIconResId != 0) {
+                newPopupIcons[itemCount - 1] = editIconResId;
+            } else {
+                newPopupLabels.add(GboardCustomHoldPopupsSettings.PENCIL_SYMBOL);
+            }
         }
         Object keyDatasImmutable = toImmutableList(newKeyDatas.toArray(new Object[0]));
         Object popupLabelsImmutable = toImmutableList(newPopupLabels.toArray(new Object[0]));
