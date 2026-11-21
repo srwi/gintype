@@ -501,11 +501,7 @@ public final class GboardCustomHoldPopupsRuntime {
         if (meta == null || meta.pencilAddOption) {
             return;
         }
-        int holdDurationMs = Math.max(
-                GboardCustomHoldPopupsSettings.MIN_HOLD_DURATION_MS,
-                Math.min(
-                        GboardCustomHoldPopupsSettings.MAX_HOLD_DURATION_MS,
-                        cachedHoldDurationMs));
+        int holdDurationMs = GboardCustomHoldPopupsSettings.DEFAULT_HOLD_DURATION_MS;
         final Object expectedKeyData = selectedKeyData;
         final PopupItemMeta targetMeta = meta;
         Runnable timerTask = new Runnable() {

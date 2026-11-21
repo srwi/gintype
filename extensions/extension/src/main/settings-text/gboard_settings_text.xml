@@ -718,7 +718,7 @@
         <translation locale="en">Custom Hold Popups</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_summary">
-        <translation locale="en">Edit and add custom characters, symbols, emojis, and text snippets to key long-press hold popups across all keyboard languages.</translation>
+        <translation locale="en">Customize or add characters, symbols, emojis, and text snippets to long-press popups</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_section_general">
         <translation locale="en">General</translation>
@@ -730,19 +730,13 @@
         <translation locale="en">Enable Custom Hold Popups</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_enabled_summary">
-        <translation locale="en">Show custom hold popup symbols, the edit icon, and 2-second hold-to-edit on character, number, and punctuation keys</translation>
-        </string>
-    <string name="gboard_patches_custom_hold_popups_hold_duration_title">
-        <translation locale="en">Hold-to-edit duration</translation>
-        </string>
-    <string name="gboard_patches_custom_hold_popups_hold_duration_summary">
-        <translation locale="en">How long to hold stationary on an open popup symbol to edit it directly from the keyboard</translation>
+        <translation locale="en">Add or edit symbols when long-pressing keys on the keyboard</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_empty_title">
         <translation locale="en">No custom hold bindings yet</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_empty_summary">
-        <translation locale="en">Long-press any key on the keyboard and release on the edit icon to add a new symbol, or hold stationary on a popup symbol for 2 seconds to edit it.</translation>
+        <translation locale="en">Long-press any key and release on the edit icon to add a symbol, or hold on an existing popup symbol for 2 seconds to edit it.</translation>
         </string>
     <string name="gboard_patches_custom_hold_popups_entry_modified_title">
         <translation locale="en">Key &quot;%1$s&quot;: %2$s → %3$s</translation>

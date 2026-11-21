@@ -38,15 +38,8 @@ public final class GboardCustomHoldPopupsSettingsFeature
     private final String sectionCustomizations;
     private final String enabledTitle;
     private final String enabledSummary;
-    private final String holdDurationTitle;
-    private final String holdDurationSummary;
     private final String emptyTitle;
     private final String emptySummary;
-    private final String entryModifiedTitleTemplate;
-    private final String entryModifiedSummaryTemplate;
-    private final String entryAddedTitleTemplate;
-    private final String entryAddedSummary;
-    private final String defaultValueTemplate;
     private final String resetTitle;
     private final String resetSummary;
     private final String resetConfirmTitle;
@@ -63,21 +56,8 @@ public final class GboardCustomHoldPopupsSettingsFeature
                 text(context, R.string.gboard_patches_custom_hold_popups_section_customizations);
         enabledTitle = text(context, R.string.gboard_patches_custom_hold_popups_enabled_title);
         enabledSummary = text(context, R.string.gboard_patches_custom_hold_popups_enabled_summary);
-        holdDurationTitle =
-                text(context, R.string.gboard_patches_custom_hold_popups_hold_duration_title);
-        holdDurationSummary =
-                text(context, R.string.gboard_patches_custom_hold_popups_hold_duration_summary);
         emptyTitle = text(context, R.string.gboard_patches_custom_hold_popups_empty_title);
         emptySummary = text(context, R.string.gboard_patches_custom_hold_popups_empty_summary);
-        entryModifiedTitleTemplate =
-                text(context, R.string.gboard_patches_custom_hold_popups_entry_modified_title);
-        entryModifiedSummaryTemplate =
-                text(context, R.string.gboard_patches_custom_hold_popups_entry_modified_summary);
-        entryAddedTitleTemplate =
-                text(context, R.string.gboard_patches_custom_hold_popups_entry_added_title);
-        entryAddedSummary =
-                text(context, R.string.gboard_patches_custom_hold_popups_entry_added_summary);
-        defaultValueTemplate = text(context, R.string.gboard_patches_multiswipe_value_default);
         resetTitle = text(context, R.string.gboard_patches_custom_hold_popups_reset_title);
         resetSummary = text(context, R.string.gboard_patches_custom_hold_popups_reset_summary);
         resetConfirmTitle =
@@ -130,26 +110,18 @@ public final class GboardCustomHoldPopupsSettingsFeature
             SharedPreferences preferences = GboardPatchesSettings.preferences(host.getContext());
             GboardCustomHoldPopupsSettings.ensureDefaults(preferences);
             boolean masterEnabled = GboardCustomHoldPopupsSettings.readEnabled(preferences);
-            int holdDurationMs = GboardCustomHoldPopupsSettings.readHoldDurationMs(preferences);
             List<GboardCustomHoldPopupsSettings.CustomEntry> entries =
                     GboardCustomHoldPopupsSettings.listAllCustomEntries(preferences);
 
-            // 1. General section (Master switch + hold duration slider)
-            List<GboardPatchesSettingsContract.Row> generalRows =
-                    new ArrayList<GboardPatchesSettingsContract.Row>(2);
-            generalRows.add(new GboardPatchesSettingsContract.SwitchRow(
-                    enabledTitle,
-                    enabledSummary,
-                    true,
-                    masterEnabled,
-                    checked -> saveBoolAndRefresh(host,
-                            GboardCustomHoldPopupsSettings.writeEnabled(preferences, checked))));
-            generalRows.add(new GboardPatchesSettingsContract.SelectorRow(
-                    holdDurationTitle,
-                    holdDurationSummary,
-                    formatDurationMs(holdDurationMs),
-                    masterEnabled,
-                    () -> showHoldDurationSliderDialog(host, preferences, holdDurationMs)));
+            // 1. General section (Master switch)
+            List<GboardPatchesSettingsContract.Row> generalRows = Collections.singletonList(
+                    new GboardPatchesSettingsContract.SwitchRow(
+                            enabledTitle,
+                            enabledSummary,
+                            true,
+                            masterEnabled,
+                            checked -> saveBoolAndRefresh(host,
+                                    GboardCustomHoldPopupsSettings.writeEnabled(preferences, checked))));
 
             // 2. Custom Hold Bindings list section
             List<GboardPatchesSettingsContract.Section> sections =
@@ -242,44 +214,6 @@ public final class GboardCustomHoldPopupsSettingsFeature
                     onDismiss);
             return dialog != null;
         });
-    }
-
-    private void showHoldDurationSliderDialog(
-            GboardPatchesSettingsContract.FeatureHost host,
-            SharedPreferences preferences,
-            int currentValueMs) {
-        int min = GboardCustomHoldPopupsSettings.MIN_HOLD_DURATION_MS;
-        int max = GboardCustomHoldPopupsSettings.MAX_HOLD_DURATION_MS;
-        int step = GboardCustomHoldPopupsSettings.HOLD_DURATION_STEP_MS;
-        int def = GboardCustomHoldPopupsSettings.DEFAULT_HOLD_DURATION_MS;
-        int totalSteps = Math.max(1, (max - min) / step);
-        int initialProgress = Math.max(0, Math.min(totalSteps, Math.round((currentValueMs - min) / (float) step)));
-        int defaultProgress = Math.max(0, Math.min(totalSteps, Math.round((def - min) / (float) step)));
-        GboardPatchesSettingsContract.showSliderDialog(
-                host,
-                holdDurationTitle,
-                holdDurationSummary,
-                totalSteps,
-                initialProgress,
-                defaultProgress,
-                min + " ms",
-                max + " ms",
-                progress -> formatDurationMs(min + progress * step),
-                progress -> {
-                    int val = min + progress * step;
-                    if (!GboardCustomHoldPopupsSettings.writeHoldDurationMs(preferences, val)) {
-                        throw new IllegalStateException("Unable to persist Custom Hold Popups setting");
-                    }
-                    GboardPatchesSettingsContract.refresh(host);
-                });
-    }
-
-    private String formatDurationMs(int valueMs) {
-        String formatted = valueMs + " ms";
-        if (valueMs == GboardCustomHoldPopupsSettings.DEFAULT_HOLD_DURATION_MS) {
-            return String.format(Locale.US, defaultValueTemplate, formatted);
-        }
-        return formatted;
     }
 
     private static String formatDisplayKey(String normalizedBaseKey) {
