@@ -74,7 +74,7 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
         if (existingPopupShownHooks == 0) {
             val popupShownInvoke = RuntimeCallEmitter.invoke(
                 RuntimeCallId.CUSTOM_HOLD_POPUPS_RUNTIME_ON_POPUP_SHOWN,
-                "p0 .. p0",
+                "v0",
             )
             val instructions = showPopupMethod.implementation?.instructions?.toList()
                 ?: throw PatchException("No implementation in $TOUCH_ACTION_BUNDLE_CLASS->D(J)V")
@@ -159,8 +159,8 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
                 0,
                 """
                     $interceptInvoke
-                    move-result v0
-                    if-eqz v0, :custom_hold_popups_allow_dispatch
+                    move-result v8
+                    if-eqz v8, :custom_hold_popups_allow_dispatch
                     return-void
                     :custom_hold_popups_allow_dispatch
                     nop
