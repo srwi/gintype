@@ -79,9 +79,16 @@ public class JumpToEndArrowView extends FrameLayout {
         this.jumpListener = listener;
     }
 
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        updateIconColor();
+        post(this::updateIconColor);
+    }
+
     public void updateIconColor() {
         boolean dark = ThiccTopBarGboardReflector.isKeyboardDark(this);
-        int accentColor = ThiccTopBarGboardReflector.resolveNormalAccentColor(getContext(), dark);
+        int accentColor = ThiccTopBarGboardReflector.resolveNormalAccentColor(this, getContext(), dark);
         iconView.setImageDrawable(new ArrowForwardDrawable(accentColor));
     }
 

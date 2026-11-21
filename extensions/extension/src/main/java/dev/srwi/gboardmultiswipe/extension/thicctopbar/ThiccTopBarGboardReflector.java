@@ -15,6 +15,7 @@ import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputConnection;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.Locale;
@@ -111,6 +112,8 @@ public final class ThiccTopBarGboardReflector {
 
     private static volatile int stockTrailAccentRgb = -1;
     private static volatile int stockTrailNightMask = -1;
+    private static volatile int cachedKeyboardThemeAccentRgb = -1;
+    private static volatile int imeActionKeyId = 0;
     private static volatile Boolean lastDetectedKeyboardDark = null;
 
     private ThiccTopBarGboardReflector() {}
@@ -156,6 +159,21 @@ public final class ThiccTopBarGboardReflector {
     }
 
     /**
+     * Records a live keyboard theme accent RGB (e.g. from the Enter key or popup highlight)
+     * so views without direct keyboard hierarchy access can still match the active theme.
+     */
+    public static void recordKeyboardThemeAccent(int rgb) {
+        if (rgb < 0) return;
+        cachedKeyboardThemeAccentRgb = rgb & 0x00ffffff;
+    }
+
+    static void resetAccentCacheForTesting() {
+        cachedKeyboardThemeAccentRgb = -1;
+        stockTrailAccentRgb = -1;
+        stockTrailNightMask = -1;
+    }
+
+    /**
      * Returns an appropriate shading RGB (0xRRGGBB) for the spacebar timer indicator:
      * pure white on dark/colored spacebars (to lighten them in their own hue), or the
      * active theme accent color on bright/light-theme spacebars.
@@ -166,12 +184,12 @@ public final class ThiccTopBarGboardReflector {
             if (bgRgb >= 0) {
                 boolean lightSpacebar = perceivedLuminance(bgRgb) >= 150f;
                 return lightSpacebar
-                        ? (resolveNormalAccentColor(context, false) & 0x00ffffff)
+                        ? (resolveNormalAccentColor(spacebarView, context, false) & 0x00ffffff)
                         : 0xFFFFFF;
             }
         }
         boolean dark = isKeyboardDark(spacebarView);
-        return dark ? 0xFFFFFF : (resolveNormalAccentColor(context, false) & 0x00ffffff);
+        return dark ? 0xFFFFFF : (resolveNormalAccentColor(spacebarView, context, false) & 0x00ffffff);
     }
 
     private static final Object SAMPLE_LOCK = new Object();
@@ -219,6 +237,20 @@ public final class ThiccTopBarGboardReflector {
     }
 
     public static int resolveNormalAccentColor(Context context, boolean dark) {
+        return resolveNormalAccentColor(null, context, dark);
+    }
+
+    public static int resolveNormalAccentColor(View anchorView, Context context, boolean dark) {
+        int liveThemeRgb = sampleKeyboardThemeAccentRgb(anchorView);
+        if (liveThemeRgb >= 0) {
+            return 0xFF000000 | ensureReadableAccentRgb(liveThemeRgb, dark);
+        }
+
+        int cachedThemeRgb = cachedKeyboardThemeAccentRgb;
+        if (cachedThemeRgb >= 0) {
+            return 0xFF000000 | ensureReadableAccentRgb(cachedThemeRgb, dark);
+        }
+
         int usableStockRgb = -1;
         int cachedRgb = stockTrailAccentRgb;
         if (cachedRgb >= 0) {
@@ -246,6 +278,98 @@ public final class ThiccTopBarGboardReflector {
             }
         }
         return chooseNormalAccentColor(usableStockRgb, dynamicPrimaryRgb, dark);
+    }
+
+    /**
+     * Samples the active Gboard theme accent color from the keyboard's IME action (Enter) key
+     * in the view hierarchy and caches it for fallback callers.
+     */
+    static int sampleKeyboardThemeAccentRgb(View anchorView) {
+        if (anchorView == null) return -1;
+        try {
+            View root = anchorView.getRootView();
+            if (root == null) return -1;
+            Context ctx = anchorView.getContext();
+            if (ctx == null) return -1;
+            int id = imeActionKeyId;
+            if (id == 0) {
+                id = ctx.getResources().getIdentifier("key_pos_ime_action", "id", ctx.getPackageName());
+                imeActionKeyId = id != 0 ? id : -1;
+            }
+            if (id <= 0) return -1;
+            View imeActionView = root.findViewById(id);
+            if (imeActionView == null || imeActionView.getVisibility() != View.VISIBLE) {
+                return -1;
+            }
+            int rgb = sampleKeyBackgroundRgb(imeActionView, 3);
+            if (rgb >= 0) {
+                recordKeyboardThemeAccent(rgb);
+            }
+            return rgb;
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    /**
+     * Samples the background drawable of a view or its nested background children.
+     */
+    private static int sampleKeyBackgroundRgb(View view, int maxDepth) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return -1;
+        Drawable bg = view.getBackground();
+        if (bg != null) {
+            int rgb = sampleDrawableCenterRgb(bg);
+            if (rgb >= 0) return rgb;
+        }
+        if (maxDepth > 0 && view instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) view;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                int rgb = sampleKeyBackgroundRgb(vg.getChildAt(i), maxDepth - 1);
+                if (rgb >= 0) return rgb;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Samples a view's background or ImageView drawable center RGB.
+     */
+    public static int sampleViewDrawableRgb(View view) {
+        if (view == null) return -1;
+        int bgRgb = sampleDrawableCenterRgb(view.getBackground());
+        if (bgRgb >= 0) return bgRgb;
+        if (view instanceof ImageView) {
+            return sampleDrawableCenterRgb(((ImageView) view).getDrawable());
+        }
+        return -1;
+    }
+
+    /**
+     * Adjusts an RGB theme color's luminance while preserving hue when needed so it remains
+     * legible against a dark or light keyboard surface.
+     */
+    static int ensureReadableAccentRgb(int rgb, boolean dark) {
+        rgb &= 0x00ffffff;
+        float lum = perceivedLuminance(rgb);
+        int r = (rgb >> 16) & 0xff;
+        int g = (rgb >> 8) & 0xff;
+        int b = rgb & 0xff;
+        if (dark) {
+            if (lum >= 115f) return rgb;
+            float denom = Math.max(1f, 255f - lum);
+            float t = Math.min(1f, (130f - lum) / denom);
+            int nr = Math.min(255, Math.round(r + (255 - r) * t));
+            int ng = Math.min(255, Math.round(g + (255 - g) * t));
+            int nb = Math.min(255, Math.round(b + (255 - b) * t));
+            return (nr << 16) | (ng << 8) | nb;
+        } else {
+            if (lum <= 155f) return rgb;
+            float scale = 135f / Math.max(1f, lum);
+            int nr = Math.max(0, Math.min(255, Math.round(r * scale)));
+            int ng = Math.max(0, Math.min(255, Math.round(g * scale)));
+            int nb = Math.max(0, Math.min(255, Math.round(b * scale)));
+            return (nr << 16) | (ng << 8) | nb;
+        }
     }
 
     static int chooseNormalAccentColor(int stockTrailRgb, int dynamicPrimaryRgb, boolean dark) {

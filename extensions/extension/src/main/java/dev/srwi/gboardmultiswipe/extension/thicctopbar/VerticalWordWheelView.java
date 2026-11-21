@@ -159,6 +159,13 @@ public class VerticalWordWheelView extends LinearLayout {
         updateDisplay();
     }
 
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        updateColors();
+        post(this::updateColors);
+    }
+
     public void setIsActiveWord(boolean active) {
         if (this.isActiveWord != active) {
             this.isActiveWord = active;
@@ -311,7 +318,7 @@ public class VerticalWordWheelView extends LinearLayout {
     public void updateColors() {
         boolean dark = ThiccTopBarGboardReflector.isKeyboardDark(this);
         int primaryColor = dark ? Color.WHITE : 0xff202124;
-        int accentColor = ThiccTopBarGboardReflector.resolveNormalAccentColor(getContext(), dark);
+        int accentColor = ThiccTopBarGboardReflector.resolveNormalAccentColor(this, getContext(), dark);
 
         float sideTextSp = 10.2f * scaleFactor;
         float centerTextSp = 12.0f * scaleFactor;

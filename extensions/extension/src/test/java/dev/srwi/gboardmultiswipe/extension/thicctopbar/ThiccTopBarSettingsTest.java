@@ -68,10 +68,36 @@ public final class ThiccTopBarSettingsTest {
 
     @Test
     public void recordStockTrailAccentUpdatesResolvedColorWhenDarkPolarityMatches() {
-        ThiccTopBarGboardReflector.recordStockTrailAccent(null, 0xECC09F);
-        Assert.assertEquals(0xFFECC09F, ThiccTopBarGboardReflector.resolveNormalAccentColor(null, true));
-        Assert.assertTrue(ThiccTopBarGboardReflector.perceivedLuminance(0xFFECC09F) >= 140f);
-        Assert.assertTrue(ThiccTopBarGboardReflector.perceivedLuminance(0xFF845B38) < 140f);
+        try {
+            ThiccTopBarGboardReflector.resetAccentCacheForTesting();
+            ThiccTopBarGboardReflector.recordStockTrailAccent(null, 0xECC09F);
+            Assert.assertEquals(0xFFECC09F, ThiccTopBarGboardReflector.resolveNormalAccentColor(null, true));
+            Assert.assertTrue(ThiccTopBarGboardReflector.perceivedLuminance(0xFFECC09F) >= 140f);
+            Assert.assertTrue(ThiccTopBarGboardReflector.perceivedLuminance(0xFF845B38) < 140f);
+        } finally {
+            ThiccTopBarGboardReflector.resetAccentCacheForTesting();
+        }
+    }
+
+    @Test
+    public void recordKeyboardThemeAccentOverridesStockTrailAndEnsuresReadability() {
+        try {
+            ThiccTopBarGboardReflector.resetAccentCacheForTesting();
+            ThiccTopBarGboardReflector.recordStockTrailAccent(null, 0xECC09F);
+            ThiccTopBarGboardReflector.recordKeyboardThemeAccent(0xE91E63);
+            int darkResolved = ThiccTopBarGboardReflector.resolveNormalAccentColor(null, true);
+            Assert.assertTrue(ThiccTopBarGboardReflector.perceivedLuminance(darkResolved & 0x00ffffff) >= 115f);
+
+            ThiccTopBarGboardReflector.recordKeyboardThemeAccent(0xD3E3FD);
+            int lightResolved = ThiccTopBarGboardReflector.resolveNormalAccentColor(null, false);
+            Assert.assertTrue(ThiccTopBarGboardReflector.perceivedLuminance(lightResolved & 0x00ffffff) <= 155f);
+
+            // Already readable colors are preserved verbatim.
+            Assert.assertEquals(0xA8C7FA, ThiccTopBarGboardReflector.ensureReadableAccentRgb(0xA8C7FA, true));
+            Assert.assertEquals(0x1A73E8, ThiccTopBarGboardReflector.ensureReadableAccentRgb(0x1A73E8, false));
+        } finally {
+            ThiccTopBarGboardReflector.resetAccentCacheForTesting();
+        }
     }
 
     @Test

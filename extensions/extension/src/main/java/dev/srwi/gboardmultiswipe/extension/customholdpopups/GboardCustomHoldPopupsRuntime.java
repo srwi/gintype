@@ -662,7 +662,7 @@ public final class GboardCustomHoldPopupsRuntime {
                 int animDurationMs = Math.max(1, holdDurationMs - startDelayMs);
 
                 float density = popupView.getResources().getDisplayMetrics().density;
-                int ringColor = resolveCountdownRingColor(popupView.getContext());
+                int ringColor = resolveCountdownRingColor(popupView, popupView.getContext());
                 HoldCountdownDrawable drawable = new HoldCountdownDrawable(
                         popupView, targetView, rootGroup, density, animDurationMs, ringColor);
                 drawable.setBounds(0, 0, rootGroup.getWidth(), rootGroup.getHeight());
@@ -787,35 +787,9 @@ public final class GboardCustomHoldPopupsRuntime {
         return null;
     }
 
-    private static int resolveCountdownRingColor(Context context) {
-        if (context == null) {
-            return 0xFF4285F4;
-        }
-        boolean nightMode = (context.getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                int resId = nightMode
-                        ? android.R.color.system_accent1_200
-                        : android.R.color.system_accent1_600;
-                return context.getColor(resId);
-            } catch (Throwable ignored) {
-            }
-        }
-        try {
-            TypedArray ta = context.obtainStyledAttributes(
-                    new int[] { android.R.attr.colorAccent });
-            try {
-                int accent = ta.getColor(0, 0);
-                if (accent != 0) {
-                    return accent;
-                }
-            } finally {
-                ta.recycle();
-            }
-        } catch (Throwable ignored) {
-        }
-        return nightMode ? 0xFFA8C7FA : 0xFF0B57D0;
+    private static int resolveCountdownRingColor(View popupView, Context context) {
+        boolean dark = ThiccTopBarGboardReflector.isKeyboardDark(popupView);
+        return ThiccTopBarGboardReflector.resolveNormalAccentColor(popupView, context, dark);
     }
 
     private static final class HoldCountdownDrawable extends Drawable {
@@ -864,6 +838,13 @@ public final class GboardCustomHoldPopupsRuntime {
             if (!highlightLookupDone && itemView.getWidth() > 0 && itemView.getHeight() > 0) {
                 highlightLookupDone = true;
                 resolvedHighlightView = findHighlightCircleView(popupView, itemView);
+                if (resolvedHighlightView != null) {
+                    int highlightRgb = ThiccTopBarGboardReflector.sampleViewDrawableRgb(resolvedHighlightView);
+                    if (highlightRgb >= 0) {
+                        ThiccTopBarGboardReflector.recordKeyboardThemeAccent(highlightRgb);
+                        paint.setColor(0xFF000000 | highlightRgb);
+                    }
+                }
             }
             View measureView = (resolvedHighlightView != null
                     && resolvedHighlightView.isAttachedToWindow()

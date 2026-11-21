@@ -28,6 +28,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import dev.srwi.gboardmultiswipe.extension.R;
 import dev.srwi.gboardmultiswipe.extension.settings.GboardSettingsText;
+import dev.srwi.gboardmultiswipe.extension.thicctopbar.ThiccTopBarGboardReflector;
 
 /**
  * Sleek, modern, light/dark adaptive dialog for adding, editing, deleting, or resetting hold popup
@@ -88,7 +89,7 @@ public final class GboardCustomHoldPopupsEditorDialog {
         int inputStrokeColor = nightMode ? 0xFF44474E : 0xFFD8DCE6;
         int textPrimary = nightMode ? 0xFFE3E3E8 : 0xFF1B1C1F;
         int textSecondary = nightMode ? 0xFF9EA2AE : 0xFF5A5E6B;
-        int accentColor = resolveSystemAccent(activity, nightMode);
+        int accentColor = resolveThemeAccent(activity, nightMode);
         int onAccentColor = isLightColor(accentColor) ? 0xFF14161A : 0xFFFFFFFF;
         int dangerColor = nightMode ? 0xFFFF897D : 0xFFB3261E;
         int dangerBgColor = nightMode ? 0x33FF897D : 0x1AB3261E;
@@ -422,17 +423,8 @@ public final class GboardCustomHoldPopupsEditorDialog {
         return btn;
     }
 
-    private static int resolveSystemAccent(Context context, boolean nightMode) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            try {
-                int resId = nightMode
-                        ? android.R.color.system_accent1_200
-                        : android.R.color.system_accent1_600;
-                return context.getColor(resId);
-            } catch (Throwable ignored) {
-            }
-        }
-        return nightMode ? 0xFFA8C7FA : 0xFF0B57D0;
+    private static int resolveThemeAccent(Context context, boolean nightMode) {
+        return ThiccTopBarGboardReflector.resolveNormalAccentColor(context, nightMode);
     }
 
     private static boolean isLightColor(int color) {
