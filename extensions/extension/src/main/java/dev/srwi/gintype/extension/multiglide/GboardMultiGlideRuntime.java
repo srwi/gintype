@@ -348,6 +348,27 @@ public final class GboardMultiGlideRuntime {
     }
 
     /**
+     * Clears orphaned active touch pointers if {@code SoftKeyboardView} finished an
+     * {@code ACTION_UP}/{@code ACTION_CANCEL} stream that did not reach
+     * {@code AbstractGestureMotionEventHandler.g(MotionEvent)} (for example, releasing a
+     * long-press popup symbol handled exclusively by {@code BasicMotionEventHandler}).
+     */
+    public static void clearOrphanedActiveTouches(long touchEndEventTimeMs) {
+        try {
+            Object handler = lastGestureHandler;
+            if (handler == null) return;
+            HandlerSession session = SESSIONS.get(handler);
+            if (session == null) return;
+            if (session.core.clearOrphanedActiveTouches(touchEndEventTimeMs)) {
+                session.cancelLivePreviewSettle();
+                session.liveDecodeGeneration.incrementAndGet();
+                GboardThiccTopBarRuntime.onGestureEndedForLiveGuess(true);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
      * Injected at the start of AbstractGestureMotionEventHandler.g(MotionEvent).
      */
     public static void onGestureEventEntry(Object handler, MotionEvent event) {

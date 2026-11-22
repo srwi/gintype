@@ -5,6 +5,8 @@ internal enum class RuntimeCallId(internal val encodedAbi: String) {
     THICC_TOP_BAR_RUNTIME_ON_CANDIDATES_CLEARED("Ldev/srwi/gintype/extension/thicctopbar/GboardThiccTopBarRuntime;->onCandidatesCleared(Ljava/lang/Object;)V"),
     THICC_TOP_BAR_RUNTIME_ON_SOFT_KEYBOARD_VIEW_INFLATED("Ldev/srwi/gintype/extension/thicctopbar/GboardThiccTopBarRuntime;->onSoftKeyboardViewInflated(Ljava/lang/Object;)V"),
     THICC_TOP_BAR_RUNTIME_SCALE_HEADER_TARGET_HEIGHT("Ldev/srwi/gintype/extension/thicctopbar/GboardThiccTopBarRuntime;->scaleHeaderTargetHeight(Ljava/lang/Object;I)I"),
+    THICC_TOP_BAR_RUNTIME_ON_KEYBOARD_TOUCH_EVENT("Ldev/srwi/gintype/extension/thicctopbar/GboardThiccTopBarRuntime;->onKeyboardTouchEvent(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
+    THICC_TOP_BAR_RUNTIME_ON_KEY_DATA_DISPATCHED("Ldev/srwi/gintype/extension/thicctopbar/GboardThiccTopBarRuntime;->onKeyDataDispatched()V"),
     MULTIGLIDE_RUNTIME_ON_KEYBOARD_VIEW_READY("Ldev/srwi/gintype/extension/multiglide/GboardMultiGlideRuntime;->onKeyboardViewReady(Ljava/lang/Object;)V"),
     MULTIGLIDE_RUNTIME_ON_GESTURE_EVENT_ENTRY("Ldev/srwi/gintype/extension/multiglide/GboardMultiGlideRuntime;->onGestureEventEntry(Ljava/lang/Object;Landroid/view/MotionEvent;)V"),
     MULTIGLIDE_RUNTIME_SHOULD_START_GESTURE("Ldev/srwi/gintype/extension/multiglide/GboardMultiGlideRuntime;->shouldStartGesture(Ljava/lang/Object;Z)Z"),

@@ -374,6 +374,62 @@ public final class ThiccTopBarTextHelper {
         return null;
     }
 
+    /**
+     * Resolves the active word at the cursor, or when the current line ends with trailing
+     * punctuation (e.g. {@code "gehts?"} or {@code "gehts ?"}), resolves that last core word.
+     * Trailing whitespace without punctuation still returns {@code null}.
+     */
+    public static String getActiveOrTrailingPunctuatedWord(View view) {
+        InputConnection ic = getInputConnection(view);
+        return getActiveOrTrailingPunctuatedWord(ic);
+    }
+
+    public static String getActiveOrTrailingPunctuatedWord(InputConnection ic) {
+        if (ic == null) return null;
+        try {
+            CharSequence cs = ic.getTextBeforeCursor(200, 0);
+            return getActiveOrTrailingPunctuatedWord(cs);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    public static String getActiveOrTrailingPunctuatedWord(CharSequence cs) {
+        String active = getActiveWord(cs, Collections.emptyList(), false);
+        if (active != null && !active.isEmpty()) {
+            return active;
+        }
+        if (cs == null || cs.length() == 0) {
+            return null;
+        }
+        String s = cs.toString();
+        int lineStart = 0;
+        for (int i = s.length() - 1; i >= 0; i--) {
+            char c = s.charAt(i);
+            if (c == '\n' || c == '\r') {
+                lineStart = i + 1;
+                break;
+            }
+        }
+        String line = s.substring(lineStart).trim();
+        if (line.isEmpty()) {
+            return null;
+        }
+        char lastChar = line.charAt(line.length() - 1);
+        if (!isTrailingSymbol(lastChar) && !(isBoundaryChar(line, line.length() - 1) && !Character.isWhitespace(lastChar))) {
+            return null;
+        }
+        List<TokenParts> tokens = tokenizeValidTokens(line);
+        if (tokens.isEmpty()) {
+            return null;
+        }
+        TokenParts lastToken = tokens.get(tokens.size() - 1);
+        if (lastToken.hasWord() && !lastToken.suffix.isEmpty()) {
+            return lastToken.word;
+        }
+        return null;
+    }
+
     public static boolean allPredictions(List<GboardThiccTopBarRuntime.CandidateItem> items) {
         if (items == null || items.isEmpty()) return false;
         for (GboardThiccTopBarRuntime.CandidateItem ci : items) {

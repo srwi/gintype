@@ -843,6 +843,28 @@ public class MultiGlideIntegrationTest {
     }
 
     @Test
+    public void clearOrphanedActiveTouchesAfterLongPressPopupRelease() {
+        SettingsSnapshot settings = new SettingsSnapshot(true, true, 300, 150);
+
+        // Simulate ACTION_DOWN on '.' (punctuation key) where ACTION_UP is consumed by a long-press
+        // popup in BasicMotionEventHandler.A(MotionEvent) and never reaches gesture handler g(MotionEvent).
+        session.onActionDown(0, 864f, 700f, 1000L, settings, editor, callbacks);
+        assertFalse(session.activePointers.isEmpty());
+
+        // Stale event time older than lastActionDownTimeMs must not clear the active touch
+        assertFalse(session.clearOrphanedActiveTouches(950L));
+        assertFalse(session.activePointers.isEmpty());
+
+        // Touch stream ending at >= lastActionDownTimeMs clears orphaned activePointers
+        assertTrue(session.clearOrphanedActiveTouches(1450L));
+        assertTrue(session.activePointers.isEmpty());
+        assertEquals(1450L, session.lastTouchUpTimeMs);
+
+        // Calling again when already empty is a no-op
+        assertFalse(session.clearOrphanedActiveTouches(1500L));
+    }
+
+    @Test
     public void autoSpaceBeforeWordUsesGboardStyleWithoutTrailingSpaces() {
         SettingsSnapshot gboardStyle = new SettingsSnapshot(true, true, 300, 150, true, true);
         DecodePort halloDecoder = (tokens, prev) -> Collections.singletonList(cand("Hallo", -1f));

@@ -81,4 +81,38 @@ class GboardThiccTopBarSmaliCompilationTest {
         )
         assertEquals(5, instructions.size)
     }
+
+    @Test
+    fun `verify SoftKeyboardView dispatchTouchEvent hook compiles with 3 registers`() {
+        val smaliTouch = RuntimeCallEmitter.invoke(
+            RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_KEYBOARD_TOUCH_EVENT,
+            "p0, p1",
+        )
+        assertTrue(smaliTouch.startsWith("invoke-static"))
+
+        val instructions = InlineSmaliCompiler.compile(
+            instructions = smaliTouch,
+            parameters = "Landroid/view/MotionEvent;",
+            registers = 3,
+            forStaticMethod = false,
+        )
+        assertEquals(1, instructions.size)
+    }
+
+    @Test
+    fun `verify BasicMotionEventHandler onKeyDataDispatched hook compiles with 0 registers`() {
+        val smaliKeyData = RuntimeCallEmitter.invoke(
+            RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_KEY_DATA_DISPATCHED,
+            "",
+        )
+        assertTrue(smaliKeyData.startsWith("invoke-static {}"))
+
+        val instructions = InlineSmaliCompiler.compile(
+            instructions = smaliKeyData,
+            parameters = "",
+            registers = 1,
+            forStaticMethod = false,
+        )
+        assertEquals(1, instructions.size)
+    }
 }

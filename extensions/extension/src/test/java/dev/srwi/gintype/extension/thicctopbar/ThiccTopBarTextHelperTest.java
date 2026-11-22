@@ -125,6 +125,20 @@ public final class ThiccTopBarTextHelperTest {
     }
 
     @Test
+    public void activeOrTrailingPunctuatedWordResolution() {
+        Assert.assertEquals("gehts", ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("Hallo wie gehts"));
+        Assert.assertEquals("gehts", ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("Hallo wie gehts?"));
+        Assert.assertEquals("gehts", ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("Hallo wie gehts ?"));
+        Assert.assertEquals("gehts", ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("Hallo wie gehts? "));
+        Assert.assertEquals("gehts", ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("Hallo wie gehts!"));
+        Assert.assertEquals("gehts", ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("Hallo wie gehts."));
+        Assert.assertNull(ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("Hallo wie gehts "));
+        Assert.assertNull(ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("Hallo\n"));
+        Assert.assertNull(ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord("?"));
+        Assert.assertNull(ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord((CharSequence) null));
+    }
+
+    @Test
     public void preserveActiveSuggestionsDuringNextWordGlide() {
         List<String> malAlts = Arrays.asList("mal", "Mark", "man");
         GboardThiccTopBarRuntime.CandidateItem liveGlideSchauen = new GboardThiccTopBarRuntime.CandidateItem(

@@ -232,6 +232,10 @@ public class ThiccTopBarView extends HorizontalScrollView {
         return hasActiveWheel() ? currentWheelView.getSelectedWord() : null;
     }
 
+    public List<String> getDisplayedColumnWords() {
+        return Collections.unmodifiableList(new ArrayList<>(displayedColumnWords));
+    }
+
     private void syncActiveColumnScroll(int left, int right) {
         if (!activeColumnAnchor.isActive()) {
             pendingAnchorLayoutSync = false;

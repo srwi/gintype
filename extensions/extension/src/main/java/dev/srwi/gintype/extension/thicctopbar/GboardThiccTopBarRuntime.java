@@ -8,6 +8,7 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -99,8 +100,154 @@ public final class GboardThiccTopBarRuntime {
     private static ViewTreeObserver.OnPreDrawListener nativeTopBarPreDrawGuard = null;
     private static ViewGroup nativeTopBarPreDrawTarget = null;
     private static final Map<View, Boolean> SUPPRESSED_HEADER_SIBLINGS = new WeakHashMap<>();
+    private static final long POST_TOUCH_SYNC_DELAY_MS = 80L;
     private static volatile boolean thiccTopBarLiveGuessActive = false;
     private static Runnable thiccTopBarLiveGuessTimeoutRunnable = null;
+    private static Runnable postTouchSyncRunnable = null;
+
+    /**
+     * Hook called at entry of SoftKeyboardView.dispatchTouchEvent(MotionEvent)Z.
+     * Schedules a lightweight post-commit sync so punctuation/symbol keys (e.g. '?')
+     * that commit without triggering a candidate update/clear still refresh the top bar.
+     */
+    public static void onKeyboardTouchEvent(Object softKeyboardViewObj, MotionEvent event) {
+        try {
+            if (event == null || !(softKeyboardViewObj instanceof View view)) {
+                return;
+            }
+            int action = event.getActionMasked();
+            if (action != MotionEvent.ACTION_UP
+                    && action != MotionEvent.ACTION_POINTER_UP
+                    && action != MotionEvent.ACTION_CANCEL) {
+                return;
+            }
+            if (ThiccTopBarGboardReflector.isHeaderSoftKeyboardView(view)) {
+                return;
+            }
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                final long touchEndEventTimeMs = event.getEventTime();
+                getMainHandler().post(() -> GboardMultiGlideRuntime.clearOrphanedActiveTouches(touchEndEventTimeMs));
+            }
+            if (action == MotionEvent.ACTION_CANCEL) {
+                return;
+            }
+            if (!GboardThiccTopBarSettings.readEnabled(view.getContext())) {
+                return;
+            }
+            ViewGroup holderView = lastHolderView;
+            if (holderView == null) {
+                return;
+            }
+            schedulePostTouchSync(holderView);
+        } catch (Throwable t) {
+            Log.w(TAG, "onKeyboardTouchEvent failed", t);
+        }
+    }
+
+    /**
+     * Hook called when BasicMotionEventHandler dispatches a key or long-press popup KeyData.
+     * Ensures popup punctuation (e.g. holding '.' -> '?') refreshes the top bar even if
+     * SoftKeyboardView did not receive a normal ACTION_UP or Gboard skipped candidate updates.
+     */
+    public static void onKeyDataDispatched() {
+        try {
+            ViewGroup holderView = lastHolderView;
+            if (holderView == null || !GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+                return;
+            }
+            schedulePostTouchSync(holderView);
+        } catch (Throwable t) {
+            Log.w(TAG, "onKeyDataDispatched failed", t);
+        }
+    }
+
+    private static void schedulePostTouchSync(ViewGroup holderView) {
+        Handler handler = getMainHandler();
+        if (postTouchSyncRunnable != null) {
+            handler.removeCallbacks(postTouchSyncRunnable);
+        }
+        postTouchSyncRunnable = () -> syncBarAfterTouchIfNeeded(holderView);
+        handler.postDelayed(postTouchSyncRunnable, POST_TOUCH_SYNC_DELAY_MS);
+    }
+
+    private static void syncBarAfterTouchIfNeeded(ViewGroup holderView) {
+        try {
+            if (holderView == null) {
+                return;
+            }
+            if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
+                return;
+            }
+            if (thiccTopBarLiveGuessActive
+                    || GboardMultiGlideRuntime.hasActiveTouch()
+                    || GboardMultiGlideRuntime.isMultiGlideWordActive()) {
+                return;
+            }
+            ThiccTopBarView barView = getOrCreateBarView(holderView);
+            if (barView == null) {
+                return;
+            }
+            if (ThiccTopBarGboardReflector.isDictationActive(holderView)
+                    || isHistorySelectionSessionActive(holderView, barView)) {
+                return;
+            }
+            ViewGroup parent = (ViewGroup) holderView.getParent();
+            ViewGroup attachTarget = parent != null ? parent : holderView;
+
+            if (ThiccTopBarTextHelper.isSentenceEnded(holderView) || ThiccTopBarTextHelper.isInputEmpty(holderView)) {
+                if (!SENTENCE_BUFFER.isEmpty() || barView.getVisibility() == View.VISIBLE) {
+                    SENTENCE_BUFFER.clear();
+                    activeOriginalSuggestions = null;
+                    hideJumpToEndArrow();
+                    barView.setVisibility(View.GONE);
+                    ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+                }
+                return;
+            }
+
+            String activeWord = ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
+            if (activeWord != null && !activeWord.isEmpty()) {
+                return;
+            }
+
+            boolean hadActiveWheel = barView.getActiveWheelWord() != null;
+            ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+            if (!SENTENCE_BUFFER.isEmpty()) {
+                if (hadActiveWheel || !barMatchesSentenceBuffer(barView, SENTENCE_BUFFER)) {
+                    if (Log.isLoggable(TAG, Log.DEBUG)) {
+                        ThiccTopBarSentenceBuffer.WordEntry last = SENTENCE_BUFFER.getLastEntry();
+                        Log.i(TAG, "syncBarAfterTouchIfNeeded: updating history bar, last="
+                                + (last != null ? last.getSelectedWord() : "null")
+                                + ", hadActiveWheel=" + hadActiveWheel);
+                    }
+                    activeOriginalSuggestions = null;
+                    showHistoryOnlyBar(holderView, barView);
+                }
+            } else if (barView.getVisibility() == View.VISIBLE) {
+                hideJumpToEndArrow();
+                barView.setVisibility(View.GONE);
+                ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "syncBarAfterTouchIfNeeded failed", t);
+        }
+    }
+
+    private static boolean barMatchesSentenceBuffer(ThiccTopBarView barView, ThiccTopBarSentenceBuffer buffer) {
+        List<String> displayed = barView.getDisplayedColumnWords();
+        List<ThiccTopBarSentenceBuffer.WordEntry> entries = buffer.getEntries();
+        if (displayed.size() != entries.size()) {
+            return false;
+        }
+        for (int i = 0; i < entries.size(); i++) {
+            String expected = entries.get(i).getSelectedWord();
+            String actual = displayed.get(i);
+            if (expected == null ? actual != null : !expected.equals(actual)) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     /**
      * Hook called after SoftKeyboardView finishes inflating to apply the configured
@@ -1681,8 +1828,10 @@ public final class GboardThiccTopBarRuntime {
         if (ThiccTopBarTextHelper.hasTextAfterCursorOnSameLine(holderView)) {
             return false;
         }
-        String activeInEditor = ThiccTopBarTextHelper.getActiveWord(holderView, Collections.emptyList(), false);
-        if (activeInEditor == null || !activeInEditor.equalsIgnoreCase(word)) {
+        String activeInEditor = ThiccTopBarTextHelper.getActiveOrTrailingPunctuatedWord(holderView);
+        String coreWord = ThiccTopBarTextHelper.getCoreWord(word);
+        if (activeInEditor == null
+                || (!activeInEditor.equalsIgnoreCase(word) && !activeInEditor.equalsIgnoreCase(coreWord))) {
             return false;
         }
         GboardMultiGlideRuntime.onTopBarUserInteraction();

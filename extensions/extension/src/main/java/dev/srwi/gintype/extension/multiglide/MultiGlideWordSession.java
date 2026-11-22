@@ -771,6 +771,27 @@ final class MultiGlideWordSession {
         restingDroppedThisSession = 0;
     }
 
+    /**
+     * Clears orphaned active-pointer state when {@code SoftKeyboardView} has completed an
+     * {@code ACTION_UP} or {@code ACTION_CANCEL} stream that was consumed by another handler
+     * (e.g. a long-press popup in {@code BasicMotionEventHandler.A(MotionEvent)}) before reaching
+     * {@code AbstractGestureMotionEventHandler.g(MotionEvent)}.
+     *
+     * @return {@code true} if orphaned pointers were cleared.
+     */
+    boolean clearOrphanedActiveTouches(long touchEndEventTimeMs) {
+        if (activePointers.isEmpty()) {
+            return false;
+        }
+        if (lastActionDownTimeMs > touchEndEventTimeMs) {
+            return false;
+        }
+        resetGestureState();
+        pendingBackspaceTap = false;
+        lastTouchUpTimeMs = touchEndEventTimeMs;
+        return true;
+    }
+
     void clearWordBuffer(LifecycleCallbacks callbacks) {
         if (callbacks != null && autospaceTimerPending) {
             callbacks.onCancelAutospaceTimer();

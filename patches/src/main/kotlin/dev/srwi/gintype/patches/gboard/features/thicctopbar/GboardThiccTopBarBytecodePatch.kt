@@ -65,6 +65,27 @@ internal val gboardThiccTopBarBytecodePatch = bytecodePatch(
         )
         onFinishInflateMethod.applySoftKeyboardViewInflateDelegate()
 
+        val dispatchTouchMethod = softKeyboardViewClass.methods.firstOrNull {
+            it.name == "dispatchTouchEvent" &&
+                it.returnType == "Z" &&
+                it.parameterTypes == listOf("Landroid/view/MotionEvent;")
+        } ?: throw PatchException(
+            "Could not find dispatchTouchEvent(MotionEvent) in $SOFT_KEYBOARD_VIEW_CLASS",
+        )
+        dispatchTouchMethod.applySoftKeyboardViewTouchDelegate()
+
+        val basicHandlerClass = mutableClass(BASIC_MOTION_EVENT_HANDLER_CLASS)
+        val fireKeyDataMethod = basicHandlerClass.methods.firstOrNull {
+            it.name == "o" &&
+                it.returnType == "V" &&
+                it.parameterTypes.size >= 4 &&
+                it.parameterTypes[0] == TOUCH_ACTION_BUNDLE_CLASS &&
+                it.parameterTypes[3] == SOFT_KEY_DEF_CLASS
+        } ?: throw PatchException(
+            "Could not find o(...)V in $BASIC_MOTION_EVENT_HANDLER_CLASS",
+        )
+        fireKeyDataMethod.applyKeyDataDispatchedDelegate()
+
         softKeyboardViewClass.applyHeaderTargetHeightWrapper()
     }
 }
@@ -139,6 +160,47 @@ internal fun MutableMethod.applySoftKeyboardViewInflateDelegate() {
     }
 }
 
+internal fun MutableMethod.applySoftKeyboardViewTouchDelegate() {
+    val abi = RuntimeAbiCatalog.abi(
+        RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_KEYBOARD_TOUCH_EVENT,
+    )
+    val instructions = implementation?.instructions
+        ?: error("No instructions in $definingClass->$name")
+    val existing = instructions.count { it.isMethodReference(abi.reference) }
+    if (existing > 0) {
+        check(existing == 1 && instructions.first().isMethodReference(abi.reference)) {
+            "Malformed SoftKeyboardView touch delegate in $definingClass->$name"
+        }
+        return
+    }
+    addInstructions(
+        0,
+        RuntimeCallEmitter.invoke(
+            RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_KEYBOARD_TOUCH_EVENT,
+            "p0, p1",
+        ),
+    )
+}
+
+internal fun MutableMethod.applyKeyDataDispatchedDelegate() {
+    val abi = RuntimeAbiCatalog.abi(
+        RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_KEY_DATA_DISPATCHED,
+    )
+    val instructions = implementation?.instructions
+        ?: error("No instructions in $definingClass->$name")
+    val existing = instructions.count { it.isMethodReference(abi.reference) }
+    if (existing > 0) {
+        return
+    }
+    addInstructions(
+        0,
+        RuntimeCallEmitter.invoke(
+            RuntimeCallId.THICC_TOP_BAR_RUNTIME_ON_KEY_DATA_DISPATCHED,
+            "",
+        ),
+    )
+}
+
 internal fun MutableClass.applyHeaderTargetHeightWrapper() {
     val scaleAbi = RuntimeAbiCatalog.abi(
         RuntimeCallId.THICC_TOP_BAR_RUNTIME_SCALE_HEADER_TARGET_HEIGHT,
@@ -211,5 +273,10 @@ private const val CLEAR_CANDIDATES_METHOD_NAME = "l"
 private const val CLEAR_CANDIDATES_RETURN_TYPE = "V"
 private const val SOFT_KEYBOARD_VIEW_CLASS =
     "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;"
+private const val BASIC_MOTION_EVENT_HANDLER_CLASS =
+    "Lcom/google/android/libraries/inputmethod/motioneventhandler/BasicMotionEventHandler;"
+private const val TOUCH_ACTION_BUNDLE_CLASS = "Lqin;"
+private const val SOFT_KEY_DEF_CLASS =
+    "Lcom/google/android/libraries/inputmethod/metadata/SoftKeyDef;"
 private const val TARGET_HEIGHT_METHOD_NAME = "z"
 private const val ORIG_TARGET_HEIGHT_HELPER_NAME = "gboardPatchesOriginalTargetHeight"
