@@ -45,9 +45,6 @@ MultiGlide uses the gesture-decoding algorithm from the [Kinetica implementation
 ### 4. Custom Hold Popups
 - **Direct on-keyboard editing**: Long-press any key and slide to the pencil icon to add a new symbol, or hold on an existing popup item for 2 seconds to edit or replace it.
 - **Characters, symbols, emojis, and snippets**: Assign custom characters, punctuation, emojis, or frequently used text snippets to any key's long-press popup.
-- **Lock keys mode**: Toggle in settings to hide the edit icon and disable hold-to-edit, preventing accidental modifications while typing.
-- **Universal layout support**: Works seamlessly across all keyboard languages and layouts.
-- **Full management & reset**: View, edit, or reset individual custom bindings, or restore all default symbols in **Gboard Settings > GinType > Custom Hold Popups**.
 
 ### 5. Package Rename (Side-by-Side Installation)
 - Enabled by default so non-rooted phones can install the patched keyboard **alongside** official Play Store Gboard (`dev.srwi.com.google.android.inputmethod.latin`), complete with a customizable app name (`GinType` by default).
