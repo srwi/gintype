@@ -14,7 +14,7 @@ public final class GboardThiccTopBarSettings {
     public static final String PREF_KEY_TOPBAR_SCALE = "pref_matrix_topbar_scale";
     public static final float MIN_TOPBAR_SCALE = 1.0f;
     public static final float MAX_TOPBAR_SCALE = 2.0f;
-    public static final float DEFAULT_TOPBAR_SCALE = 1.0f;
+    public static final float DEFAULT_TOPBAR_SCALE = 1.4f;
 
     public static final String PREF_KEY_SWIPE_SENSITIVITY = "pref_matrix_swipe_sensitivity";
     public static final float MIN_SWIPE_SENSITIVITY = 0.25f;

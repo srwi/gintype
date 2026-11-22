@@ -266,7 +266,10 @@ public final class ThiccTopBarSettingsTest {
         Assert.assertEquals(64f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, 2.0f, 0.5f), 0.001f);
 
         // Out-of-range inputs are clamped/sanitized safely.
-        Assert.assertEquals(16f, ThiccTopBarView.computeHorizontalStepThresholdPx(base, Float.NaN, Float.NaN), 0.001f);
+        Assert.assertEquals(
+                base * GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE,
+                ThiccTopBarView.computeHorizontalStepThresholdPx(base, Float.NaN, Float.NaN),
+                0.001f);
     }
 
     private static final class TestSharedPreferences implements SharedPreferences {

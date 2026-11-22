@@ -257,20 +257,20 @@ public class GboardMultiGlideSettingsTest {
     @Test
     public void defaultsTraceLoggingOffAndResetsAllSettingsToDefaults() {
         assertFalse(GboardMultiGlideSettings.DEFAULT_TRACE_LOGGING);
-        assertFalse(GboardMultiGlideSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR);
+        assertTrue(GboardMultiGlideSettings.DEFAULT_SPACEBAR_TIMER_INDICATOR);
 
         InMemorySharedPreferences prefs = new InMemorySharedPreferences();
         GboardMultiGlideSettings.ensureDefaults(prefs);
         assertFalse(GboardMultiGlideSettings.readTraceLoggingEnabled(prefs));
-        assertFalse(GboardMultiGlideSettings.readSpacebarTimerIndicatorEnabled(prefs));
+        assertTrue(GboardMultiGlideSettings.readSpacebarTimerIndicatorEnabled(prefs));
         assertFalse(GboardMultiGlideSettings.readWordReadyVibrationEnabled(prefs));
 
         assertTrue(GboardMultiGlideSettings.writeEnabled(prefs, false));
         assertTrue(GboardMultiGlideSettings.writeAutoSpaceEnabled(prefs, false));
         assertTrue(GboardMultiGlideSettings.writeAutoSpaceDelayMs(prefs, 725));
         assertTrue(GboardMultiGlideSettings.writeSingleTouchCombineDelayMs(prefs, 260));
-        assertTrue(GboardMultiGlideSettings.writeSpacebarTimerIndicatorEnabled(prefs, true));
-        assertTrue(GboardMultiGlideSettings.readSpacebarTimerIndicatorEnabled(prefs));
+        assertTrue(GboardMultiGlideSettings.writeSpacebarTimerIndicatorEnabled(prefs, false));
+        assertFalse(GboardMultiGlideSettings.readSpacebarTimerIndicatorEnabled(prefs));
         assertTrue(GboardMultiGlideSettings.writeWordReadyVibrationEnabled(prefs, true));
         assertTrue(GboardMultiGlideSettings.readWordReadyVibrationEnabled(prefs));
         assertTrue(GboardMultiGlideSettings.writeBeamWidth(prefs, 512));
