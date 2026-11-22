@@ -24,7 +24,7 @@ public final class GboardMultiGlideSettingsFeature implements GboardPatchesSetti
     private static final String TAG = "GboardPatches";
     private static final int AUTO_SPACE_DELAY_STEP_MS = 25;
     private static final int COMBINE_DELAY_STEP_MS = 10;
-    private static final int TAP_TO_MULTIGLIDE_DELAY_STEP_MS = 25;
+    private static final int TAP_TO_MULTIGLIDE_DELAY_STEP_MS = 10;
     private static final String SPACE_PLACEMENT_BEFORE = "before";
     private static final String SPACE_PLACEMENT_AFTER = "after";
 
