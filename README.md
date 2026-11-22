@@ -15,7 +15,7 @@
 
 </div>
 
-The patches in this repository bring two-finger swipe typing (**MultiGlide**), an **improved suggestion bar (Thicc Top Bar)**, and **custom animations** to Google Gboard, inspired by the legendary Nintype/Keyboard69 by jormy.
+The patches in this repository bring two-finger swipe typing (**MultiGlide**), an **improved suggestion bar (Thicc Top Bar)**, **custom key hold popups**, and **typing animations** to Google Gboard, inspired by the legendary Nintype/Keyboard69 by jormy.
 
 > **Development note:** This project was created through vibe coding with extensive testing. Because the patches modify Gboard behavior at runtime, results may vary across devices and Gboard versions. Please review the project and decide whether these patches are suitable for your own device and use case.
 
@@ -42,7 +42,14 @@ MultiGlide uses the gesture-decoding algorithm from the [Kinetica implementation
 - **Keyboard warp & wind streams**: Adds interactive touch-area warp distortion and flowing wind streams during swipes, with tunable warp strength/radius and wind intensity/spread.
 - **Color palettes & in-app tuning**: Choose between **Rainbow**, **Neon**, **Fire**, **Galaxy**, and **Pastel** palettes and fine-tune every animation toggle, particle count, size, speed, and lifetime in **Gboard Settings > GinType**.
 
-### 4. Package Rename (Side-by-Side Installation)
+### 4. Custom Hold Popups
+- **Direct on-keyboard editing**: Long-press any key and slide to the pencil icon to add a new symbol, or hold on an existing popup item for 2 seconds to edit or replace it.
+- **Characters, symbols, emojis, and snippets**: Assign custom characters, punctuation, emojis, or frequently used text snippets to any key's long-press popup.
+- **Lock keys mode**: Toggle in settings to hide the edit icon and disable hold-to-edit, preventing accidental modifications while typing.
+- **Universal layout support**: Works seamlessly across all keyboard languages and layouts.
+- **Full management & reset**: View, edit, or reset individual custom bindings, or restore all default symbols in **Gboard Settings > GinType > Custom Hold Popups**.
+
+### 5. Package Rename (Side-by-Side Installation)
 - Enabled by default so non-rooted phones can install the patched keyboard **alongside** official Play Store Gboard (`dev.srwi.com.google.android.inputmethod.latin`), complete with a customizable app name (`GinType` by default).
 - Can be disabled if you prefer an in-place replacement (requires root/mount or matching signatures).
 
