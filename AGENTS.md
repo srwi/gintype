@@ -131,6 +131,7 @@ java -jar morphe-cli.jar patch \
 These steps work from any workstation over USB or Wi-Fi, or directly on the target Android phone inside Termux.
 
 ### Step 1: Connect ADB
+- **Check existing connections first**: Always run `adb devices` before asking the user for an IP address, wireless debugging port, or pairing code. If a device is already listed in the `device` state (e.g. an active Wireless Debugging session in the running ADB daemon), reuse it directly with `adb install` / `adb shell` / `adb logcat` without re-connecting.
 - **USB debugging**: Plug in the device, accept the RSA prompt, and confirm with `adb devices`.
 - **Wireless debugging** (**Settings > Developer options > Wireless debugging**):
   1. First-time pairing (**Pair device with pairing code**):
