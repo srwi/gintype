@@ -1,6 +1,6 @@
-# Gboard MultiSwipe
+# GinType
 
-**Gboard MultiSwipe** brings two-finger swipe typing (**multi-touch gestures**) and an **improved suggestion bar (Thicc Top Bar)** to Google Gboard.
+**GinType** brings two-finger swipe typing (**multi-touch gestures**) and an **improved suggestion bar (Thicc Top Bar)** to Google Gboard.
 
 
 The patches in this repository are inspired by Nintype/Keyboard69 by jormy.
@@ -9,14 +9,14 @@ The patches in this repository are inspired by Nintype/Keyboard69 by jormy.
 
 ## Features
 
-### 1. MultiSwipe
-MultiSwipe uses the gesture-decoding algorithm from the [Kinetica implementation](https://github.com/EZ-eta/kinetica).
+### 1. MultiGlide
+MultiGlide uses the gesture-decoding algorithm from the [Kinetica implementation](https://github.com/EZ-eta/kinetica).
 
 - **Simultaneous two-finger swiping**: Glide both thumbs at once to type faster with fluid multi-finger gestures.
 - **Tap + Swipe chording**: Tap opening letters with one finger while swiping the rest of the word with the other (or vice versa).
 - **Native Gboard dictionaries**: Uses Gboard's installed language dictionaries and supports accent/umlaut folding out of the box.
 - **Material You trail styling**: Draws multi-touch trails with a distinct dynamic Material You accent color while keeping Matrix suggestions aligned with your active Gboard theme.
-- **In-app tuning**: Adjust gesture timing, beam sensitivity, autospace behavior, and debug log export time windows directly via **Gboard Settings > MultiSwipe & Thicc Top Bar**.
+- **In-app tuning**: Adjust gesture timing, beam sensitivity, autospace behavior, and debug log export time windows directly via **Gboard Settings > GinType**.
 
 ### 2. Thicc Top Bar
 - **Vertical suggestion wheels**: Swipe up or down inside the top suggestion bar to browse alternative word predictions and sentence variants in a 2D grid.
@@ -28,10 +28,10 @@ MultiSwipe uses the gesture-decoding algorithm from the [Kinetica implementation
 - **Glitter & particle explosions**: Emits trailing glitter particles (`Sparkles`, `Sparks`, `Confetti`, or `Mixed`) and triggers tap/release particle bursts (`Sparks Ring`, `Sparkles`, `Confetti`, or `All Out`) with optional expanding shockwave rings.
 - **Key highlights**: Animates pressed keys with `Neon Glow`, `Plasma Pulse`, or `Soft Fill` effects and adjustable highlight duration.
 - **Keyboard warp & wind streams**: Adds interactive touch-area warp distortion and flowing wind streams during swipes, with tunable warp strength/radius and wind intensity/spread.
-- **Color palettes & in-app tuning**: Choose between **Rainbow**, **Neon**, **Fire**, **Galaxy**, and **Pastel** palettes and fine-tune every animation toggle, particle count, size, speed, and lifetime in **Gboard Settings > MultiSwipe & Thicc Top Bar**.
+- **Color palettes & in-app tuning**: Choose between **Rainbow**, **Neon**, **Fire**, **Galaxy**, and **Pastel** palettes and fine-tune every animation toggle, particle count, size, speed, and lifetime in **Gboard Settings > GinType**.
 
 ### 4. Package Rename (Side-by-Side Installation)
-- Enabled by default so non-rooted phones can install the patched keyboard **alongside** official Play Store Gboard (`dev.srwi.com.google.android.inputmethod.latin`), complete with a customizable app name (`Gboard MultiSwipe` by default).
+- Enabled by default so non-rooted phones can install the patched keyboard **alongside** official Play Store Gboard (`dev.srwi.com.google.android.inputmethod.latin`), complete with a customizable app name (`GinType` by default).
 - Can be disabled if you prefer an in-place replacement (requires root/mount or matching signatures).
 
 ## Install
@@ -44,17 +44,17 @@ MultiSwipe uses the gesture-decoding algorithm from the [Kinetica implementation
 
 Add the repository as a Morphe source:
 
-- [Open in Morphe](https://morphe.software/add-source?github=srwi/gboard-multiswipe)
-- Or add `https://github.com/srwi/gboard-multiswipe` manually.
+- [Open in Morphe](https://morphe.software/add-source?github=srwi/GinType)
+- Or add `https://github.com/srwi/GinType` manually.
 
 Select a clean supported Gboard installer, then choose the patches you want:
 
 - **Thicc Top Bar** for vertical word suggestions and sentence history
-- **MultiSwipe** for two-finger and tap-plus-swipe typing
+- **MultiGlide** for two-finger and tap-plus-swipe typing
 - **Typing Effects** for animated swipe trails, glitter, explosions, key highlights, and warp/wind effects
 - **Package Rename** for side-by-side installation on non-rooted devices
 
-After patching, install the generated APK. Enable the keyboard in **Android Settings > System > Keyboard > On-screen keyboard**, switch to it, and open **Gboard Settings > MultiSwipe & Thicc Top Bar** to configure the patches.
+After patching, install the generated APK. Enable the keyboard in **Android Settings > System > Keyboard > On-screen keyboard**, switch to it, and open **Gboard Settings > GinType** to configure the patches.
 
 ## Build
 

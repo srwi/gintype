@@ -14,7 +14,7 @@
       "options": []
     },
     {
-      "name": "MultiSwipe",
+      "name": "MultiGlide",
       "description": "Two-finger swipe and tap+swipe chorded gesture typing powered by the Kinetica algorithm and Gboard dictionary.",
       "use": true,
       "dependencies": [],
@@ -42,12 +42,12 @@
           "description": "",
           "required": true,
           "type": "kotlin.String",
-          "default": "Gboard MultiSwipe",
+          "default": "GinType",
           "values": {
             "Gboard": "Gboard",
             "Gboard Dev": "Gboard Dev",
             "Gboard Mod": "Gboard Mod",
-            "Gboard MultiSwipe": "Gboard MultiSwipe"
+            "GinType": "GinType"
           }
         }
       ]

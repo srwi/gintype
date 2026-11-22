@@ -1,4 +1,4 @@
-rootProject.name = "gboard-multiswipe"
+rootProject.name = "GinType"
 
 dependencyResolutionManagement {
     repositories {

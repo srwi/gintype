@@ -8,19 +8,19 @@ This directory contains the Kotlin Morphe patches, version-binding compiler, run
 
 ```text
 patches/
-├── src/main/kotlin/dev/srwi/gboardmultiswipe/patches/
+├── src/main/kotlin/dev/srwi/gintype/patches/
 │   ├── shared/Constants.kt                          # Package IDs, COMPATIBILITY_GBOARD
 │   └── gboard/
 │       ├── features/
 │       │   ├── thicctopbar/                   # Thicc Top Bar hook & feature marker
-│       │   ├── multiswipe/                    # MultiSwipe gesture hooks & feature marker
+│       │   ├── multiglide/                    # MultiGlide gesture hooks & feature marker
 │       │   └── packagerename/                       # Side-by-side manifest/label rename
 │       ├── registry/
 │       │   ├── GboardPatchRegistry.kt               # Public patch definitions & catalog
 │       │   ├── GboardContributionWiring.kt          # Multi-contribution ordering rules
 │       │   └── GboardCapabilityWiringVerifier.kt    # Build-time wiring gate
 │       └── shared/
-│           ├── GboardPatchesExtensionCarrierPatch.kt# Merges extensions/gboard-multiswipe.rve
+│           ├── GboardPatchesExtensionCarrierPatch.kt# Merges extensions/gintype.rve
 │           ├── GboardPatchesSettingsPatch.kt        # Injects SettingsActivity/Provider & entry
 │           ├── GboardTargetBinding.kt               # Binding resolution from generated map
 │           ├── GboardStructuralFingerprint.kt       # Resilient method/field matchers
@@ -45,19 +45,19 @@ patches/
 
 ### Runtime ABI Safety (`runtimeabi`)
 - All Smali calls injected by bytecode patches MUST be declared in `RuntimeCallId` (`RuntimeAbi.kt`) and emitted via `RuntimeCallEmitter`.
-- `:patches:test` inspects compiled `.class` bytecode (`CompiledPatchRuntimeCallInventory`) alongside the built `patches/build/libs/patches-*.mpp` DEX runtime (`DexRuntimeArtifactInventory`) and verifies every emitted signature exists with exact parameter and return types in `extensions/gboard-multiswipe.rve`.
+- `:patches:test` inspects compiled `.class` bytecode (`CompiledPatchRuntimeCallInventory`) alongside the built `patches/build/libs/patches-*.mpp` DEX runtime (`DexRuntimeArtifactInventory`) and verifies every emitted signature exists with exact parameter and return types in `extensions/gintype.rve`.
 
 ### Namespace & Settings Isolation
 - `GboardPatchesSettingsPatch.kt` registers:
-  - Activity: `dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsActivity`
-  - Provider: `dev.srwi.gboardmultiswipe.extension.settings.GboardPatchesSettingsProvider`
-  - Provider authority suffix: `.gboard_multiswipe`
-  - Gboard settings preference key: `gboard_multiswipe_entry` (`"MultiSwipe & Thicc Top Bar"`)
+  - Activity: `dev.srwi.gintype.extension.settings.GboardPatchesSettingsActivity`
+  - Provider: `dev.srwi.gintype.extension.settings.GboardPatchesSettingsProvider`
+  - Provider authority suffix: `.gintype`
+  - Gboard settings preference key: `gintype_entry` (`"MultiGlide & Thicc Top Bar"`)
 - `GboardPackageRenameResourcePatch.kt`:
   - Rewrites `package` + 15 permission/provider/meta-data/deep-link attributes from `com.google.android.inputmethod.latin` to `dev.srwi.com.google.android.inputmethod.latin`.
   - Strips `android:requiredSplitTypes`, `android:splitTypes`, and `com.android.vending.splits.required` for standalone APK installs.
   - Updates `SettingsProvider` authority and settings `<intent>` `targetPackage` cleanly regardless of finalize execution order with `GboardPatchesSettingsPatch`.
-  - Uses resource `@string/gboard_multiswipe_app_display_name` (non-translatable) so combining with other bundles remains collision-free.
+  - Uses resource `@string/gintype_app_display_name` (non-translatable) so combining with other bundles remains collision-free.
 
 ---
 

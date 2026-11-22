@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==============================================================================
-# Gboard MultiSwipe Patcher
+# GinType Patcher
 # Streamlined script to build patches and patch a target Gboard APK/XAPK.
 # ==============================================================================
 
@@ -15,7 +15,7 @@ Usage: ./patch-gboard.sh [options] [INPUT_APK] [OUTPUT_APK] [MORPHE_CLI]
 
 Options:
   -i, --input <path>      Input Gboard APK, APKS, APKM, or XAPK file
-  -o, --output <path>     Output patched APK path (default: ./gboard-multiswipe-patched.apk)
+  -o, --output <path>     Output patched APK path (default: ./gintype-patched.apk)
   -m, --morphe <path>     Path to Morphe CLI JAR or executable
   -p, --patches <path>    Path to built .mpp patches bundle
   -r, --rename            Enable "Package Rename" for side-by-side installation
@@ -131,7 +131,7 @@ MPP_FILE="${PATCHES_ARG:-}"
 if [[ -z "$MPP_FILE" ]]; then
   EXISTING_MPP="$(find_mpp)"
   if [[ "$FORCE_BUILD" == true || -z "$EXISTING_MPP" || "$SKIP_BUILD" == false ]]; then
-    echo "=== Building Gboard MultiSwipe patches bundle ==="
+    echo "=== Building GinType patches bundle ==="
     ./gradlew :extensions:extension:compileReleaseJavaWithJavac :patches:buildAndroid
     EXISTING_MPP="$(find_mpp)"
   fi
@@ -145,7 +145,7 @@ fi
 echo "Patches bundle: $MPP_FILE"
 
 # Determine output APK path
-OUTPUT_APK="${OUTPUT_ARG:-${OUTPUT_APK:-"$SCRIPT_DIR/gboard-multiswipe-patched.apk"}}"
+OUTPUT_APK="${OUTPUT_ARG:-${OUTPUT_APK:-"$SCRIPT_DIR/gintype-patched.apk"}}"
 
 # Auto-detect input APK/APKS/APKM/XAPK if not provided
 INPUT_APK="${INPUT_ARG:-${INPUT_APK:-}}"
@@ -229,7 +229,7 @@ PATCH_ARGS=(
   --patches="$MPP_FILE"
   --exclusive
   -e "Thicc Top Bar"
-  -e "MultiSwipe"
+  -e "MultiGlide"
   -e "Typing Effects"
   -e "Custom Hold Popups"
 )

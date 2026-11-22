@@ -1,13 +1,13 @@
 <?xml version='1.0' encoding='utf-8'?>
 <settings-text locales="en">
     <string name="gboard_patches_activity_title">
-        <translation locale="en">MultiSwipe</translation>
+        <translation locale="en">GinType</translation>
         </string>
     <string name="gboard_patches_header_badge">
         <translation locale="en">Gboard</translation>
         </string>
     <string name="gboard_patches_header_title">
-        <translation locale="en">MultiSwipe settings</translation>
+        <translation locale="en">GinType settings</translation>
         </string>
     <string name="gboard_patches_header_summary">
         <translation locale="en" />
@@ -34,7 +34,7 @@
         <translation locale="en">Open keyboard</translation>
         </string>
     <string name="gboard_patches_keyboard_preview_title">
-        <translation locale="en">Gboard MultiSwipe</translation>
+        <translation locale="en">GinType</translation>
         </string>
     <string name="gboard_patches_keyboard_preview_input_accessibility">
         <translation locale="en">Keyboard test field</translation>
@@ -124,7 +124,7 @@
         <translation locale="en">Unsupported Gboard package</translation>
         </string>
     <string name="gboard_patches_developer_options_package_warning_message">
-        <translation locale="en">The current Gboard package is %1$s. Gboard MultiSwipe supports only the official package com.google.android.inputmethod.latin and dev.srwi.com.google.android.inputmethod.latin. Mixing Gboard builds from multiple sources may cause instability.</translation>
+        <translation locale="en">The current Gboard package is %1$s. GinType supports only the official package com.google.android.inputmethod.latin and dev.srwi.com.google.android.inputmethod.latin. Mixing Gboard builds from multiple sources may cause instability.</translation>
         </string>
     <string name="gboard_patches_developer_options_try_anyway">
         <translation locale="en">Try anyway</translation>
@@ -224,115 +224,115 @@
         <translation locale="en">View full screen</translation>
         </string>
 
-    <string name="gboard_patches_multiswipe_title">
-        <translation locale="en">MultiSwipe</translation>
+    <string name="gboard_patches_multiglide_title">
+        <translation locale="en">MultiGlide</translation>
         </string>
-    <string name="gboard_patches_multiswipe_summary">
+    <string name="gboard_patches_multiglide_summary">
         <translation locale="en">Swipe words with two fingers at once, while single-finger glide typing stays normal</translation>
         </string>
-    <string name="gboard_patches_multiswipe_section_gestures">
+    <string name="gboard_patches_multiglide_section_gestures">
         <translation locale="en">Gestures &amp; Timing</translation>
         </string>
-    <string name="gboard_patches_multiswipe_section_auto_space">
+    <string name="gboard_patches_multiglide_section_auto_space">
         <translation locale="en">Auto-space</translation>
         </string>
-    <string name="gboard_patches_multiswipe_section_advanced">
+    <string name="gboard_patches_multiglide_section_advanced">
         <translation locale="en">Advanced</translation>
         </string>
-    <string name="gboard_patches_multiswipe_enabled_title">
-        <translation locale="en">Enable MultiSwipe</translation>
+    <string name="gboard_patches_multiglide_enabled_title">
+        <translation locale="en">Enable MultiGlide</translation>
         </string>
-    <string name="gboard_patches_multiswipe_enabled_summary">
+    <string name="gboard_patches_multiglide_enabled_summary">
         <translation locale="en">Use both thumbs to swipe parts of a word together. Single-finger swiping still works as usual.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_auto_space_title">
+    <string name="gboard_patches_multiglide_auto_space_title">
         <translation locale="en">Auto-space</translation>
         </string>
-    <string name="gboard_patches_multiswipe_auto_space_summary">
+    <string name="gboard_patches_multiglide_auto_space_summary">
         <translation locale="en">Automatically insert spaces between two-finger words</translation>
         </string>
-    <string name="gboard_patches_multiswipe_space_placement_title">
+    <string name="gboard_patches_multiglide_space_placement_title">
         <translation locale="en">Space placement</translation>
         </string>
-    <string name="gboard_patches_multiswipe_space_placement_summary">
+    <string name="gboard_patches_multiglide_space_placement_summary">
         <translation locale="en">Choose whether spaces are added before the next word or after each word</translation>
         </string>
-    <string name="gboard_patches_multiswipe_space_placement_before">
+    <string name="gboard_patches_multiglide_space_placement_before">
         <translation locale="en">Before next word (Gboard style)</translation>
         </string>
-    <string name="gboard_patches_multiswipe_space_placement_after">
+    <string name="gboard_patches_multiglide_space_placement_after">
         <translation locale="en">After each word</translation>
         </string>
-    <string name="gboard_patches_multiswipe_auto_space_delay_title">
+    <string name="gboard_patches_multiglide_auto_space_delay_title">
         <translation locale="en">Word finish delay</translation>
         </string>
-    <string name="gboard_patches_multiswipe_auto_space_delay_summary">
+    <string name="gboard_patches_multiglide_auto_space_delay_summary">
         <translation locale="en">How long to wait after lifting your fingers before finalizing the word and adding a space</translation>
         </string>
-    <string name="gboard_patches_multiswipe_auto_space_delay_value">
+    <string name="gboard_patches_multiglide_auto_space_delay_value">
         <translation locale="en">%d ms</translation>
         </string>
-    <string name="gboard_patches_multiswipe_auto_space_delay_value_default">
+    <string name="gboard_patches_multiglide_auto_space_delay_value_default">
         <translation locale="en">%d ms (Default)</translation>
         </string>
-    <string name="gboard_patches_multiswipe_auto_space_delay_custom">
+    <string name="gboard_patches_multiglide_auto_space_delay_custom">
         <translation locale="en">Custom…</translation>
         </string>
-    <string name="gboard_patches_multiswipe_combine_enabled_title">
+    <string name="gboard_patches_multiglide_combine_enabled_title">
         <translation locale="en">Chain consecutive swipes</translation>
         </string>
-    <string name="gboard_patches_multiswipe_combine_enabled_summary">
+    <string name="gboard_patches_multiglide_combine_enabled_summary">
         <translation locale="en">Combine quick single-finger swipes into one word instead of starting a new word each time</translation>
         </string>
-    <string name="gboard_patches_multiswipe_combine_delay_title">
+    <string name="gboard_patches_multiglide_combine_delay_title">
         <translation locale="en">Swipe combine window</translation>
         </string>
-    <string name="gboard_patches_multiswipe_combine_delay_summary">
+    <string name="gboard_patches_multiglide_combine_delay_summary">
         <translation locale="en">How long to wait for the next swipe before treating it as a new word</translation>
         </string>
-    <string name="gboard_patches_multiswipe_tap_to_multiswipe_enabled_title">
+    <string name="gboard_patches_multiglide_tap_to_multiglide_enabled_title">
         <translation locale="en">Continue tapped letters with a swipe</translation>
         </string>
-    <string name="gboard_patches_multiswipe_tap_to_multiswipe_enabled_summary">
+    <string name="gboard_patches_multiglide_tap_to_multiglide_enabled_summary">
         <translation locale="en">If you tap a few letters and then swipe with two fingers, combine them into one word</translation>
         </string>
-    <string name="gboard_patches_multiswipe_tap_to_multiswipe_delay_title">
+    <string name="gboard_patches_multiglide_tap_to_multiglide_delay_title">
         <translation locale="en">Tap-to-swipe window</translation>
         </string>
-    <string name="gboard_patches_multiswipe_tap_to_multiswipe_delay_summary">
+    <string name="gboard_patches_multiglide_tap_to_multiglide_delay_summary">
         <translation locale="en">How long recent letter taps count toward a two-finger swipe</translation>
         </string>
-    <string name="gboard_patches_multiswipe_smart_tap_swipe_split_enabled_title">
+    <string name="gboard_patches_multiglide_smart_tap_swipe_split_enabled_title">
         <translation locale="en">Keep short tapped words separate</translation>
         </string>
-    <string name="gboard_patches_multiswipe_smart_tap_swipe_split_enabled_summary">
+    <string name="gboard_patches_multiglide_smart_tap_swipe_split_enabled_summary">
         <translation locale="en">Insert a space instead of combining when a 1–3 letter tap prefix and the following swipe make more sense as separate words</translation>
         </string>
-    <string name="gboard_patches_multiswipe_spacebar_timer_indicator_title">
+    <string name="gboard_patches_multiglide_spacebar_timer_indicator_title">
         <translation locale="en">Show countdown on spacebar</translation>
         </string>
-    <string name="gboard_patches_multiswipe_spacebar_timer_indicator_summary">
+    <string name="gboard_patches_multiglide_spacebar_timer_indicator_summary">
         <translation locale="en">Display a visual bar on the spacebar while waiting to finish the word</translation>
         </string>
-    <string name="gboard_patches_multiswipe_word_ready_vibration_title">
+    <string name="gboard_patches_multiglide_word_ready_vibration_title">
         <translation locale="en">Vibrate when ready for new word</translation>
         </string>
-    <string name="gboard_patches_multiswipe_word_ready_vibration_summary">
+    <string name="gboard_patches_multiglide_word_ready_vibration_summary">
         <translation locale="en">Give a subtle vibration when the word timer expires and a new word can begin</translation>
         </string>
-    <string name="gboard_patches_multiswipe_backspace_mode_title">
+    <string name="gboard_patches_multiglide_backspace_mode_title">
         <translation locale="en">Backspace behavior</translation>
         </string>
-    <string name="gboard_patches_multiswipe_backspace_mode_summary">
+    <string name="gboard_patches_multiglide_backspace_mode_summary">
         <translation locale="en">What Backspace does right after a two-finger swipe</translation>
         </string>
-    <string name="gboard_patches_multiswipe_backspace_mode_whole_word">
+    <string name="gboard_patches_multiglide_backspace_mode_whole_word">
         <translation locale="en">Delete entire word (Default)</translation>
         </string>
-    <string name="gboard_patches_multiswipe_backspace_mode_last_input">
+    <string name="gboard_patches_multiglide_backspace_mode_last_input">
         <translation locale="en">Undo last swipe or tap before word is finished</translation>
         </string>
-    <string name="gboard_patches_multiswipe_combine_delay_off">
+    <string name="gboard_patches_multiglide_combine_delay_off">
         <translation locale="en">0 ms (Off)</translation>
         </string>
     <string name="gboard_patches_kinetica_title">
@@ -347,94 +347,94 @@
     <string name="gboard_patches_kinetica_section_parameters">
         <translation locale="en">Decoder parameters</translation>
         </string>
-    <string name="gboard_patches_multiswipe_beam_width_title">
+    <string name="gboard_patches_multiglide_beam_width_title">
         <translation locale="en">Search depth</translation>
         </string>
-    <string name="gboard_patches_multiswipe_beam_width_summary">
+    <string name="gboard_patches_multiglide_beam_width_summary">
         <translation locale="en">How many word candidates the decoder tracks per letter. Higher values can improve accuracy for long words, but use slightly more battery.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_freq_weight_floor_title">
+    <string name="gboard_patches_multiglide_freq_weight_floor_title">
         <translation locale="en">Rare word boost</translation>
         </string>
-    <string name="gboard_patches_multiswipe_freq_weight_floor_summary">
+    <string name="gboard_patches_multiglide_freq_weight_floor_summary">
         <translation locale="en">Prevent common words from overriding rare words you swiped accurately. Higher = easier to type uncommon words.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_geo_exponent_title">
+    <string name="gboard_patches_multiglide_geo_exponent_title">
         <translation locale="en">Path strictness</translation>
         </string>
-    <string name="gboard_patches_multiswipe_geo_exponent_summary">
+    <string name="gboard_patches_multiglide_geo_exponent_summary">
         <translation locale="en">How closely your swipe must match the exact letters. Higher = follow your path strictly; lower = allow messier swipes.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_beam_freq_weight_title">
+    <string name="gboard_patches_multiglide_beam_freq_weight_title">
         <translation locale="en">Common word preference</translation>
         </string>
-    <string name="gboard_patches_multiswipe_beam_freq_weight_summary">
+    <string name="gboard_patches_multiglide_beam_freq_weight_summary">
         <translation locale="en">How strongly everyday words are preferred while matching your swipe. 0 = match finger path only.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_value_default">
+    <string name="gboard_patches_multiglide_value_default">
         <translation locale="en">%s (Default)</translation>
         </string>
-    <string name="gboard_patches_multiswipe_error_title">
-        <translation locale="en">MultiSwipe settings unavailable</translation>
+    <string name="gboard_patches_multiglide_error_title">
+        <translation locale="en">MultiGlide settings unavailable</translation>
         </string>
-    <string name="gboard_patches_multiswipe_error_summary">
-        <translation locale="en">The MultiSwipe settings screen failed to load. Reopen Gboard settings and try again.</translation>
+    <string name="gboard_patches_multiglide_error_summary">
+        <translation locale="en">The MultiGlide settings screen failed to load. Reopen Gboard settings and try again.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_section_diagnostics">
+    <string name="gboard_patches_multiglide_section_diagnostics">
         <translation locale="en">Diagnostics</translation>
         </string>
-    <string name="gboard_patches_multiswipe_diagnostics_summary">
+    <string name="gboard_patches_multiglide_diagnostics_summary">
         <translation locale="en">Record and export logs for troubleshooting</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_logging_title">
+    <string name="gboard_patches_multiglide_trace_logging_title">
         <translation locale="en">Debug trace logging</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_logging_summary">
+    <string name="gboard_patches_multiglide_trace_logging_summary">
         <translation locale="en">Record touch paths, timings, and decoder candidates to local trace logs for troubleshooting.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_title">
+    <string name="gboard_patches_multiglide_trace_export_title">
         <translation locale="en">Export debug trace log…</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_summary">
+    <string name="gboard_patches_multiglide_trace_export_summary">
         <translation locale="en">Choose how many minutes back to export recorded trace events as JSONL.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_dialog_title">
+    <string name="gboard_patches_multiglide_trace_export_dialog_title">
         <translation locale="en">Export trace window</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_minutes_item">
+    <string name="gboard_patches_multiglide_trace_export_minutes_item">
         <translation locale="en">Last %d minutes</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_hours_item">
+    <string name="gboard_patches_multiglide_trace_export_hours_item">
         <translation locale="en">Last %d hours</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_all">
+    <string name="gboard_patches_multiglide_trace_export_all">
         <translation locale="en">All recorded logs</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_hint">
+    <string name="gboard_patches_multiglide_trace_export_hint">
         <translation locale="en">Minutes (1–1440)</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_error">
+    <string name="gboard_patches_multiglide_trace_export_error">
         <translation locale="en">Enter a duration between 1 and 1440 minutes.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_empty">
+    <string name="gboard_patches_multiglide_trace_export_empty">
         <translation locale="en">No trace log entries found in the selected time window.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_export_done">
+    <string name="gboard_patches_multiglide_trace_export_done">
         <translation locale="en">Trace log exported.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_clear_title">
+    <string name="gboard_patches_multiglide_trace_clear_title">
         <translation locale="en">Clear debug trace logs</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_clear_summary">
-        <translation locale="en">Delete locally stored MultiSwipe trace log files.</translation>
+    <string name="gboard_patches_multiglide_trace_clear_summary">
+        <translation locale="en">Delete locally stored MultiGlide trace log files.</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_clear_confirm_title">
+    <string name="gboard_patches_multiglide_trace_clear_confirm_title">
         <translation locale="en">Clear debug trace logs?</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_clear_confirm_message">
-        <translation locale="en">Delete all recorded MultiSwipe trace log files?</translation>
+    <string name="gboard_patches_multiglide_trace_clear_confirm_message">
+        <translation locale="en">Delete all recorded MultiGlide trace log files?</translation>
         </string>
-    <string name="gboard_patches_multiswipe_trace_clear_done">
+    <string name="gboard_patches_multiglide_trace_clear_done">
         <translation locale="en">Debug trace logs cleared.</translation>
         </string>
     <string name="gboard_patches_kinetica_reset_title">
@@ -492,7 +492,7 @@
         <translation locale="en">Rainbow swipe trail</translation>
         </string>
     <string name="gboard_patches_typing_effects_rainbow_trail_summary">
-        <translation locale="en">Replace the default swipe trail with an animated color trail for single-finger and MultiSwipe gestures</translation>
+        <translation locale="en">Replace the default swipe trail with an animated color trail for single-finger and MultiGlide gestures</translation>
         </string>
     <string name="gboard_patches_typing_effects_trail_glow_title">
         <translation locale="en">Trail neon glow</translation>

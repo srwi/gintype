@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an idea for Gboard MultiSwipe
+description: Suggest an idea for GinType
 title: "[Feature] "
 labels: [enhancement]
 body:
@@ -8,9 +8,9 @@ body:
       label: Preflight checklist
       description: Please complete these checks before submitting the request.
       options:
-        - label: I have read the [README](https://github.com/srwi/gboard-multiswipe/blob/master/README.md) and the feature is not already documented.
+        - label: I have read the [README](https://github.com/srwi/GinType/blob/master/README.md) and the feature is not already documented.
           required: true
-        - label: I have searched the [open and closed issues](https://github.com/srwi/gboard-multiswipe/issues?q=) for the same request without success.
+        - label: I have searched the [open and closed issues](https://github.com/srwi/GinType/issues?q=) for the same request without success.
           required: true
   - type: textarea
     id: problem-description
@@ -24,7 +24,7 @@ body:
     id: proposed-solution
     attributes:
       label: Proposed solution
-      description: What would you like Gboard MultiSwipe to do?
+      description: What would you like GinType to do?
       placeholder: I would like ... so that ...
     validations:
       required: true

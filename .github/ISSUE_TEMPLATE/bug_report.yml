@@ -8,16 +8,16 @@ body:
       label: Preflight checklist
       description: Please complete these checks before submitting the report.
       options:
-        - label: I have read the [README](https://github.com/srwi/gboard-multiswipe/blob/master/README.md) and it did not solve the problem.
+        - label: I have read the [README](https://github.com/srwi/GinType/blob/master/README.md) and it did not solve the problem.
           required: true
-        - label: I have searched the [open and closed issues](https://github.com/srwi/gboard-multiswipe/issues?q=) for the same problem without success.
+        - label: I have searched the [open and closed issues](https://github.com/srwi/GinType/issues?q=) for the same problem without success.
           required: true
-        - label: I tested with only Gboard MultiSwipe applied, without other patch bundles.
+        - label: I tested with only GinType applied, without other patch bundles.
           required: true
   - type: input
     id: patches-version
     attributes:
-      label: Gboard MultiSwipe version
+      label: GinType version
       description: What patch bundle version are you using?
       placeholder: "e.g. 1.0.0"
     validations:
@@ -82,7 +82,7 @@ body:
     id: log-output
     attributes:
       label: Log output
-      description: If applicable, paste relevant Logcat output, especially lines tagged GboardPatches, GboardThiccTopBar, or GboardMultiSwipe.
+      description: If applicable, paste relevant Logcat output, especially lines tagged GboardPatches, GboardThiccTopBar, or GboardMultiGlide.
       render: text
   - type: textarea
     id: additional-information

@@ -45,7 +45,7 @@ abstract class GenerateTargetBindingsTask @Inject constructor(
     fun generate() {
         execOperations.javaexec {
             classpath(compilerClasspath)
-            mainClass.set("dev.srwi.gboardmultiswipe.tools.bindings.TargetBindingGenerator")
+            mainClass.set("dev.srwi.gintype.tools.bindings.TargetBindingGenerator")
             args(
                 profileFile.get().asFile.absolutePath,
                 productCatalogFile.get().asFile.absolutePath,
@@ -57,7 +57,7 @@ abstract class GenerateTargetBindingsTask @Inject constructor(
     }
 }
 
-group = "dev.srwi.gboardmultiswipe"
+group = "dev.srwi.gintype"
 
 val generatedPatchInfoDir = layout.buildDirectory.dir("generated/sources/patchBuildInfo/kotlin/main")
 val generatedVersionBindingsDir = layout.buildDirectory.dir("generated/sources/versionBindings/kotlin/main")
@@ -111,12 +111,12 @@ val generatePatchBuildInfo = tasks.register("generatePatchBuildInfo") {
     outputs.dir(outputDir)
 
     doLast {
-        val packageDir = outputDir.get().file("dev/srwi/gboardmultiswipe/patches/shared").asFile
+        val packageDir = outputDir.get().file("dev/srwi/gintype/patches/shared").asFile
         packageDir.mkdirs()
 
         packageDir.resolve("PatchBuildInfo.kt").writeText(
             """
-            package dev.srwi.gboardmultiswipe.patches.shared
+            package dev.srwi.gintype.patches.shared
 
             internal object PatchBuildInfo {
                 const val VERSION = "$patchVersion"
@@ -132,12 +132,12 @@ val generateGboardVersionBindings = tasks.register<GenerateTargetBindingsTask>(
 ) {
     val outputFile = generatedVersionBindingsDir.map { directory ->
         directory.file(
-            "dev/srwi/gboardmultiswipe/patches/gboard/shared/generated/GboardVersionBindings.kt"
+            "dev/srwi/gintype/patches/gboard/shared/generated/GboardVersionBindings.kt"
         )
     }
     val admissionOutputFile = generatedVersionBindingsDir.map { directory ->
         directory.file(
-            "dev/srwi/gboardmultiswipe/patches/gboard/shared/generated/GboardTargetAdmission.kt"
+            "dev/srwi/gintype/patches/gboard/shared/generated/GboardTargetAdmission.kt"
         )
     }
 
@@ -154,12 +154,12 @@ val generateGboardVersionBindings = tasks.register<GenerateTargetBindingsTask>(
 
 patches {
     about {
-        name = "Gboard MultiSwipe Patches"
-        description = "Morphe patches for MultiSwipe multi-touch swiping and 2D matrix top-bar suggestions in Gboard."
-        source = "https://github.com/srwi/gboard-multiswipe"
+        name = "GinType Patches"
+        description = "Morphe patches for MultiGlide multi-touch swiping and 2D matrix top-bar suggestions in Gboard."
+        source = "https://github.com/srwi/GinType"
         author = "srwi"
-        contact = "https://github.com/srwi/gboard-multiswipe/issues"
-        website = "https://github.com/srwi/gboard-multiswipe"
+        contact = "https://github.com/srwi/GinType/issues"
+        website = "https://github.com/srwi/GinType"
         license = "GPLv3"
     }
 }
@@ -191,7 +191,7 @@ tasks {
         dependsOn("compileKotlin")
         classpath = sourceSets.main.get().runtimeClasspath
         mainClass.set(
-            "dev.srwi.gboardmultiswipe.patches.gboard.registry.GboardCapabilityWiringVerifier"
+            "dev.srwi.gintype.patches.gboard.registry.GboardCapabilityWiringVerifier"
         )
         args(gboardProductCatalog.asFile.absolutePath)
     }
@@ -244,7 +244,7 @@ tasks {
         dependsOn(build, patchMetadataSourceSet.classesTaskName)
 
         classpath = patchMetadataSourceSet.runtimeClasspath
-        mainClass.set("dev.srwi.gboardmultiswipe.util.PatchListGeneratorKt")
+        mainClass.set("dev.srwi.gintype.util.PatchListGeneratorKt")
     }
 
     register("normalizePatchMetadataEncoding") {

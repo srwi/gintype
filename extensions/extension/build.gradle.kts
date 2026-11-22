@@ -54,7 +54,7 @@ private fun escapeJavaString(value: String): String = decodeAndroidEscapes(value
     .replace("\n", "\\n")
 
 extension {
-    name = "extensions/gboard-multiswipe.rve"
+    name = "extensions/gintype.rve"
 }
 
 val settingsTextAuthority = layout.projectDirectory.file(
@@ -68,7 +68,7 @@ val generatedSettingsTextJavaDir = layout.buildDirectory.dir(
 )
 
 android {
-    namespace = "dev.srwi.gboardmultiswipe.extension"
+    namespace = "dev.srwi.gintype.extension"
 
     buildFeatures {
         buildConfig = true
@@ -81,7 +81,7 @@ android {
         buildConfigField(
             "String",
             "PATCH_REPOSITORY_URL",
-            "\"https://github.com/srwi/gboard-multiswipe\""
+            "\"https://github.com/srwi/GinType\""
         )
         buildConfigField("String", "PATCH_VERSION", "\"${project.version}\"")
     }
@@ -213,16 +213,16 @@ val generateSettingsText = tasks.register("generateSettingsText") {
         val stringEntries = entries.filter { it.type == "string" }
         val pluralEntries = entries.filter { it.type == "plurals" }
         val javaOutput = generatedSettingsTextJavaDir.get().asFile.resolve(
-            "dev/srwi/gboardmultiswipe/extension/settings/GboardSettingsTextCatalog.java"
+            "dev/srwi/gintype/extension/settings/GboardSettingsTextCatalog.java"
         )
         javaOutput.parentFile.mkdirs()
         javaOutput.writeText(buildString {
-            appendLine("package dev.srwi.gboardmultiswipe.extension.settings;")
+            appendLine("package dev.srwi.gintype.extension.settings;")
             appendLine()
             appendLine("import java.util.HashMap;")
             appendLine("import java.util.Map;")
             appendLine()
-            appendLine("import dev.srwi.gboardmultiswipe.extension.R;")
+            appendLine("import dev.srwi.gintype.extension.R;")
             appendLine()
             appendLine("final class GboardSettingsTextCatalog {")
             appendLine("    private static final Map<Integer, String> ENGLISH = createEnglish();")
@@ -294,7 +294,7 @@ tasks.named("syncExtension") {
 tasks.named("syncExtension") {
     doLast {
         val extensionDex = layout.buildDirectory.file(
-            "morphe/extensions/gboard-multiswipe.rve"
+            "morphe/extensions/gintype.rve"
         ).get().asFile
         check(extensionDex.isFile) {
             "Morphe extension dex was not generated: $extensionDex"

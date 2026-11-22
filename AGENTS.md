@@ -1,27 +1,27 @@
 # AGENTS.md — Autonomous Building, Patching, and Device Deployment
 
-This document provides portable instructions for developers, CI pipelines, and AI agents to build, test, patch, and deploy `gboard-multiswipe` on any Android device via USB ADB, Wireless Debugging, or on-device Termux.
+This document provides portable instructions for developers, CI pipelines, and AI agents to build, test, patch, and deploy `GinType` on any Android device via USB ADB, Wireless Debugging, or on-device Termux.
 
 ---
 
 ## 1. Project Overview & Architecture
 
-`gboard-multiswipe` is a standalone Morphe/ReVanced patch repository providing Gboard patches:
+`GinType` is a standalone Morphe/ReVanced patch repository providing Gboard patches:
 
 1. **Thicc Top Bar** (`thicc_top_bar`): Improved suggestion bar with vertical wheel scrolling and sentence history.
-2. **MultiSwipe** (`multiswipe`): Two-finger chorded swipe and tap+swipe gesture typing powered by the Kinetica algorithm and Gboard dictionary.
-3. **Package Rename** (`package_rename`): Renames the patched package to `dev.srwi.com.google.android.inputmethod.latin` with a customizable launcher/IME display name (`Gboard MultiSwipe` by default) so non-rooted devices can install it side-by-side alongside official Play Store or system-signed Gboard.
+2. **MultiGlide** (`multiglide`): Two-finger chorded swipe and tap+swipe gesture typing powered by the Kinetica algorithm and Gboard dictionary.
+3. **Package Rename** (`package_rename`): Renames the patched package to `dev.srwi.com.google.android.inputmethod.latin` with a customizable launcher/IME display name (`GinType` by default) so non-rooted devices can install it side-by-side alongside official Play Store or system-signed Gboard.
 
 ### Target & Non-Interference Guarantee
 - **Target Application Package**: `com.google.android.inputmethod.latin` (pinned target: `18.5.4.993608717-release-arm64-v8a`)
 - **Renamed Side-by-Side Package**: `dev.srwi.com.google.android.inputmethod.latin`
-- **Isolated Extension Namespace**: `dev.srwi.gboardmultiswipe`
-- **Independent Settings Entry Key**: `gboard_multiswipe_entry` ("MultiSwipe & Thicc Top Bar")
-- **Independent ContentProvider Authority**: `${applicationId}.gboard_multiswipe`
+- **Isolated Extension Namespace**: `dev.srwi.gintype`
+- **Independent Settings Entry Key**: `gintype_entry` ("GinType")
+- **Independent ContentProvider Authority**: `${applicationId}.gintype`
 - **Coexistence**: Can be applied alone or combined with other Morphe/ReVanced patch bundles without settings collisions or provider crashes (enable `Package Rename` in at most one bundle).
 - **Language**: English only (all code, resource strings, tests, commit messages, and documentation).
-- **Module Guides**: See [`patches/AGENTS.md`](patches/AGENTS.md) for patch registry, target bindings compiler, and Runtime ABI contracts, and [`extensions/AGENTS.md`](extensions/AGENTS.md) for MultiSwipe/Kinetica runtime hooks, Thicc Top Bar reflection, and settings codegen.
-- **Behavioral Specifications**: [`docs/multiswipe-integration.md`](docs/multiswipe-integration.md) is the authoritative behavioral specification for how MultiSwipe integrates into Gboard (`MS-01`–`MS-21`). All code and tests for MultiSwipe integration MUST conform to this document.
+- **Module Guides**: See [`patches/AGENTS.md`](patches/AGENTS.md) for patch registry, target bindings compiler, and Runtime ABI contracts, and [`extensions/AGENTS.md`](extensions/AGENTS.md) for MultiGlide/Kinetica runtime hooks, Thicc Top Bar reflection, and settings codegen.
+- **Behavioral Specifications**: [`docs/multiglide-integration.md`](docs/multiglide-integration.md) is the authoritative behavioral specification for how MultiGlide integrates into Gboard (`MG-01`–`MG-21`). All code and tests for MultiGlide integration MUST conform to this document.
 
 ---
 
@@ -53,12 +53,12 @@ Output artifact: `patches/build/libs/patches-1.0.0.mpp`
 # Patches contract, manifest/settings/package-rename transform, and wiring tests
 ./gradlew :patches:test
 
-# Extension core logic unit tests (Thicc Top Bar helpers and MultiSwipe gesture decoder/geometry/accent folding)
+# Extension core logic unit tests (Thicc Top Bar helpers and MultiGlide gesture decoder/geometry/accent folding)
 ./gradlew :extensions:extension:testDebugUnitTest \
-  --tests "dev.srwi.gboardmultiswipe.extension.thicctopbar.*" \
-  --tests "dev.srwi.gboardmultiswipe.extension.multiswipe.*"
+  --tests "dev.srwi.gintype.extension.thicctopbar.*" \
+  --tests "dev.srwi.gintype.extension.multiglide.*"
 ```
-> Note: Other Robolectric-based Android tests in `:extensions:extension` require Robolectric Android runtime JARs (not available offline or on ARM64 Termux hosts). The filtered Thicc Top Bar + MultiSwipe unit suites above run cleanly in all environments.
+> Note: Other Robolectric-based Android tests in `:extensions:extension` require Robolectric Android runtime JARs (not available offline or on ARM64 Termux hosts). The filtered Thicc Top Bar + MultiGlide unit suites above run cleanly in all environments.
 
 ### Refresh `patches-list.json`
 Run whenever patch names, descriptions, defaults, or options change:
@@ -77,9 +77,9 @@ Use `--rename` (`-r`) so the patched APK installs alongside stock Gboard with no
 ```bash
 ./patch-gboard.sh \
   --rename \
-  --app-name "Gboard MultiSwipe" \
+  --app-name "GinType" \
   -i /path/to/gboard-18.5.4.xapk \
-  -o ./gboard-multiswipe-patched.apk \
+  -o ./gintype-patched.apk \
   -m /path/to/morphe-cli.jar
 ```
 
@@ -88,7 +88,7 @@ Omit `--rename` to keep `com.google.android.inputmethod.latin` (requires root/mo
 ```bash
 ./patch-gboard.sh \
   -i /path/to/gboard-18.5.4.xapk \
-  -o ./gboard-multiswipe-patched.apk \
+  -o ./gintype-patched.apk \
   -m /path/to/morphe-cli.jar
 ```
 
@@ -104,10 +104,10 @@ java -jar morphe-cli.jar patch \
   --patches=patches/build/libs/patches-1.0.0.mpp \
   --exclusive \
   -e "Thicc Top Bar" \
-  -e "MultiSwipe" \
+  -e "MultiGlide" \
   -e "Package Rename" \
-  -Oapp_display_name="Gboard MultiSwipe" \
-  -o ./gboard-multiswipe-patched.apk \
+  -Oapp_display_name="GinType" \
+  -o ./gintype-patched.apk \
   /path/to/gboard-18.5.4.xapk
 ```
 
@@ -117,7 +117,7 @@ java -jar morphe-cli.jar patch \
   --patches=patches/build/libs/patches-1.0.0.mpp \
   --patches=/path/to/other-gboard-patches.mpp \
   -e "Thicc Top Bar" \
-  -e "MultiSwipe" \
+  -e "MultiGlide" \
   -e "Package Rename" \
   -e "<Other Patch Name>" \
   -o ./gboard-all-patches.apk \
@@ -165,13 +165,13 @@ fi
 ### Step 3: Patch the Extracted APK/APKS
 ```bash
 # Side-by-side (non-root compatible, package: dev.srwi.com.google.android.inputmethod.latin)
-./patch-gboard.sh --rename -i ./gboard-base.apks -o ./gboard-multiswipe-patched.apk -m /path/to/morphe-cli.jar
+./patch-gboard.sh --rename -i ./gboard-base.apks -o ./gintype-patched.apk -m /path/to/morphe-cli.jar
 ```
 
 ### Step 4: Install and Enable Keyboard
 ```bash
 # -r replaces an existing patched build; -d allows downgrade if needed
-adb install -r -d ./gboard-multiswipe-patched.apk
+adb install -r -d ./gintype-patched.apk
 ```
 - **If `Package Rename` was enabled (side-by-side)**: enable and optionally select the renamed IME (`dev.srwi.com.google.android.inputmethod.latin`):
   ```bash
@@ -191,12 +191,12 @@ adb shell pidof "$TARGET_PKG"
 adb logcat -d -s \
   GboardPatches \
   GboardThiccTopBar \
-  GboardMultiSwipe \
-  GboardMultiSwipeDict \
-  GboardMultiSwipeTrace \
+  GboardMultiGlide \
+  GboardMultiGlideDict \
+  GboardMultiGlideTrace \
   ThiccTopBarGboardReflector | tail -n 50
 ```
-Open Gboard Settings -> **MultiSwipe & Thicc Top Bar** to configure MultiSwipe swipe timing, autospace, Thicc Top Bar, and log export.
+Open Gboard Settings -> **GinType** to configure MultiGlide swipe timing, autospace, Thicc Top Bar, and log export.
 
 ---
 
@@ -204,6 +204,6 @@ Open Gboard Settings -> **MultiSwipe & Thicc Top Bar** to configure MultiSwipe s
 
 - **Language**: English exclusively across commit messages, code, comments, resource strings, tests, and documentation.
 - **Commit Cadence**: Commit after each logical, verified step using conventional commits (`feat`, `refactor`, `fix`, `docs`).
-- **Scope**: Maintain only `Thicc Top Bar`, `MultiSwipe`, and `Package Rename` unless explicitly asked otherwise.
-- **Specification Governance (`docs/multiswipe-integration.md`)**: [`docs/multiswipe-integration.md`](docs/multiswipe-integration.md) defines the authoritative behavior for MultiSwipe's Gboard integration. Before implementing any code change that would alter, add, remove, or contradict an `MS-*` rule in that specification, you MUST inform the user which rule(s) are impacted and obtain **explicit user confirmation** to change the specification. Update the specification, implementation, and corresponding unit tests together.
-- **Namespace Integrity**: Always use `dev.srwi.gboardmultiswipe` for extension/patch code and `dev.srwi.com.google.android.inputmethod.latin` for renamed Gboard manifests.
+- **Scope**: Maintain only `Thicc Top Bar`, `MultiGlide`, and `Package Rename` unless explicitly asked otherwise.
+- **Specification Governance (`docs/multiglide-integration.md`)**: [`docs/multiglide-integration.md`](docs/multiglide-integration.md) defines the authoritative behavior for MultiGlide's Gboard integration. Before implementing any code change that would alter, add, remove, or contradict an `MG-*` rule in that specification, you MUST inform the user which rule(s) are impacted and obtain **explicit user confirmation** to change the specification. Update the specification, implementation, and corresponding unit tests together.
+- **Namespace Integrity**: Always use `dev.srwi.gintype` for extension/patch code and `dev.srwi.com.google.android.inputmethod.latin` for renamed Gboard manifests.
