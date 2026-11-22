@@ -1,9 +1,21 @@
+<div align="center">
+
 # GinType
 
-**GinType** brings two-finger swipe typing (**multi-touch gestures**) and an **improved suggestion bar (Thicc Top Bar)** to Google Gboard.
+**Bringing NinType-style two-finger gesture typing and power features to Gboard**
 
+<br>
 
-The patches in this repository are inspired by Nintype/Keyboard69 by jormy.
+<a href="https://morphe.software/add-source?github=srwi/GinType">
+  <img src=".github/assets/add-to-morphe.svg" alt="Add to Morphe" height="48">
+</a>
+
+<br>
+<br>
+
+</div>
+
+The patches in this repository bring two-finger swipe typing (**MultiGlide**), an **improved suggestion bar (Thicc Top Bar)**, and **custom animations** to Google Gboard, inspired by the legendary Nintype/Keyboard69 by jormy.
 
 > **Development note:** This project was created through vibe coding with extensive testing. Because the patches modify Gboard behavior at runtime, results may vary across devices and Gboard versions. Please review the project and decide whether these patches are suitable for your own device and use case.
 
