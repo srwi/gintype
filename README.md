@@ -23,25 +23,36 @@ The patches in this repository bring two-finger swipe typing (**MultiGlide**), a
 
 ### 1. MultiGlide
 
+<img src=".github/assets/multiglide.gif" width="420" alt="MultiGlide Demo" />
+
 - **Simultaneous two-finger swiping**: Glide both thumbs at once to type faster with fluid multi-finger gestures.
 - **Tap + Swipe chording**: Tap opening letters with one finger while swiping the rest of the word with the other (or vice versa).
 - **Native Gboard dictionaries**: Uses Gboard's installed language dictionaries and supports accent/umlaut folding out of the box.
-- **Material You trail styling**: Draws multi-touch trails with a distinct dynamic Material You accent color while keeping Matrix suggestions aligned with your active Gboard theme.
-- **In-app tuning**: Adjust gesture timing, beam sensitivity, autospace behavior, and debug log export time windows directly via **Gboard Settings > GinType**.
+- **In-app tuning**: Adjust gesture timing, beam sensitivity, and autospace behavior.
 
 ### 2. Thicc Top Bar
+
+<img src=".github/assets/thicc_top_bar.gif" width="420" alt="Thicc Top Bar Demo" />
+
 - **Vertical suggestion wheels**: Swipe up or down inside the top suggestion bar to browse alternative word predictions and sentence variants in a 2D grid.
+- **Double-tap & drag text selection**: Double-tap and drag across the suggestion bar to quickly highlight and select words.
 - **Sentence branch history**: Flick back through earlier sentence contexts and restore previous wording cleanly.
 - **Jump-to-end shortcut**: Quickly jump back to the latest active suggestions with a single tap.
 
 ### 3. Typing Effects (Animations)
+
+<img src=".github/assets/visual_effects.gif" width="420" alt="Typing Effects Demo" />
+
 - **Animated swipe trails**: Draws vibrant, color-cycling swipe trails with an optional glow layer, configurable trail width, fade duration, and cycle speed.
 - **Glitter & particle explosions**: Emits trailing glitter particles (`Sparkles`, `Sparks`, `Confetti`, or `Mixed`) and triggers tap/release particle bursts (`Sparks Ring`, `Sparkles`, `Confetti`, or `All Out`) with optional expanding shockwave rings.
 - **Key highlights**: Animates pressed keys with `Neon Glow`, `Plasma Pulse`, or `Soft Fill` effects and adjustable highlight duration.
 - **Keyboard warp & wind streams**: Adds interactive touch-area warp distortion and flowing wind streams during swipes, with tunable warp strength/radius and wind intensity/spread.
-- **Color palettes & in-app tuning**: Choose between **Rainbow**, **Neon**, **Fire**, **Galaxy**, and **Pastel** palettes and fine-tune every animation toggle, particle count, size, speed, and lifetime in **Gboard Settings > GinType**.
+- **Color palettes & customization**: Choose between **Rainbow**, **Neon**, **Fire**, **Galaxy**, and **Pastel** palettes and fine-tune every animation toggle, particle count, size, speed, and lifetime.
 
 ### 4. Custom Hold Popups
+
+<img src=".github/assets/custom_hold_keys.png" width="420" alt="Custom Hold Popups" />
+
 - **Direct on-keyboard editing**: Long-press any key and slide to the pencil icon to add a new symbol, or hold on an existing popup item for 2 seconds to edit or replace it.
 - **Characters, symbols, emojis, and snippets**: Assign custom characters, punctuation, emojis, or frequently used text snippets to any key's long-press popup.
 
@@ -70,7 +81,7 @@ Select a clean supported Gboard installer, then choose the patches you want:
 - **Custom Hold Popups** for on-keyboard editing of long-press symbols and text snippets
 - **Package Rename** for side-by-side installation on non-rooted devices
 
-After patching, install the generated APK. Enable the keyboard in **Android Settings > System > Keyboard > On-screen keyboard**, switch to it, and open **Gboard Settings > GinType** to configure the patches.
+After patching, install the generated APK, enable the keyboard in **Android Settings > System > Keyboard > On-screen keyboard**, and switch to it.
 
 ## Build
 
