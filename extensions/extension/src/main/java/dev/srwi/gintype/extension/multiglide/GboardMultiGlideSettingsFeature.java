@@ -323,9 +323,9 @@ public final class GboardMultiGlideSettingsFeature implements GboardPatchesSetti
                     summary,
                     Collections.emptyList(),
                     Arrays.asList(
-                            new GboardPatchesSettingsContract.Section(sectionGestures, gestureRows),
                             new GboardPatchesSettingsContract.Section(
                                     sectionAutoSpace, autoSpaceRows),
+                            new GboardPatchesSettingsContract.Section(sectionGestures, gestureRows),
                             new GboardPatchesSettingsContract.Section(
                                     sectionAdvanced, advancedRows)),
                     GboardPatchesSettingsContract.RefreshPolicy.none(),

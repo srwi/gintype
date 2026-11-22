@@ -50,8 +50,8 @@ public final class GboardMultiGlideSettings {
     public static final int MAX_SINGLE_TOUCH_COMBINE_DELAY_MS = 500;
     public static final int DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS = 150;
     public static final boolean DEFAULT_TAP_TO_MULTIGLIDE_ENABLED = true;
-    public static final int MIN_TAP_TO_MULTIGLIDE_DELAY_MS = 100;
-    public static final int MAX_TAP_TO_MULTIGLIDE_DELAY_MS = 2000;
+    public static final int MIN_TAP_TO_MULTIGLIDE_DELAY_MS = 50;
+    public static final int MAX_TAP_TO_MULTIGLIDE_DELAY_MS = 500;
     public static final int DEFAULT_TAP_TO_MULTIGLIDE_DELAY_MS = 150;
     public static final boolean DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED = true;
     public static final boolean DEFAULT_SPACEBAR_TIMER_INDICATOR = true;
