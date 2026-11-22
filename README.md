@@ -22,7 +22,6 @@ The patches in this repository bring two-finger swipe typing (**MultiGlide**), a
 ## Features
 
 ### 1. MultiGlide
-MultiGlide uses the gesture-decoding algorithm from the [Kinetica implementation](https://github.com/EZ-eta/kinetica).
 
 - **Simultaneous two-finger swiping**: Glide both thumbs at once to type faster with fluid multi-finger gestures.
 - **Tap + Swipe chording**: Tap opening letters with one finger while swiping the rest of the word with the other (or vice versa).
@@ -68,6 +67,7 @@ Select a clean supported Gboard installer, then choose the patches you want:
 - **Thicc Top Bar** for vertical word suggestions and sentence history
 - **MultiGlide** for two-finger and tap-plus-swipe typing
 - **Typing Effects** for animated swipe trails, glitter, explosions, key highlights, and warp/wind effects
+- **Custom Hold Popups** for on-keyboard editing of long-press symbols and text snippets
 - **Package Rename** for side-by-side installation on non-rooted devices
 
 After patching, install the generated APK. Enable the keyboard in **Android Settings > System > Keyboard > On-screen keyboard**, switch to it, and open **Gboard Settings > GinType** to configure the patches.
