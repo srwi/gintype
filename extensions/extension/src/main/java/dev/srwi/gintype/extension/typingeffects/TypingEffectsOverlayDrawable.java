@@ -53,6 +53,7 @@ final class TypingEffectsOverlayDrawable extends Drawable {
 
     private Bitmap captureBitmap = null;
     private Canvas captureCanvas = null;
+    private boolean captureValid = false;
     private boolean isCapturing = false;
 
     TypingEffectsOverlayDrawable(View hostView, TypingEffectsEngine engine) {
@@ -97,6 +98,7 @@ final class TypingEffectsOverlayDrawable extends Drawable {
             captureBitmap = null;
         }
         captureCanvas = null;
+        captureValid = false;
     }
 
     @Override
@@ -176,6 +178,7 @@ final class TypingEffectsOverlayDrawable extends Drawable {
             if (captureBitmap != null && !captureBitmap.isRecycled()) {
                 captureBitmap.recycle();
             }
+            captureValid = false;
             try {
                 captureBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
                 captureCanvas = new Canvas(captureBitmap);
@@ -186,16 +189,22 @@ final class TypingEffectsOverlayDrawable extends Drawable {
             }
         }
 
-        isCapturing = true;
-        try {
-            captureBitmap.eraseColor(Color.TRANSPARENT);
-            drawOpaqueKeyboardBackdrop(hostView, captureCanvas);
-            hostView.draw(captureCanvas);
-            if (cfg.keyHighlightEnabled) {
-                drawAllKeyHighlights(captureCanvas, cfg, nowMs, density);
+        boolean needCapture = !captureValid
+                || engine.hasActivePointers()
+                || (cfg.keyHighlightEnabled && !engine.getKeyHighlights().isEmpty());
+        if (needCapture) {
+            isCapturing = true;
+            try {
+                captureBitmap.eraseColor(Color.TRANSPARENT);
+                drawOpaqueKeyboardBackdrop(hostView, captureCanvas);
+                hostView.draw(captureCanvas);
+                if (cfg.keyHighlightEnabled) {
+                    drawAllKeyHighlights(captureCanvas, cfg, nowMs, density);
+                }
+                captureValid = true;
+            } finally {
+                isCapturing = false;
             }
-        } finally {
-            isCapturing = false;
         }
 
         canvas.drawBitmapMesh(
@@ -213,12 +222,21 @@ final class TypingEffectsOverlayDrawable extends Drawable {
     /**
      * Draws the nearest ancestor keyboard background into the offscreen capture bitmap so gaps
      * between keys remain 100% opaque and never reveal unwarped keys underneath.
+     * Skips {@code hostView} itself when it already has a background (since {@code hostView.draw}
+     * renders it directly).
      */
     private static void drawOpaqueKeyboardBackdrop(View hostView, Canvas outCanvas) {
-        float offsetX = 0f;
-        float offsetY = 0f;
-        View cur = hostView;
-        for (int depth = 0; depth < 6 && cur != null; depth++) {
+        if (hostView.getBackground() != null) {
+            return;
+        }
+        float offsetX = hostView.getX();
+        float offsetY = hostView.getY();
+        View cur = (hostView.getParent() instanceof View) ? (View) hostView.getParent() : null;
+        if (cur != null) {
+            offsetX -= cur.getScrollX();
+            offsetY -= cur.getScrollY();
+        }
+        for (int depth = 1; depth < 6 && cur != null; depth++) {
             Drawable bg = cur.getBackground();
             if (bg != null) {
                 int save = outCanvas.save();

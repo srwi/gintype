@@ -583,6 +583,10 @@ public final class TypingEffectsEngine {
         return windStreams;
     }
 
+    public boolean hasActivePointers() {
+        return !activePointers.isEmpty();
+    }
+
     /**
      * Fills a continuous 2D trampoline mesh ({@code (cols + 1) * (rows + 1)} vertices) for
      * {@link android.graphics.Canvas#drawBitmapMesh} so the entire keyboard warps together like
@@ -607,6 +611,8 @@ public final class TypingEffectsEngine {
         float radiusPx = Math.max(24f * density, config.warpRadiusDp * density);
         float strength = config.warpStrengthPercent / 100f;
         float edgeMarginPx = 18f * density;
+        float maxOffsetX = (width / (float) cols) * 0.45f;
+        float maxOffsetY = (height / (float) rows) * 0.45f;
         boolean anyMoved = false;
 
         // Pre-extract active pointer coordinates and damped well amplitudes once per frame
@@ -692,6 +698,10 @@ public final class TypingEffectsEngine {
                     offsetX *= edgeFactor;
                     offsetY *= edgeFactor;
                     depthSum *= edgeFactor;
+                    if (offsetX > maxOffsetX) offsetX = maxOffsetX;
+                    else if (offsetX < -maxOffsetX) offsetX = -maxOffsetX;
+                    if (offsetY > maxOffsetY) offsetY = maxOffsetY;
+                    else if (offsetY < -maxOffsetY) offsetY = -maxOffsetY;
                 }
 
                 float finalX = pinX ? baseX : Math.max(0f, Math.min(width, baseX + offsetX));

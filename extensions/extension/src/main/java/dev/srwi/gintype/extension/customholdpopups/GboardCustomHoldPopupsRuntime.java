@@ -69,6 +69,7 @@ public final class GboardCustomHoldPopupsRuntime {
     private static final String TAG = "GboardCustomHoldPopups";
 
     public static final int PENCIL_SENTINEL_KEY_CODE = -777777;
+    private static final int PLAIN_TEXT_KEY_CODE = -10009;
     public static final int DEFAULT_POPUP_LAYOUT_THEME_ATTR = 0x7f040280;
     private static final String EDIT_ICON_DRAWABLE_NAME = "gboard_custom_hold_popups_edit";
     private static final long SETTINGS_REFRESH_INTERVAL_MS = 400L;
@@ -1222,10 +1223,11 @@ public final class GboardCustomHoldPopupsRuntime {
                     String displayReplacement =
                             GboardCustomHoldPopupsSettings.applyShiftCaseIfSingleLetter(
                                     customReplacement, shifted);
-                    Object intention = displayReplacement.length() == 1
+                    boolean singleLetter = isSingleLetterSymbol(displayReplacement);
+                    Object intention = singleLetter
                             ? keyDataIntentionField.get(origKd)
                             : commitIntention;
-                    int code = displayReplacement.length() == 1 ? origCode : baseKeyCode;
+                    int code = singleLetter ? origCode : PLAIN_TEXT_KEY_CODE;
                     finalKd = createKeyData(code, intention, displayReplacement);
                     finalLabel = displayReplacement;
                 } else {
@@ -1258,8 +1260,10 @@ public final class GboardCustomHoldPopupsRuntime {
             if (rawAdded == null || rawAdded.isEmpty()) continue;
             String displayAdded = GboardCustomHoldPopupsSettings.applyShiftCaseIfSingleLetter(
                     rawAdded, shifted);
-            Object intention = displayAdded.length() == 1 ? baseIntention : commitIntention;
-            Object addedKd = createKeyData(baseKeyCode, intention, displayAdded);
+            boolean singleLetter = isSingleLetterSymbol(displayAdded);
+            Object intention = singleLetter ? baseIntention : commitIntention;
+            int code = singleLetter ? baseKeyCode : PLAIN_TEXT_KEY_CODE;
+            Object addedKd = createKeyData(code, intention, displayAdded);
             KEY_DATA_META.put(
                     addedKd,
                     new PopupItemMeta(
@@ -1377,6 +1381,13 @@ public final class GboardCustomHoldPopupsRuntime {
                 softKeyDefIconLocsField.get(originalSoftKeyDef),
                 softKeyDefContentDescField.get(originalSoftKeyDef),
                 softKeyDefTooltipField.get(originalSoftKeyDef));
+    }
+
+    private static boolean isSingleLetterSymbol(String s) {
+        return s != null
+                && !s.isEmpty()
+                && s.codePointCount(0, s.length()) == 1
+                && Character.isLetter(s.codePointAt(0));
     }
 
     private static Object createKeyData(int keyCode, Object intention, Object data)
