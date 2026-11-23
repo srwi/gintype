@@ -285,7 +285,7 @@ public final class GboardMultiGlideDictionaryManager {
         }
         long startNs = System.nanoTime();
         GboardLmReader.LmDictionaries dicts = GboardLmReader.read(lmFile, key, hasDedicatedUmlauts);
-        loadUserDictionaryIntoTrie(context, dicts.trie, key);
+        loadUserDictionaryIntoTrie(context, dicts.trie, key, hasDedicatedUmlauts);
         applyRecordedCommits(dicts.trie, key, hasDedicatedUmlauts);
         long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
         Log.i(TAG, "Loaded Gboard LM for '" + key + "' from " + lmFile.getName()
@@ -483,7 +483,6 @@ public final class GboardMultiGlideDictionaryManager {
         }
 
         File bestExact = null;
-        File bestMain = null;
         for (File root : roots) {
             if (root == null || !root.isDirectory()) continue;
             Deque<File> stack = new ArrayDeque<>();
@@ -519,8 +518,6 @@ public final class GboardMultiGlideDictionaryManager {
                             if (bestExact == null || child.lastModified() > bestExact.lastModified()) {
                                 bestExact = child;
                             }
-                        } else if (name.contains("main") && bestMain == null) {
-                            bestMain = child;
                         }
                     }
                 }
@@ -529,7 +526,7 @@ public final class GboardMultiGlideDictionaryManager {
                 return bestExact;
             }
         }
-        return bestMain;
+        return null;
     }
 
     private static boolean languageMatches(String candidate, String targetKey) {
@@ -562,7 +559,17 @@ public final class GboardMultiGlideDictionaryManager {
     }
 
     public static void loadUserDictionaryIntoTrie(Context context, MultiGlideTrie trie, String lang) {
+        loadUserDictionaryIntoTrie(context, trie, lang, false);
+    }
+
+    public static void loadUserDictionaryIntoTrie(
+            Context context,
+            MultiGlideTrie trie,
+            String lang,
+            boolean hasDedicatedUmlauts
+    ) {
         if (context == null || trie == null) return;
+        String targetKey = normalizeLanguageKey(lang);
         try {
             ContentResolver cr = context.getContentResolver();
             if (cr == null) return;
@@ -576,14 +583,20 @@ public final class GboardMultiGlideDictionaryManager {
                 if (cursor != null && cursor.moveToFirst()) {
                     int wordCol = cursor.getColumnIndex(UserDictionary.Words.WORD);
                     int freqCol = cursor.getColumnIndex(UserDictionary.Words.FREQUENCY);
+                    int localeCol = cursor.getColumnIndex(UserDictionary.Words.LOCALE);
                     do {
+                        String entryLocale = (localeCol >= 0) ? cursor.getString(localeCol) : null;
+                        if (entryLocale != null && !entryLocale.trim().isEmpty()
+                                && !languageMatches(entryLocale, targetKey)) {
+                            continue;
+                        }
                         String word = (wordCol >= 0) ? cursor.getString(wordCol) : null;
                         if (word != null && word.length() >= 2) {
                             int rawFreq = (freqCol >= 0) ? cursor.getInt(freqCol) : 128;
                             int freqByte = Math.max(120, Math.min(255, rawFreq > 0 ? rawFreq : 128));
                             boolean isProper = Character.isUpperCase(word.charAt(0));
                             MultiGlideDictionaryLoader.insertWordIntoTrie(
-                                    trie, word, freqByte, isProper, lang, false);
+                                    trie, word, freqByte, isProper, lang, hasDedicatedUmlauts);
                         }
                     } while (cursor.moveToNext());
                 }
