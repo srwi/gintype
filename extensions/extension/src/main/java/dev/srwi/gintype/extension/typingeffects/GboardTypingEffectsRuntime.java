@@ -1,5 +1,6 @@
 package dev.srwi.gintype.extension.typingeffects;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Outline;
 import android.graphics.Rect;
@@ -7,7 +8,9 @@ import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -58,8 +61,9 @@ public final class GboardTypingEffectsRuntime {
             if (isNonBodyKeyboardView(view)) {
                 return;
             }
-            if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isPasswordInput(
-                    view.getContext())) {
+            if (!areSystemAnimatorsEnabled(view.getContext())
+                    || dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isPasswordInput(
+                            view.getContext())) {
                 OverlayController existing = CONTROLLERS.remove(view);
                 if (existing != null) {
                     existing.detach();
@@ -114,11 +118,36 @@ public final class GboardTypingEffectsRuntime {
             Context context = gestureOverlayViewObj instanceof View
                     ? ((View) gestureOverlayViewObj).getContext()
                     : null;
+            if (!areSystemAnimatorsEnabled(context)) {
+                return false;
+            }
             TypingEffectsConfig cfg = resolveConfig(context, false);
             return cfg.enabled && cfg.rainbowTrailEnabled;
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    private static boolean areSystemAnimatorsEnabled(Context context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ValueAnimator.areAnimatorsEnabled()) {
+                return false;
+            }
+        } catch (Throwable ignored) {
+        }
+        if (context != null) {
+            try {
+                float scale = Settings.Global.getFloat(
+                        context.getContentResolver(),
+                        Settings.Global.ANIMATOR_DURATION_SCALE,
+                        1.0f);
+                if (scale <= 0f) {
+                    return false;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return true;
     }
 
     private static boolean isNonBodyKeyboardView(View view) {
@@ -170,9 +199,19 @@ public final class GboardTypingEffectsRuntime {
     }
 
     private static final class OverlayController {
+        private static final class CachedKeyHit {
+            int keyId;
+            float left;
+            float top;
+            float right;
+            float bottom;
+            float cornerRadius;
+        }
+
         private final WeakReference<View> viewRef;
         private final TypingEffectsEngine engine;
         private final TypingEffectsOverlayDrawable drawable;
+        private final SparseArray<CachedKeyHit> pointerKeyCache = new SparseArray<>();
         private final Rect tempOutlineRect = new Rect();
         private final RectF tempVisualRect = new RectF();
         private final Outline tempOutline = new Outline();
@@ -247,6 +286,7 @@ public final class GboardTypingEffectsRuntime {
                 case MotionEvent.ACTION_DOWN:
                     // Android guarantees no pointers are active before ACTION_DOWN; flush any orphaned pointers.
                     engine.onCancel(nowMs);
+                    pointerKeyCache.clear();
                     // fall through
                 case MotionEvent.ACTION_POINTER_DOWN: {
                     int idx = event.getActionIndex();
@@ -254,7 +294,7 @@ public final class GboardTypingEffectsRuntime {
                     float x = event.getX(idx);
                     float y = event.getY(idx);
                     engine.onPointerDown(pointerId, x, y, nowMs);
-                    notifyTouchedKey(view, x, y, nowMs);
+                    notifyTouchedKey(view, pointerId, x, y, nowMs);
                     break;
                 }
                 case MotionEvent.ACTION_MOVE: {
@@ -272,7 +312,7 @@ public final class GboardTypingEffectsRuntime {
                         float x = event.getX(p);
                         float y = event.getY(p);
                         engine.onPointerMove(pointerId, x, y, nowMs);
-                        notifyTouchedKey(view, x, y, nowMs);
+                        notifyTouchedKey(view, pointerId, x, y, nowMs);
                     }
                     break;
                 }
@@ -280,10 +320,12 @@ public final class GboardTypingEffectsRuntime {
                 case MotionEvent.ACTION_POINTER_UP: {
                     int idx = event.getActionIndex();
                     int pointerId = event.getPointerId(idx);
+                    pointerKeyCache.remove(pointerId);
                     engine.onPointerUp(pointerId, event.getX(idx), event.getY(idx), nowMs);
                     break;
                 }
                 case MotionEvent.ACTION_CANCEL: {
+                    pointerKeyCache.clear();
                     engine.onCancel(nowMs);
                     break;
                 }
@@ -297,16 +339,41 @@ public final class GboardTypingEffectsRuntime {
             }
         }
 
-        private void notifyTouchedKey(View root, float x, float y, long nowMs) {
+        private void notifyTouchedKey(View root, int pointerId, float x, float y, long nowMs) {
             if (!engine.getConfig().keyHighlightEnabled) {
+                return;
+            }
+            CachedKeyHit cached = pointerKeyCache.get(pointerId);
+            if (cached != null
+                    && x >= cached.left && x <= cached.right
+                    && y >= cached.top && y <= cached.bottom) {
+                engine.onKeyTouched(
+                        cached.keyId,
+                        cached.left,
+                        cached.top,
+                        cached.right,
+                        cached.bottom,
+                        cached.cornerRadius,
+                        nowMs);
                 return;
             }
             View keyView = findSoftKeyAt(root, x, y, 0, 0);
             if (keyView != null) {
                 float cornerRadius = resolveKeyVisualBounds(root, keyView, tempVisualRect);
                 if (!tempVisualRect.isEmpty()) {
+                    int keyId = System.identityHashCode(keyView);
+                    if (cached == null) {
+                        cached = new CachedKeyHit();
+                        pointerKeyCache.put(pointerId, cached);
+                    }
+                    cached.keyId = keyId;
+                    cached.left = tempVisualRect.left;
+                    cached.top = tempVisualRect.top;
+                    cached.right = tempVisualRect.right;
+                    cached.bottom = tempVisualRect.bottom;
+                    cached.cornerRadius = cornerRadius;
                     engine.onKeyTouched(
-                            System.identityHashCode(keyView),
+                            keyId,
                             tempVisualRect.left,
                             tempVisualRect.top,
                             tempVisualRect.right,
@@ -483,6 +550,7 @@ public final class GboardTypingEffectsRuntime {
                 drawable.setBounds(0, 0, w, h);
                 lastBoundsW = w;
                 lastBoundsH = h;
+                pointerKeyCache.clear();
             }
         }
 
@@ -505,6 +573,7 @@ public final class GboardTypingEffectsRuntime {
             }
             animating = false;
             attached = false;
+            pointerKeyCache.clear();
             engine.clearAll();
             drawable.releaseResources();
         }

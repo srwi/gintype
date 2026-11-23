@@ -386,38 +386,45 @@ public class VerticalWordWheelView extends LinearLayout {
             topView.setText("");
             centerView.setText("");
             bottomView.setText("");
+            setContentDescription("");
             return;
         }
 
         if (size == 1) {
+            String word = alternatives.get(0);
             topView.setText("");
             topView.setVisibility(View.INVISIBLE);
-            centerView.setText(alternatives.get(0));
+            centerView.setText(word);
             centerView.setVisibility(View.VISIBLE);
             bottomView.setText("");
             bottomView.setVisibility(View.INVISIBLE);
+            setContentDescription(word);
             return;
         }
 
         if (size == 2) {
             int other = (selectedIndex == 0) ? 1 : 0;
+            String centerWord = alternatives.get(selectedIndex);
             topView.setText(alternatives.get(other));
             topView.setVisibility(View.VISIBLE);
-            centerView.setText(alternatives.get(selectedIndex));
+            centerView.setText(centerWord);
             centerView.setVisibility(View.VISIBLE);
             bottomView.setText(alternatives.get(other));
             bottomView.setVisibility(View.VISIBLE);
+            setContentDescription(centerWord);
             return;
         }
 
         // 3 or more alternatives
         int prev = (selectedIndex - 1 + size) % size;
         int next = (selectedIndex + 1) % size;
+        String centerWord = alternatives.get(selectedIndex);
 
         topView.setText(alternatives.get(prev));
         topView.setVisibility(View.VISIBLE);
 
-        centerView.setText(alternatives.get(selectedIndex));
+        centerView.setText(centerWord);
+        setContentDescription(centerWord);
         centerView.setVisibility(View.VISIBLE);
 
         bottomView.setText(alternatives.get(next));
@@ -644,15 +651,7 @@ public class VerticalWordWheelView extends LinearLayout {
                     parent.requestDisallowInterceptTouchEvent(false);
                 }
                 if (!isFlickGesture) {
-                    // Tapping anywhere in the column selects/commits without swapping alternatives
-                    performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
-                    String centerWord = getSelectedWord();
-                    if (centerClickListener != null && centerWord != null) {
-                        centerClickListener.onCenterClicked(selectedIndex, centerWord);
-                    }
-                    if (commitListener != null && centerWord != null) {
-                        commitListener.onWordCommitted(selectedIndex, centerWord);
-                    }
+                    performClick();
                 }
                 hasFlicked = false;
                 isFlickGesture = false;
@@ -671,5 +670,23 @@ public class VerticalWordWheelView extends LinearLayout {
         }
 
         return super.onTouchEvent(event);
+    }
+
+    @Override
+    public boolean performClick() {
+        super.performClick();
+        String centerWord = getSelectedWord();
+        if (centerWord != null) {
+            // Tapping anywhere in the column selects/commits without swapping alternatives
+            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+            if (centerClickListener != null) {
+                centerClickListener.onCenterClicked(selectedIndex, centerWord);
+            }
+            if (commitListener != null) {
+                commitListener.onWordCommitted(selectedIndex, centerWord);
+            }
+            return true;
+        }
+        return false;
     }
 }

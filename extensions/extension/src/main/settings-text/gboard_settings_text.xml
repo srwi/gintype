@@ -492,7 +492,7 @@
         <translation locale="en">Rainbow swipe trail</translation>
         </string>
     <string name="gboard_patches_typing_effects_rainbow_trail_summary">
-        <translation locale="en">Replace the default swipe trail with an animated color trail for single-finger and MultiGlide gestures</translation>
+        <translation locale="en">Replace the default swipe trail and MultiGlide chord accent with an animated color trail for single-finger and MultiGlide gestures</translation>
         </string>
     <string name="gboard_patches_typing_effects_trail_glow_title">
         <translation locale="en">Trail neon glow</translation>

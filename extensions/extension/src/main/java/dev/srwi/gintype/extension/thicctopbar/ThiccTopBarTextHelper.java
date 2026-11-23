@@ -70,19 +70,34 @@ public final class ThiccTopBarTextHelper {
         }
     }
 
-    public static boolean isBoundaryChar(char c) {
-        if (Character.isWhitespace(c)) return true;
-        if (Character.isLetterOrDigit(c)) return false;
-        int type = Character.getType(c);
+    public static boolean isBoundaryCodePoint(int codePoint) {
+        if (Character.isWhitespace(codePoint)) return true;
+        if (Character.isLetterOrDigit(codePoint)) return false;
+        int type = Character.getType(codePoint);
         if (type == Character.NON_SPACING_MARK || type == Character.COMBINING_SPACING_MARK) {
             return false;
         }
         return true;
     }
 
+    public static boolean isBoundaryChar(char c) {
+        return isBoundaryCodePoint(c);
+    }
+
     public static boolean isBoundaryChar(CharSequence text, int index) {
         if (text == null || index < 0 || index >= text.length()) return true;
         char c = text.charAt(index);
+        if (Character.isHighSurrogate(c) && index + 1 < text.length()) {
+            char low = text.charAt(index + 1);
+            if (Character.isLowSurrogate(low)) {
+                return isBoundaryCodePoint(Character.toCodePoint(c, low));
+            }
+        } else if (Character.isLowSurrogate(c) && index > 0) {
+            char high = text.charAt(index - 1);
+            if (Character.isHighSurrogate(high)) {
+                return isBoundaryCodePoint(Character.toCodePoint(high, c));
+            }
+        }
         if (Character.isWhitespace(c)) return true;
 
         // Contextual exceptions for internal connectors within words or numbers:

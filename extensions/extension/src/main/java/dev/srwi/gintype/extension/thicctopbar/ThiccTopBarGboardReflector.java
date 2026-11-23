@@ -167,10 +167,18 @@ public final class ThiccTopBarGboardReflector {
         cachedKeyboardThemeAccentRgb = rgb & 0x00ffffff;
     }
 
-    static void resetAccentCacheForTesting() {
+    private static final java.util.Map<View, Integer> ORIGINAL_TARGET_WIDTHS =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    public static void invalidateThemeCaches() {
         cachedKeyboardThemeAccentRgb = -1;
         stockTrailAccentRgb = -1;
         stockTrailNightMask = -1;
+        lastDetectedKeyboardDark = null;
+    }
+
+    static void resetAccentCacheForTesting() {
+        invalidateThemeCaches();
     }
 
     /**
@@ -1111,14 +1119,16 @@ public final class ThiccTopBarGboardReflector {
     public static void updateHeaderViewsVisibility(ViewGroup attachTarget, ViewGroup holderView, boolean showMatrixBar) {
         if (attachTarget == null) return;
         try {
-            // Ensure attachTarget fills full available width in container
             ViewGroup.LayoutParams lpTarget = attachTarget.getLayoutParams();
-            if (lpTarget != null && lpTarget.width != ViewGroup.LayoutParams.MATCH_PARENT) {
-                lpTarget.width = ViewGroup.LayoutParams.MATCH_PARENT;
-                attachTarget.setLayoutParams(lpTarget);
-            }
-
             if (showMatrixBar) {
+                // Ensure attachTarget fills full available width in container while remembering original width
+                if (lpTarget != null && lpTarget.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+                    if (!ORIGINAL_TARGET_WIDTHS.containsKey(attachTarget)) {
+                        ORIGINAL_TARGET_WIDTHS.put(attachTarget, lpTarget.width);
+                    }
+                    lpTarget.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                    attachTarget.setLayoutParams(lpTarget);
+                }
                 if (holderView != null) {
                     holderView.setAlpha(0.0f);
                     holderView.setVisibility(View.INVISIBLE);
@@ -1141,6 +1151,11 @@ public final class ThiccTopBarGboardReflector {
                     }
                 }
             } else {
+                Integer origWidth = ORIGINAL_TARGET_WIDTHS.remove(attachTarget);
+                if (origWidth != null && lpTarget != null && lpTarget.width != origWidth) {
+                    lpTarget.width = origWidth;
+                    attachTarget.setLayoutParams(lpTarget);
+                }
                 boolean undoActive = isUndoViewActive(attachTarget);
                 boolean dictationActive = isDictationActive(attachTarget);
                 if (holderView != null) {

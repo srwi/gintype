@@ -141,6 +141,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
 
     private OnWordCursorNavigateCallback wordCursorNavigateCallback;
     private boolean multiWordSelectEnabled = true;
+    private int navActivePointerId = MotionEvent.INVALID_POINTER_ID;
     private float navDownX = 0f;
     private float navDownY = 0f;
     private float navLastStepX = 0f;
@@ -217,6 +218,16 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
         lp.gravity = Gravity.CENTER_VERTICAL | Gravity.END;
         addView(contentLayout, lp);
+    }
+
+    @Override
+    protected void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        ThiccTopBarGboardReflector.invalidateThemeCaches();
+        currentWheelView.updateColors();
+        for (VerticalWordWheelView wheel : historyWheels) {
+            wheel.updateColors();
+        }
     }
 
     public VerticalWordWheelView getCurrentWheelView() {
@@ -1067,8 +1078,9 @@ public class ThiccTopBarView extends HorizontalScrollView {
     }
 
     private void handleNavActionDown(MotionEvent ev) {
-        navDownX = ev.getX();
-        navDownY = ev.getY();
+        navActivePointerId = ev.getPointerId(0);
+        navDownX = ev.getX(0);
+        navDownY = ev.getY(0);
         navLastStepX = navDownX;
         navDownTimeMs = ev.getEventTime();
         isHorizontalNavigating = false;
@@ -1081,6 +1093,30 @@ public class ThiccTopBarView extends HorizontalScrollView {
         if (withinDoubleTapWindow) {
             lastTapUpTimeMs = 0L;
         }
+    }
+
+    private void handleNavPointerUp(MotionEvent ev) {
+        int actionIndex = ev.getActionIndex();
+        int pointerId = ev.getPointerId(actionIndex);
+        if (pointerId == navActivePointerId) {
+            int newIndex = (actionIndex == 0) ? 1 : 0;
+            if (newIndex < ev.getPointerCount()) {
+                navActivePointerId = ev.getPointerId(newIndex);
+                float newX = ev.getX(newIndex);
+                navDownX = newX;
+                navDownY = ev.getY(newIndex);
+                navLastStepX = newX;
+            } else {
+                navActivePointerId = MotionEvent.INVALID_POINTER_ID;
+            }
+        }
+    }
+
+    private int resolveNavPointerIndex(MotionEvent ev) {
+        if (navActivePointerId != MotionEvent.INVALID_POINTER_ID) {
+            return ev.findPointerIndex(navActivePointerId);
+        }
+        return ev.getPointerCount() > 0 ? 0 : -1;
     }
 
     private void beginHorizontalNav() {
@@ -1098,15 +1134,18 @@ public class ThiccTopBarView extends HorizontalScrollView {
     }
 
     private void handleNavActionUpOrCancel(MotionEvent ev, boolean isCancel) {
+        int idx = resolveNavPointerIndex(ev);
+        float upX = (idx >= 0) ? ev.getX(idx) : ev.getX();
+        float upY = (idx >= 0) ? ev.getY(idx) : ev.getY();
         if (!isCancel
                 && !isHorizontalNavigating
                 && !isPendingDoubleTapDrag
                 && multiWordSelectEnabled
                 && (ev.getEventTime() - navDownTimeMs) <= tapTimeoutMs
-                && Math.hypot(ev.getX() - navDownX, ev.getY() - navDownY) <= navTouchSlopPx) {
+                && Math.hypot(upX - navDownX, upY - navDownY) <= navTouchSlopPx) {
             lastTapUpTimeMs = ev.getEventTime();
-            lastTapUpX = ev.getX();
-            lastTapUpY = ev.getY();
+            lastTapUpX = upX;
+            lastTapUpY = upY;
         } else if (isCancel || isHorizontalNavigating) {
             lastTapUpTimeMs = 0L;
         }
@@ -1116,6 +1155,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 parent.requestDisallowInterceptTouchEvent(false);
             }
         }
+        navActivePointerId = MotionEvent.INVALID_POINTER_ID;
         isHorizontalNavigating = false;
         isMultiWordSelecting = false;
         isPendingDoubleTapDrag = false;
@@ -1132,16 +1172,25 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 handleNavActionDown(ev);
                 return false;
 
-            case MotionEvent.ACTION_MOVE:
+            case MotionEvent.ACTION_MOVE: {
                 if (isHorizontalNavigating) {
                     return true;
                 }
-                float dX = ev.getX() - navDownX;
-                float dY = ev.getY() - navDownY;
+                int idx = resolveNavPointerIndex(ev);
+                if (idx < 0) {
+                    return false;
+                }
+                float dX = ev.getX(idx) - navDownX;
+                float dY = ev.getY(idx) - navDownY;
                 if (Math.abs(dX) > navTouchSlopPx && Math.abs(dX) > Math.abs(dY)) {
                     beginHorizontalNav();
                     return true;
                 }
+                return false;
+            }
+
+            case MotionEvent.ACTION_POINTER_UP:
+                handleNavPointerUp(ev);
                 return false;
 
             case MotionEvent.ACTION_UP:
@@ -1166,16 +1215,22 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 handleNavActionDown(ev);
                 return true;
 
-            case MotionEvent.ACTION_MOVE:
+            case MotionEvent.ACTION_MOVE: {
+                int idx = resolveNavPointerIndex(ev);
+                if (idx < 0) {
+                    return true;
+                }
+                float curX = ev.getX(idx);
+                float curY = ev.getY(idx);
                 if (!isHorizontalNavigating) {
-                    float dX = ev.getX() - navDownX;
-                    float dY = ev.getY() - navDownY;
+                    float dX = curX - navDownX;
+                    float dY = curY - navDownY;
                     if (Math.abs(dX) > navTouchSlopPx && Math.abs(dX) > Math.abs(dY)) {
                         beginHorizontalNav();
                     }
                 }
                 if (isHorizontalNavigating) {
-                    float delta = ev.getX() - navLastStepX;
+                    float delta = curX - navLastStepX;
                     while (delta <= -navStepThresholdPx) {
                         if (isMultiWordSelecting) {
                             wordCursorNavigateCallback.onMultiWordSelectStep(-1);
@@ -1184,7 +1239,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
                         }
                         performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                         navLastStepX -= navStepThresholdPx;
-                        delta = ev.getX() - navLastStepX;
+                        delta = curX - navLastStepX;
                     }
                     while (delta >= navStepThresholdPx) {
                         if (isMultiWordSelecting) {
@@ -1194,10 +1249,15 @@ public class ThiccTopBarView extends HorizontalScrollView {
                         }
                         performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
                         navLastStepX += navStepThresholdPx;
-                        delta = ev.getX() - navLastStepX;
+                        delta = curX - navLastStepX;
                     }
                     return true;
                 }
+                return true;
+            }
+
+            case MotionEvent.ACTION_POINTER_UP:
+                handleNavPointerUp(ev);
                 return true;
 
             case MotionEvent.ACTION_UP:
