@@ -45,7 +45,7 @@ public class ThiccTopBarView extends HorizontalScrollView {
     }
 
     public interface OnHistoryWordReplaceCallback {
-        void onHistoryWordReplaced(int historyIndex, String oldWord, String newWord);
+        boolean onHistoryWordReplaced(int historyIndex, String oldWord, String newWord);
     }
 
     public interface OnHistoryWordClickCallback {
@@ -649,11 +649,31 @@ public class ThiccTopBarView extends HorizontalScrollView {
 
             // Vertical flick swaps that word's alternative
             historyWheel.setOnWordActionListener((newIndex, newWord) -> {
+                int prevIndex = entry.selectedIndex;
                 String oldWord = entry.getSelectedWord();
+                if (oldWord == null || oldWord.equals(newWord)) {
+                    return;
+                }
                 entry.selectedIndex = newIndex;
                 entry.committedWord = newWord;
-                if (activeHistoryReplaceCallback != null && oldWord != null && !oldWord.equals(newWord)) {
-                    activeHistoryReplaceCallback.onHistoryWordReplaced(historyColIndex, oldWord, newWord);
+                boolean replaced = true;
+                if (activeHistoryReplaceCallback != null) {
+                    replaced = activeHistoryReplaceCallback.onHistoryWordReplaced(historyColIndex, oldWord, newWord);
+                }
+                if (replaced) {
+                    int dispIdx = historyColIndex;
+                    if (currentWheelView.getParent() == contentLayout
+                            && activeColumnSplitIndex >= 0
+                            && historyColIndex >= activeColumnSplitIndex) {
+                        dispIdx = historyColIndex + 1;
+                    }
+                    if (dispIdx >= 0 && dispIdx < displayedColumnWords.size()) {
+                        displayedColumnWords.set(dispIdx, newWord);
+                    }
+                } else {
+                    entry.selectedIndex = prevIndex;
+                    entry.committedWord = oldWord;
+                    historyWheel.setAlternatives(entry.alternatives, prevIndex);
                 }
             });
 

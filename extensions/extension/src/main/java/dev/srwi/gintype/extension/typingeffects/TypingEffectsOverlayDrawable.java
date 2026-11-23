@@ -354,22 +354,27 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         if (masterAlpha <= 0.01f) return;
 
         int coreColor = TypingEffectsConfig.blendTowardWhite(ws.colorArgb, 0.74f);
+        // Pass 1: soft tinted air aura
         for (int i = 1; i < n; i++) {
-            // Double-ended taper: whisper-thin tail and tip, graceful body in the middle.
             float posRatio = (float) i / (float) (n - 1);
             float taper = (float) Math.sin(Math.PI * posRatio);
             float segAlpha = masterAlpha * taper;
             if (segAlpha <= 0.01f) continue;
 
             float width = Math.max(0.9f, ws.strokeWidthPx * (0.35f + 0.65f * taper));
-
-            // Soft tinted air aura
             windGlowPaint.setStrokeWidth(width * 2.4f);
             windGlowPaint.setColor(TypingEffectsConfig.withAlpha(
                     ws.colorArgb, Math.min(255, Math.round(58f * segAlpha))));
             canvas.drawLine(ws.xs[i - 1], ws.ys[i - 1], ws.xs[i], ws.ys[i], windGlowPaint);
+        }
+        // Pass 2: silky translucent white-tinted wind filament on top of all glows
+        for (int i = 1; i < n; i++) {
+            float posRatio = (float) i / (float) (n - 1);
+            float taper = (float) Math.sin(Math.PI * posRatio);
+            float segAlpha = masterAlpha * taper;
+            if (segAlpha <= 0.01f) continue;
 
-            // Silky translucent white-tinted wind filament
+            float width = Math.max(0.9f, ws.strokeWidthPx * (0.35f + 0.65f * taper));
             windCorePaint.setStrokeWidth(width);
             windCorePaint.setColor(TypingEffectsConfig.withAlpha(
                     coreColor, Math.min(255, Math.round(168f * segAlpha))));
@@ -394,32 +399,54 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         float maxWidthPx = cfg.trailWidthDp * density;
         boolean glow = cfg.trailGlowEnabled;
 
-        for (int i = 1; i < n; i++) {
-            TypingEffectsEngine.TrailPoint p0 = pts.get(i - 1);
-            TypingEffectsEngine.TrailPoint p1 = pts.get(i);
+        // Pass 1: outer neon aura (drawn behind all main and core segments)
+        if (glow) {
+            for (int i = 1; i < n; i++) {
+                TypingEffectsEngine.TrailPoint p0 = pts.get(i - 1);
+                TypingEffectsEngine.TrailPoint p1 = pts.get(i);
+                float posRatio = (float) i / (float) (n - 1);
+                float ageRatio = clamp01(1f - (nowMs - p1.timeMs) / fadeMs);
+                float weight = posRatio * ageRatio * strokeFade;
+                if (weight <= 0.015f) continue;
 
-            float posRatio = (float) i / (float) (n - 1); // 0 at tail -> 1 at fingertip
-            float ageRatio = clamp01(1f - (nowMs - p1.timeMs) / fadeMs);
-            float weight = posRatio * ageRatio * strokeFade;
-            if (weight <= 0.015f) continue;
-
-            // Smooth tapered width: slender tail blooming into full width at the fingertip.
-            float width = Math.max(1.5f * density, maxWidthPx * (0.22f + 0.78f * posRatio) * (0.55f + 0.45f * ageRatio));
-            int baseColor = cfg.sampleColor(p1.colorPhase);
-
-            if (glow) {
+                float width = Math.max(1.5f * density, maxWidthPx * (0.22f + 0.78f * posRatio) * (0.55f + 0.45f * ageRatio));
+                int baseColor = cfg.sampleColor(p1.colorPhase);
                 int glowAlpha = Math.round(78f * weight);
                 trailGlowPaint.setStrokeWidth(width * 2.15f);
                 trailGlowPaint.setColor(TypingEffectsConfig.withAlpha(baseColor, glowAlpha));
                 canvas.drawLine(p0.x, p0.y, p1.x, p1.y, trailGlowPaint);
             }
+        }
 
+        // Pass 2: main color ribbon
+        for (int i = 1; i < n; i++) {
+            TypingEffectsEngine.TrailPoint p0 = pts.get(i - 1);
+            TypingEffectsEngine.TrailPoint p1 = pts.get(i);
+            float posRatio = (float) i / (float) (n - 1);
+            float ageRatio = clamp01(1f - (nowMs - p1.timeMs) / fadeMs);
+            float weight = posRatio * ageRatio * strokeFade;
+            if (weight <= 0.015f) continue;
+
+            float width = Math.max(1.5f * density, maxWidthPx * (0.22f + 0.78f * posRatio) * (0.55f + 0.45f * ageRatio));
+            int baseColor = cfg.sampleColor(p1.colorPhase);
             int mainAlpha = Math.round(235f * weight);
             trailMainPaint.setStrokeWidth(width);
             trailMainPaint.setColor(TypingEffectsConfig.withAlpha(baseColor, mainAlpha));
             canvas.drawLine(p0.x, p0.y, p1.x, p1.y, trailMainPaint);
+        }
 
-            if (glow) {
+        // Pass 3: bright core highlight on top of the entire ribbon
+        if (glow) {
+            for (int i = 1; i < n; i++) {
+                TypingEffectsEngine.TrailPoint p0 = pts.get(i - 1);
+                TypingEffectsEngine.TrailPoint p1 = pts.get(i);
+                float posRatio = (float) i / (float) (n - 1);
+                float ageRatio = clamp01(1f - (nowMs - p1.timeMs) / fadeMs);
+                float weight = posRatio * ageRatio * strokeFade;
+                if (weight <= 0.015f) continue;
+
+                float width = Math.max(1.5f * density, maxWidthPx * (0.22f + 0.78f * posRatio) * (0.55f + 0.45f * ageRatio));
+                int baseColor = cfg.sampleColor(p1.colorPhase);
                 int coreColor = TypingEffectsConfig.blendTowardWhite(baseColor, 0.72f);
                 int coreAlpha = Math.round(190f * weight * posRatio);
                 trailCorePaint.setStrokeWidth(width * 0.36f);

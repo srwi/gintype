@@ -18,6 +18,7 @@ import android.widget.TextView;
 import dev.srwi.gintype.extension.multiglide.GboardMultiGlideRuntime;
 import dev.srwi.gintype.extension.settings.GboardPatchesFeatureAvailability;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -83,12 +84,12 @@ public final class GboardThiccTopBarRuntime {
     private static volatile long lastHistoryReplaceTimestamp = 0;
     private static volatile long lastWordNavTimestamp = 0;
     private static volatile long candidatesEventSeq = 0L;
-    private static volatile ViewGroup lastHolderView = null;
+    private static volatile WeakReference<ViewGroup> lastHolderViewRef = null;
     private static volatile String lastMultiGlideWord = null;
     private static volatile List<String> lastMultiGlideSuggestions = null;
     private static volatile long lastMultiGlideTimestamp = 0;
 
-    private static View currentVoiceButton = null;
+    private static WeakReference<View> currentVoiceButtonRef = null;
     private static JumpToEndArrowView currentJumpToEndArrow = null;
     private static Runnable pendingJumpRunnable = null;
 
@@ -97,7 +98,33 @@ public final class GboardThiccTopBarRuntime {
     private static volatile boolean nativeTopBarBlankForMultiGlide = false;
     private static Runnable nativeTopBarBlankTimeoutRunnable = null;
     private static ViewTreeObserver.OnPreDrawListener nativeTopBarPreDrawGuard = null;
-    private static ViewGroup nativeTopBarPreDrawTarget = null;
+    private static WeakReference<ViewGroup> nativeTopBarPreDrawTargetRef = null;
+
+    private static ViewGroup getLastHolderView() {
+        WeakReference<ViewGroup> ref = lastHolderViewRef;
+        return ref != null ? ref.get() : null;
+    }
+
+    private static void setLastHolderView(ViewGroup holderView) {
+        if (holderView == null) {
+            lastHolderViewRef = null;
+            return;
+        }
+        WeakReference<ViewGroup> ref = lastHolderViewRef;
+        if (ref == null || ref.get() != holderView) {
+            lastHolderViewRef = new WeakReference<>(holderView);
+        }
+    }
+
+    private static View getCurrentVoiceButton() {
+        WeakReference<View> ref = currentVoiceButtonRef;
+        return ref != null ? ref.get() : null;
+    }
+
+    private static ViewGroup getNativeTopBarPreDrawTarget() {
+        WeakReference<ViewGroup> ref = nativeTopBarPreDrawTargetRef;
+        return ref != null ? ref.get() : null;
+    }
     private static final Map<View, Boolean> SUPPRESSED_HEADER_SIBLINGS = new WeakHashMap<>();
     private static final long POST_TOUCH_SYNC_DELAY_MS = 80L;
     private static volatile boolean thiccTopBarLiveGuessActive = false;
@@ -133,7 +160,7 @@ public final class GboardThiccTopBarRuntime {
             if (!GboardThiccTopBarSettings.readEnabled(view.getContext())) {
                 return;
             }
-            ViewGroup holderView = lastHolderView;
+            ViewGroup holderView = getLastHolderView();
             if (holderView == null) {
                 return;
             }
@@ -150,7 +177,7 @@ public final class GboardThiccTopBarRuntime {
      */
     public static void onKeyDataDispatched() {
         try {
-            ViewGroup holderView = lastHolderView;
+            ViewGroup holderView = getLastHolderView();
             if (holderView == null || !GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
                 return;
             }
@@ -357,8 +384,10 @@ public final class GboardThiccTopBarRuntime {
         if (context == null) {
             return;
         }
+        boolean enabled = GboardThiccTopBarSettings.readEnabled(context);
         float activeScale = readActiveTopbarScale(context);
         float swipeSensitivity = GboardThiccTopBarSettings.readSwipeSensitivity(context);
+        boolean multiWordSelect = GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(context);
         boolean invertSwipe = GboardThiccTopBarSettings.readInvertSwipe(context);
         List<View> trackedHeaders;
         synchronized (BASE_HEADER_HEIGHTS) {
@@ -374,11 +403,19 @@ public final class GboardThiccTopBarRuntime {
                 bar.post(() -> {
                     bar.setScaleFactor(activeScale);
                     bar.setSwipeSensitivity(swipeSensitivity);
-                    bar.setMultiWordSelectEnabled(
-                            GboardThiccTopBarSettings.readDoubleTapMultiWordSelect(context));
+                    bar.setMultiWordSelectEnabled(multiWordSelect);
                     bar.setInvertVerticalSwipe(invertSwipe);
                 });
             }
+        }
+        if (!enabled) {
+            getMainHandler().post(() -> {
+                hideJumpToEndArrow();
+                ViewGroup holder = getLastHolderView();
+                if (holder != null) {
+                    handleDisabledState(holder);
+                }
+            });
         }
     }
 
@@ -404,11 +441,11 @@ public final class GboardThiccTopBarRuntime {
         if (holderView == null) {
             return;
         }
-        if (lastHolderView == null
+        if (getLastHolderView() == null
                 || !GboardPatchesFeatureAvailability.hasFeature(
                         holderView.getContext(),
                         GboardPatchesFeatureAvailability.FEATURE_THICC_TOP_BAR)) {
-            lastHolderView = holderView;
+            setLastHolderView(holderView);
         }
     }
 
@@ -423,7 +460,7 @@ public final class GboardThiccTopBarRuntime {
             nativeTopBarBlankTimeoutRunnable = null;
         }
 
-        ViewGroup holderView = lastHolderView;
+        ViewGroup holderView = getLastHolderView();
         if (blank) {
             if (holderView == null) {
                 return;
@@ -438,7 +475,13 @@ public final class GboardThiccTopBarRuntime {
             ViewGroup attachTarget = parent != null ? parent : holderView;
             suppressNativeHeaderForBlank(attachTarget, holderView);
             attachNativeTopBarPreDrawGuard(attachTarget, holderView);
-            nativeTopBarBlankTimeoutRunnable = () -> setNativeTopBarBlankForMultiGlide(false);
+            nativeTopBarBlankTimeoutRunnable = () -> {
+                if (nativeTopBarBlankForMultiGlide && GboardMultiGlideRuntime.hasActiveTouch()) {
+                    handler.postDelayed(nativeTopBarBlankTimeoutRunnable, NATIVE_TOP_BAR_BLANK_TIMEOUT_MS);
+                    return;
+                }
+                setNativeTopBarBlankForMultiGlide(false);
+            };
             handler.postDelayed(nativeTopBarBlankTimeoutRunnable, NATIVE_TOP_BAR_BLANK_TIMEOUT_MS);
             return;
         }
@@ -448,11 +491,7 @@ public final class GboardThiccTopBarRuntime {
         nativeTopBarBlankForMultiGlide = false;
         detachNativeTopBarPreDrawGuard();
         hideNativeTopBarLiveGuess(holderView);
-        boolean hasCandidates = holderView != null
-                && ThiccTopBarGboardReflector.getHolderCandidateCount(holderView) > 0;
-        if (!hasCandidates) {
-            restoreSuppressedHeaderSiblings();
-        }
+        restoreSuppressedHeaderSiblings();
         if (wasBlank && holderView != null && !GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
             holderView.setAlpha(1.0f);
             if (!ThiccTopBarGboardReflector.isUndoViewActive(
@@ -529,7 +568,7 @@ public final class GboardThiccTopBarRuntime {
             handler.post(() -> updateLiveGuess(word, excludePendingEditorWord));
             return;
         }
-        ViewGroup holderView = lastHolderView;
+        ViewGroup holderView = getLastHolderView();
         if (holderView == null || word == null || word.isEmpty()) {
             return;
         }
@@ -657,7 +696,7 @@ public final class GboardThiccTopBarRuntime {
             handler.post(() -> updateNativeTopBarLiveGuess(word));
             return;
         }
-        ViewGroup holderView = lastHolderView;
+        ViewGroup holderView = getLastHolderView();
         if (!nativeTopBarBlankForMultiGlide
                 || holderView == null
                 || GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
@@ -753,7 +792,7 @@ public final class GboardThiccTopBarRuntime {
 
     private static void attachNativeTopBarPreDrawGuard(ViewGroup attachTarget, ViewGroup holderView) {
         ViewGroup guardRoot = (attachTarget.getParent() instanceof ViewGroup gp) ? gp : attachTarget;
-        if (nativeTopBarPreDrawGuard != null && nativeTopBarPreDrawTarget == guardRoot) {
+        if (nativeTopBarPreDrawGuard != null && getNativeTopBarPreDrawTarget() == guardRoot) {
             return;
         }
         detachNativeTopBarPreDrawGuard();
@@ -761,13 +800,15 @@ public final class GboardThiccTopBarRuntime {
         if (vto == null || !vto.isAlive()) {
             return;
         }
-        nativeTopBarPreDrawTarget = guardRoot;
+        nativeTopBarPreDrawTargetRef = new WeakReference<>(guardRoot);
+        final WeakReference<ViewGroup> fallbackHolderRef = new WeakReference<>(holderView);
         nativeTopBarPreDrawGuard = () -> {
             if (!nativeTopBarBlankForMultiGlide) {
                 detachNativeTopBarPreDrawGuard();
                 return true;
             }
-            ViewGroup currentHolder = lastHolderView != null ? lastHolderView : holderView;
+            ViewGroup latest = getLastHolderView();
+            ViewGroup currentHolder = latest != null ? latest : fallbackHolderRef.get();
             if (currentHolder != null && !GboardThiccTopBarSettings.readEnabled(currentHolder.getContext())) {
                 ViewGroup p = (currentHolder.getParent() instanceof ViewGroup pg) ? pg : null;
                 ViewGroup target = p != null ? p : currentHolder;
@@ -779,9 +820,10 @@ public final class GboardThiccTopBarRuntime {
     }
 
     private static void detachNativeTopBarPreDrawGuard() {
-        if (nativeTopBarPreDrawTarget != null && nativeTopBarPreDrawGuard != null) {
+        ViewGroup target = getNativeTopBarPreDrawTarget();
+        if (target != null && nativeTopBarPreDrawGuard != null) {
             try {
-                ViewTreeObserver vto = nativeTopBarPreDrawTarget.getViewTreeObserver();
+                ViewTreeObserver vto = target.getViewTreeObserver();
                 if (vto != null && vto.isAlive()) {
                     vto.removeOnPreDrawListener(nativeTopBarPreDrawGuard);
                 }
@@ -789,7 +831,7 @@ public final class GboardThiccTopBarRuntime {
             }
         }
         nativeTopBarPreDrawGuard = null;
-        nativeTopBarPreDrawTarget = null;
+        nativeTopBarPreDrawTargetRef = null;
     }
 
     private static void hideBarForSensitiveInput(ViewGroup holderView) {
@@ -850,7 +892,7 @@ public final class GboardThiccTopBarRuntime {
         if (!(holderViewObj instanceof ViewGroup holderView)) {
             return;
         }
-        lastHolderView = holderView;
+        setLastHolderView(holderView);
         if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
                 holderView.getContext())) {
             hideBarForSensitiveInput(holderView);
@@ -1088,13 +1130,7 @@ public final class GboardThiccTopBarRuntime {
                             cacheAlternativeGroup(currentWordsList, newWord);
                         },
                         // onHistoryReplace: Flick or tap on a history column swaps that past word in sentence
-                        (histColIdx, oldWord, newWord) -> {
-                            GboardMultiGlideRuntime.onTopBarUserInteraction();
-                            long now = SystemClock.uptimeMillis();
-                            lastHistoryInteractionTimestamp = now;
-                            lastHistoryReplaceTimestamp = now;
-                            ThiccTopBarTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                        },
+                        createHistoryWordReplaceCallback(holderView),
                         createHistoryWordClickCallback(holderView, barView)
                 );
                 barView.setVisibility(View.VISIBLE);
@@ -1116,7 +1152,7 @@ public final class GboardThiccTopBarRuntime {
         if (!(holderViewObj instanceof ViewGroup holderView)) {
             return;
         }
-        lastHolderView = holderView;
+        setLastHolderView(holderView);
         if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
                 holderView.getContext())) {
             hideBarForSensitiveInput(holderView);
@@ -1214,13 +1250,7 @@ public final class GboardThiccTopBarRuntime {
                                 ThiccTopBarTextHelper.replaceActiveWordInTextField(holderView, newWord);
                                 cacheAlternativeGroup(currentWordsList, newWord);
                             },
-                            (histColIdx, oldWord, newWord) -> {
-                                GboardMultiGlideRuntime.onTopBarUserInteraction();
-                                long now = SystemClock.uptimeMillis();
-                                lastHistoryInteractionTimestamp = now;
-                                lastHistoryReplaceTimestamp = now;
-                                ThiccTopBarTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                            },
+                            createHistoryWordReplaceCallback(holderView),
                             createHistoryWordClickCallback(holderView, barView)
                     );
                     barView.setVisibility(View.VISIBLE);
@@ -1496,13 +1526,7 @@ public final class GboardThiccTopBarRuntime {
         List<ThiccTopBarSentenceBuffer.WordEntry> entries = SENTENCE_BUFFER.getEntries();
         barView.updateHistoryOnly(
                 entries,
-                (histColIdx, oldWord, newWord) -> {
-                    GboardMultiGlideRuntime.onTopBarUserInteraction();
-                    long now = SystemClock.uptimeMillis();
-                    lastHistoryInteractionTimestamp = now;
-                    lastHistoryReplaceTimestamp = now;
-                    ThiccTopBarTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                },
+                createHistoryWordReplaceCallback(holderView),
                 createHistoryWordClickCallback(holderView, barView)
         );
         ViewGroup parent = parentViewGroup(holderView);
@@ -1917,6 +1941,18 @@ public final class GboardThiccTopBarRuntime {
         return selected;
     }
 
+    private static ThiccTopBarView.OnHistoryWordReplaceCallback createHistoryWordReplaceCallback(
+            ViewGroup holderView) {
+        return (histColIdx, oldWord, newWord) -> {
+            GboardMultiGlideRuntime.onTopBarUserInteraction();
+            long now = SystemClock.uptimeMillis();
+            lastHistoryInteractionTimestamp = now;
+            lastHistoryReplaceTimestamp = now;
+            return ThiccTopBarTextHelper.replaceHistoryWord(
+                    holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
+        };
+    }
+
     private static ThiccTopBarView.OnHistoryWordClickCallback createHistoryWordClickCallback(
             ViewGroup holderView, ThiccTopBarView barView) {
         return (histColIdx, word) -> {
@@ -1980,13 +2016,20 @@ public final class GboardThiccTopBarRuntime {
 
     private static void showJumpToEndArrow(ViewGroup holderView, Runnable onJump) {
         pendingJumpRunnable = onJump;
-        if (currentJumpToEndArrow != null && currentJumpToEndArrow.getParent() != null) {
+        if (currentJumpToEndArrow != null
+                && currentJumpToEndArrow.getParent() != null
+                && currentJumpToEndArrow.isAttachedToWindow()
+                && currentJumpToEndArrow.getRootView() == holderView.getRootView()) {
             currentJumpToEndArrow.setScaleFactor(
-                readActiveTopbarScale(currentJumpToEndArrow.getContext()));
-        currentJumpToEndArrow.updateIconColor();
+                    readActiveTopbarScale(currentJumpToEndArrow.getContext()));
+            currentJumpToEndArrow.updateIconColor();
             currentJumpToEndArrow.setVisibility(View.VISIBLE);
             currentJumpToEndArrow.bringToFront();
             return;
+        }
+        if (currentJumpToEndArrow != null) {
+            hideJumpToEndArrow();
+            pendingJumpRunnable = onJump;
         }
 
         ViewGroup headerContainer = ThiccTopBarGboardReflector.findHeaderContainer(holderView);
@@ -2015,7 +2058,7 @@ public final class GboardThiccTopBarRuntime {
         });
 
         if (voiceBtn != null && voiceBtn.getParent() instanceof ViewGroup voiceParent) {
-            currentVoiceButton = voiceBtn;
+            currentVoiceButtonRef = new WeakReference<>(voiceBtn);
             voiceBtn.setVisibility(View.INVISIBLE);
             ViewGroup.LayoutParams lp = copyLayoutParams(voiceBtn);
             ViewGroup arrowParent = parentViewGroup(currentJumpToEndArrow);
@@ -2048,9 +2091,10 @@ public final class GboardThiccTopBarRuntime {
 
     public static void hideJumpToEndArrow() {
         try {
-            if (currentVoiceButton != null) {
-                currentVoiceButton.setVisibility(View.VISIBLE);
-                currentVoiceButton = null;
+            View voiceBtn = getCurrentVoiceButton();
+            if (voiceBtn != null) {
+                voiceBtn.setVisibility(View.VISIBLE);
+                currentVoiceButtonRef = null;
             }
             if (currentJumpToEndArrow != null) {
                 currentJumpToEndArrow.setVisibility(View.GONE);
@@ -2088,7 +2132,7 @@ public final class GboardThiccTopBarRuntime {
             lastHistoryInteractionTimestamp = 0;
             activeOriginalSuggestions = new ArrayList<>(trimmedAlts);
 
-            ViewGroup holderView = lastHolderView;
+            ViewGroup holderView = getLastHolderView();
             if (holderView != null) {
                 holderView.post(() -> refreshBarFromMultiGlide(holderView));
             } else {
@@ -2189,13 +2233,7 @@ public final class GboardThiccTopBarRuntime {
                             ThiccTopBarTextHelper.replaceActiveWordInTextField(holderView, newWord);
                             cacheAlternativeGroup(currentWordsList, newWord);
                         },
-                        (histColIdx, oldWord, newWord) -> {
-                            GboardMultiGlideRuntime.onTopBarUserInteraction();
-                            long now = SystemClock.uptimeMillis();
-                            lastHistoryInteractionTimestamp = now;
-                            lastHistoryReplaceTimestamp = now;
-                            ThiccTopBarTextHelper.replaceHistoryWord(holderView, SENTENCE_BUFFER, histColIdx, oldWord, newWord);
-                        },
+                        createHistoryWordReplaceCallback(holderView),
                         createHistoryWordClickCallback(holderView, barView)
                 );
                 barView.setVisibility(View.VISIBLE);

@@ -244,9 +244,19 @@ public final class TypingEffectsEngine {
 
         if (config.rainbowTrailEnabled) {
             List<TrailPoint> pts = state.stroke.points;
-            pts.add(new TrailPoint(x, y, nowMs, phase));
-            if (pts.size() > MAX_TRAIL_POINTS) {
-                pts.remove(0);
+            float minTrailStepPx = 2.5f * density;
+            boolean shouldAppend = pts.isEmpty();
+            if (!shouldAppend) {
+                TrailPoint lastPt = pts.get(pts.size() - 1);
+                float tdx = x - lastPt.x;
+                float tdy = y - lastPt.y;
+                shouldAppend = (tdx * tdx + tdy * tdy) >= (minTrailStepPx * minTrailStepPx);
+            }
+            if (shouldAppend) {
+                pts.add(new TrailPoint(x, y, nowMs, phase));
+                if (pts.size() > MAX_TRAIL_POINTS) {
+                    pts.remove(0);
+                }
             }
         }
 

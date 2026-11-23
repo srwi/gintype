@@ -1083,13 +1083,15 @@ public final class GboardCustomHoldPopupsRuntime {
                 }
             }
 
-            // 3. Also check visible label on the SoftKeyDef if present
+            // 3. Prefer visible label on the SoftKeyDef only when it matches pressText
+            // (preserving shift casing without mistaking a corner hint label for the primary key).
             Object labelsObj = softKeyDefLabelsField.get(softKeyDef);
             if (labelsObj instanceof List && !((List<?>) labelsObj).isEmpty()) {
                 Object firstLabel = ((List<?>) labelsObj).get(0);
                 if (firstLabel instanceof CharSequence) {
                     String visible = firstLabel.toString().trim();
-                    if (isEligibleBaseKeyString(visible, pressKeyCode)) {
+                    if (visible.equalsIgnoreCase(pressText)
+                            && isEligibleBaseKeyString(visible, pressKeyCode)) {
                         return visible;
                     }
                 }
@@ -1104,8 +1106,11 @@ public final class GboardCustomHoldPopupsRuntime {
         if (text == null || text.isEmpty()) {
             return false;
         }
-        // Spacebar (" ") or control characters are excluded
-        if (keyCode == 62 || keyCode == 66 || keyCode == 67 || keyCode == 59 || keyCode == 60) {
+        int firstCp = text.codePointAt(0);
+        // Spacebar (" ") or control characters are excluded, unless keyCode matches the Unicode
+        // codepoint of the printable character itself (e.g. ';' = 59, '<' = 60, '>' = 62, 'B' = 66, 'C' = 67).
+        if (firstCp != keyCode
+                && (keyCode == 62 || keyCode == 66 || keyCode == 67 || keyCode == 59 || keyCode == 60)) {
             // KEYCODE_SPACE (62), KEYCODE_ENTER (66), KEYCODE_DEL (67), KEYCODE_SHIFT_LEFT/RIGHT (59/60)
             return false;
         }
