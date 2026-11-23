@@ -46,6 +46,10 @@ private sealed interface RegisterExpression {
 
     data class Direct(override val words: List<RegisterWord>) : RegisterExpression {
         override fun forInvocation(): RenderedRegisters {
+            val hasParamRegister = words.any { word -> word.prefix == 'p' }
+            if (hasParamRegister && words.isNotEmpty() && words.isNumericContiguous()) {
+                return RenderedRegisters("${words.first().source} .. ${words.last().source}", true)
+            }
             val fits35c = words.size <= MAX_35C_WORDS && words.all { word ->
                 word.index == null || word.index <= MAX_35C_REGISTER
             }

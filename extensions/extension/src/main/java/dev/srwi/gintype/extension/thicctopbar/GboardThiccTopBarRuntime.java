@@ -177,6 +177,11 @@ public final class GboardThiccTopBarRuntime {
             if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
                 return;
             }
+            if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
+                    holderView.getContext())) {
+                hideBarForSensitiveInput(holderView);
+                return;
+            }
             if (thiccTopBarLiveGuessActive
                     || GboardMultiGlideRuntime.hasActiveTouch()
                     || GboardMultiGlideRuntime.isMultiGlideWordActive()) {
@@ -787,6 +792,23 @@ public final class GboardThiccTopBarRuntime {
         nativeTopBarPreDrawTarget = null;
     }
 
+    private static void hideBarForSensitiveInput(ViewGroup holderView) {
+        SENTENCE_BUFFER.clear();
+        activeOriginalSuggestions = null;
+        thiccTopBarLiveGuessActive = false;
+        hideJumpToEndArrow();
+        if (holderView == null) {
+            return;
+        }
+        ViewGroup parent = parentViewGroup(holderView);
+        ViewGroup attachTarget = parent != null ? parent : holderView;
+        ThiccTopBarView existing = ACTIVE_BARS.get(attachTarget);
+        if (existing != null && existing.getVisibility() != View.GONE) {
+            existing.setVisibility(View.GONE);
+            ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
+        }
+    }
+
     private static void handleDisabledState(ViewGroup holderView) {
         syncHeaderHeight(holderView, GboardThiccTopBarSettings.MIN_TOPBAR_SCALE);
         ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
@@ -829,6 +851,11 @@ public final class GboardThiccTopBarRuntime {
             return;
         }
         lastHolderView = holderView;
+        if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
+                holderView.getContext())) {
+            hideBarForSensitiveInput(holderView);
+            return;
+        }
 
         // Cache non-prediction alternatives synchronously before fast space/punctuation commits clear them
         if (candidateListObj != null && !GboardMultiGlideRuntime.isMultiGlideWordActive()) {
@@ -1090,6 +1117,11 @@ public final class GboardThiccTopBarRuntime {
             return;
         }
         lastHolderView = holderView;
+        if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
+                holderView.getContext())) {
+            hideBarForSensitiveInput(holderView);
+            return;
+        }
 
         final long eventSeq = ++candidatesEventSeq;
         if (Log.isLoggable(TAG, Log.DEBUG)) {
@@ -1102,6 +1134,11 @@ public final class GboardThiccTopBarRuntime {
                 }
                 if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
                     handleDisabledState(holderView);
+                    return;
+                }
+                if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
+                        holderView.getContext())) {
+                    hideBarForSensitiveInput(holderView);
                     return;
                 }
 
@@ -1608,6 +1645,12 @@ public final class GboardThiccTopBarRuntime {
 
             ic.finishComposingText();
 
+            CharSequence sel = ic.getSelectedText(0);
+            if (sel != null && sel.length() > 0) {
+                ic.commitText(selectedItem.text + " ", 1);
+                return;
+            }
+
             CharSequence cs = ic.getTextBeforeCursor(200, 0);
             if (cs == null) {
                 ic.commitText(selectedItem.text + " ", 1);
@@ -1615,15 +1658,19 @@ public final class GboardThiccTopBarRuntime {
             }
 
             String text = cs.toString();
-            String trimmed = text.trim();
-            int lastBoundary = -1;
-            for (int i = trimmed.length() - 1; i >= 0; i--) {
-                if (ThiccTopBarTextHelper.isBoundaryChar(trimmed, i)) {
-                    lastBoundary = i;
+            int end = text.length();
+            while (end > 0) {
+                char ch = text.charAt(end - 1);
+                if (ch == '\n' || ch == '\r' || !Character.isWhitespace(ch)) {
                     break;
                 }
+                end--;
             }
-            String lastWord = lastBoundary >= 0 ? trimmed.substring(lastBoundary + 1) : trimmed;
+            int start = end;
+            while (start > 0 && !ThiccTopBarTextHelper.isBoundaryChar(text, start - 1)) {
+                start--;
+            }
+            String lastWord = text.substring(start, end);
 
             if (lastWord.equals(selectedItem.text)) {
                 // Word is already in the text field with exact casing; ensure trailing space
@@ -1634,19 +1681,27 @@ public final class GboardThiccTopBarRuntime {
             }
 
             if (!lastWord.isEmpty()) {
-                int lastWordStart = text.lastIndexOf(lastWord);
-                if (lastWordStart >= 0) {
-                    int deleteLen = text.length() - lastWordStart;
-                    if (deleteLen > 0 && deleteLen <= text.length()) {
-                        ic.beginBatchEdit();
-                        ic.deleteSurroundingText(deleteLen, 0);
-                        ic.commitText(selectedItem.text + " ", 1);
-                        ic.endBatchEdit();
-                        if (Log.isLoggable(TAG, Log.DEBUG)) {
-                            Log.i(TAG, "replaceActiveCandidateViaInputConnection: cleanly replaced '" + lastWord + "' with '" + selectedItem.text + "'");
+                int deleteLen = text.length() - start;
+                int deleteAfter = 0;
+                if (end == text.length()) {
+                    CharSequence csAfter = ic.getTextAfterCursor(100, 0);
+                    if (csAfter != null && csAfter.length() > 0) {
+                        String after = csAfter.toString();
+                        while (deleteAfter < after.length()
+                                && !ThiccTopBarTextHelper.isBoundaryChar(after, deleteAfter)) {
+                            deleteAfter++;
                         }
-                        return;
                     }
+                }
+                if (deleteLen > 0 && deleteLen <= text.length()) {
+                    ic.beginBatchEdit();
+                    ic.deleteSurroundingText(deleteLen, deleteAfter);
+                    ic.commitText(selectedItem.text + " ", 1);
+                    ic.endBatchEdit();
+                    if (Log.isLoggable(TAG, Log.DEBUG)) {
+                        Log.i(TAG, "replaceActiveCandidateViaInputConnection: cleanly replaced '" + lastWord + "' with '" + selectedItem.text + "'");
+                    }
+                    return;
                 }
             }
 

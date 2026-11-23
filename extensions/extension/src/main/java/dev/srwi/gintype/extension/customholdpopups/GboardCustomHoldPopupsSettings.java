@@ -315,7 +315,16 @@ public final class GboardCustomHoldPopupsSettings {
             String baseKey,
             int addedIndex,
             String newSymbol) {
-        if (preferences == null || addedIndex < 0) return false;
+        return updateAddedSymbol(preferences, baseKey, addedIndex, null, newSymbol);
+    }
+
+    public static boolean updateAddedSymbol(
+            SharedPreferences preferences,
+            String baseKey,
+            int addedIndex,
+            String expectedOldSymbol,
+            String newSymbol) {
+        if (preferences == null) return false;
         String normalizedKey = normalizeBaseKey(baseKey);
         String sanitizedSymbol = sanitizeSymbol(newSymbol);
         if (normalizedKey.isEmpty() || sanitizedSymbol.isEmpty()) {
@@ -324,12 +333,17 @@ public final class GboardCustomHoldPopupsSettings {
         Map<String, KeyHoldRules> all = new LinkedHashMap<String, KeyHoldRules>(
                 readAllRules(preferences));
         KeyHoldRules current = all.get(normalizedKey);
-        if (current == null || addedIndex >= current.addedSymbols.size()) {
+        if (current == null || current.addedSymbols.isEmpty()) {
+            return false;
+        }
+        int targetIndex = resolveAddedSymbolIndex(
+                current.addedSymbols, addedIndex, expectedOldSymbol);
+        if (targetIndex < 0) {
             return false;
         }
         Map<String, String> modMap = new LinkedHashMap<String, String>(current.modifiedDefaults);
         List<String> addedList = new ArrayList<String>(current.addedSymbols);
-        addedList.set(addedIndex, sanitizedSymbol);
+        addedList.set(targetIndex, sanitizedSymbol);
         all.put(normalizedKey, new KeyHoldRules(normalizedKey, modMap, addedList));
         return persistRules(preferences, all);
     }
@@ -338,18 +352,31 @@ public final class GboardCustomHoldPopupsSettings {
             SharedPreferences preferences,
             String baseKey,
             int addedIndex) {
-        if (preferences == null || addedIndex < 0) return false;
+        return deleteAddedSymbol(preferences, baseKey, addedIndex, null);
+    }
+
+    public static boolean deleteAddedSymbol(
+            SharedPreferences preferences,
+            String baseKey,
+            int addedIndex,
+            String expectedOldSymbol) {
+        if (preferences == null) return false;
         String normalizedKey = normalizeBaseKey(baseKey);
         if (normalizedKey.isEmpty()) return false;
         Map<String, KeyHoldRules> all = new LinkedHashMap<String, KeyHoldRules>(
                 readAllRules(preferences));
         KeyHoldRules current = all.get(normalizedKey);
-        if (current == null || addedIndex >= current.addedSymbols.size()) {
+        if (current == null || current.addedSymbols.isEmpty()) {
+            return false;
+        }
+        int targetIndex = resolveAddedSymbolIndex(
+                current.addedSymbols, addedIndex, expectedOldSymbol);
+        if (targetIndex < 0) {
             return false;
         }
         Map<String, String> modMap = new LinkedHashMap<String, String>(current.modifiedDefaults);
         List<String> addedList = new ArrayList<String>(current.addedSymbols);
-        addedList.remove(addedIndex);
+        addedList.remove(targetIndex);
         KeyHoldRules updated = new KeyHoldRules(normalizedKey, modMap, addedList);
         if (updated.isEmpty()) {
             all.remove(normalizedKey);
@@ -357,6 +384,22 @@ public final class GboardCustomHoldPopupsSettings {
             all.put(normalizedKey, updated);
         }
         return persistRules(preferences, all);
+    }
+
+    private static int resolveAddedSymbolIndex(
+            List<String> addedSymbols,
+            int addedIndex,
+            String expectedOldSymbol) {
+        boolean hasExpected = expectedOldSymbol != null && !expectedOldSymbol.isEmpty();
+        if (addedIndex >= 0 && addedIndex < addedSymbols.size()) {
+            if (!hasExpected || expectedOldSymbol.equals(addedSymbols.get(addedIndex))) {
+                return addedIndex;
+            }
+        }
+        if (hasExpected) {
+            return addedSymbols.indexOf(expectedOldSymbol);
+        }
+        return -1;
     }
 
     public static boolean setModifiedDefaultSymbol(

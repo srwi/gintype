@@ -717,7 +717,11 @@ public final class ThiccTopBarTextHelper {
 
             String text = cs.toString();
             int end = text.length();
-            while (end > 0 && Character.isWhitespace(text.charAt(end - 1))) {
+            while (end > 0) {
+                char ch = text.charAt(end - 1);
+                if (ch == '\n' || ch == '\r' || !Character.isWhitespace(ch)) {
+                    break;
+                }
                 end--;
             }
             if (end <= 0) {
@@ -792,10 +796,16 @@ public final class ThiccTopBarTextHelper {
         try {
             ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
             if (et != null && et.selectionStart >= 0 && et.selectionEnd >= 0) {
-                int selMin = Math.min(et.selectionStart, et.selectionEnd);
+                int startOffset = Math.max(0, et.startOffset);
+                int selMin = startOffset + Math.min(et.selectionStart, et.selectionEnd);
                 return selMin - before.length();
             }
         } catch (Throwable ignored) {
+        }
+        // If getExtractedText() is unavailable and the before-cursor window is full (2000 chars),
+        // we cannot determine the true absolute document offset safely; signal unknown (-1).
+        if (before != null && before.length() >= 2000) {
+            return -1;
         }
         return 0;
     }
@@ -826,6 +836,7 @@ public final class ThiccTopBarTextHelper {
 
             if (pos != null && pos[0] >= 0 && pos[1] <= text.length() && pos[0] < pos[1]) {
                 int docOffset = computeDocOffset(ic, before);
+                if (docOffset < 0) return false;
 
                 int selStart = Math.max(0, docOffset + pos[0]);
                 int selEnd = Math.max(0, docOffset + pos[1]);
@@ -862,6 +873,7 @@ public final class ThiccTopBarTextHelper {
             if (fullText.isEmpty()) return false;
 
             int docOffset = computeDocOffset(ic, before);
+            if (docOffset < 0) return false;
             int pos = direction < 0 ? before.length() : before.length() + sel.length();
             int len = fullText.length();
             boolean hadSelection = !sel.isEmpty();
@@ -952,6 +964,7 @@ public final class ThiccTopBarTextHelper {
             String before = csBefore != null ? csBefore.toString() : "";
             String sel = csSel != null ? csSel.toString() : "";
             int docOffset = computeDocOffset(ic, before);
+            if (docOffset < 0) return anchor;
             anchor.anchorStart = Math.max(0, docOffset + before.length());
             anchor.anchorEnd = anchor.anchorStart + sel.length();
             anchor.activeEnd = anchor.anchorStart;
@@ -984,6 +997,7 @@ public final class ThiccTopBarTextHelper {
             if (fullText.isEmpty()) return false;
 
             int docOffset = computeDocOffset(ic, before);
+            if (docOffset < 0) return false;
             int len = fullText.length();
 
             if (!anchor.initialized) {
@@ -1191,6 +1205,7 @@ public final class ThiccTopBarTextHelper {
                 String cleanNewWord = newParts.hasWord() ? newParts.word : newWord;
 
                 int docOffset = computeDocOffset(ic, before);
+                if (docOffset < 0) return false;
 
                 int selStart = Math.max(0, docOffset + pos[0]);
                 int selEnd = Math.max(0, docOffset + pos[1]);

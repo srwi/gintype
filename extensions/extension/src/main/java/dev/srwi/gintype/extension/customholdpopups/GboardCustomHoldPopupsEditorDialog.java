@@ -267,12 +267,18 @@ public final class GboardCustomHoldPopupsEditorDialog {
                     dangerColor,
                     dangerBgColor);
             deleteBtn.setOnClickListener(v -> {
-                GboardCustomHoldPopupsSettings.deleteAddedSymbol(
-                        preferences, normalizedBaseKey, addedIndex);
-                if (onSavedOrMutated != null) {
-                    onSavedOrMutated.run();
+                boolean deleted = GboardCustomHoldPopupsSettings.deleteAddedSymbol(
+                        preferences, normalizedBaseKey, addedIndex, safeCurrent);
+                if (deleted) {
+                    GboardCustomHoldPopupsRuntime.invalidateAndRefreshActiveKeyboards(activity);
+                    if (onSavedOrMutated != null) {
+                        onSavedOrMutated.run();
+                    }
+                    dialog.dismiss();
+                } else {
+                    errorView.setText("This symbol was already modified or removed.");
+                    errorView.setVisibility(View.VISIBLE);
                 }
-                dialog.dismiss();
             });
             deleteBtn.setMinHeight(dp(activity, 42));
             buttonRow.addView(deleteBtn, new LinearLayout.LayoutParams(
@@ -337,15 +343,21 @@ public final class GboardCustomHoldPopupsEditorDialog {
                         preferences, normalizedBaseKey, sanitized);
             } else if (userAdded) {
                 ok = GboardCustomHoldPopupsSettings.updateAddedSymbol(
-                        preferences, normalizedBaseKey, addedIndex, sanitized);
+                        preferences, normalizedBaseKey, addedIndex, safeCurrent, sanitized);
             } else {
                 ok = GboardCustomHoldPopupsSettings.setModifiedDefaultSymbol(
                         preferences, normalizedBaseKey, safeOriginal, sanitized);
             }
-            if (ok && onSavedOrMutated != null) {
-                onSavedOrMutated.run();
+            if (ok) {
+                GboardCustomHoldPopupsRuntime.invalidateAndRefreshActiveKeyboards(activity);
+                if (onSavedOrMutated != null) {
+                    onSavedOrMutated.run();
+                }
+                dialog.dismiss();
+            } else {
+                errorView.setText("Unable to save changes. Please reopen the editor.");
+                errorView.setVisibility(View.VISIBLE);
             }
-            dialog.dismiss();
         };
         primaryBtn.setOnClickListener(v -> commitAction.run());
         input.setOnEditorActionListener((v, actionId, event) -> {

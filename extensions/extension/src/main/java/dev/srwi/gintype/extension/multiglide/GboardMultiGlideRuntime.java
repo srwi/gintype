@@ -382,6 +382,21 @@ public final class GboardMultiGlideRuntime {
             if (!enabled) {
                 return;
             }
+            if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isMultiGlideBlockedInput(context)) {
+                HandlerSession existing = SESSIONS.get(handler);
+                if (existing != null) {
+                    existing.cancelAutospaceTimer();
+                    existing.cancelStockSwipeAutospaceTimer();
+                    existing.cancelLivePreviewSettle();
+                    existing.core.onActionCancel(null);
+                    existing.core.autospaceInserted = false;
+                    existing.core.autospaceSnapshot = null;
+                    existing.core.pendingLeadingSpaceBeforeNextWord = false;
+                    existing.core.lastCommittedWordUndo = null;
+                    existing.spacebarOverlay.clearImmediate();
+                }
+                return;
+            }
 
             HandlerSession session = getOrCreateSession(handler);
             ensureGeometryUpdated(handler, session, context);
@@ -622,6 +637,10 @@ public final class GboardMultiGlideRuntime {
             if (gestureHandler == null) return false;
             HandlerSession session = SESSIONS.get(gestureHandler);
             if (session == null) return false;
+            Context guardContext = extractContext(gestureHandler);
+            if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isMultiGlideBlockedInput(guardContext)) {
+                return false;
+            }
             if (actionMasked == MotionEvent.ACTION_MOVE && session.core.pendingBackspaceTap
                     && event.getPointerCount() > 0) {
                 Context context = extractContext(gestureHandler);
@@ -718,6 +737,10 @@ public final class GboardMultiGlideRuntime {
             if (gestureHandler == null) return false;
             HandlerSession session = SESSIONS.get(gestureHandler);
             if (session == null) return false;
+            Context guardContext = extractContext(gestureHandler);
+            if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isMultiGlideBlockedInput(guardContext)) {
+                return false;
+            }
 
             int actionIdx = event.getActionIndex();
             if (actionIdx < 0 || actionIdx >= event.getPointerCount()) return false;

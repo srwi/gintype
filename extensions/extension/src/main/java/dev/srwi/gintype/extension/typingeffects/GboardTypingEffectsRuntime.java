@@ -55,12 +55,24 @@ public final class GboardTypingEffectsRuntime {
         }
         try {
             View view = (View) keyboardViewObj;
+            if (isNonBodyKeyboardView(view)) {
+                return;
+            }
+            if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isPasswordInput(
+                    view.getContext())) {
+                OverlayController existing = CONTROLLERS.remove(view);
+                if (existing != null) {
+                    existing.detach();
+                }
+                return;
+            }
             TypingEffectsConfig cfg = resolveConfig(view.getContext(),
                     event.getActionMasked() == MotionEvent.ACTION_DOWN);
             if (!cfg.hasAnyVisualEffectEnabled()) {
-                OverlayController existing = CONTROLLERS.get(view);
+                OverlayController existing = CONTROLLERS.remove(view);
                 if (existing != null) {
                     existing.setConfig(cfg);
+                    existing.detach();
                 }
                 return;
             }
@@ -109,6 +121,34 @@ public final class GboardTypingEffectsRuntime {
         }
     }
 
+    private static boolean isNonBodyKeyboardView(View view) {
+        if (view == null) {
+            return true;
+        }
+        if (dev.srwi.gintype.extension.thicctopbar.ThiccTopBarGboardReflector
+                .isHeaderSoftKeyboardView(view)) {
+            return true;
+        }
+        String className = view.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+        if (className.contains("popup")) {
+            return true;
+        }
+        Object tag = view.getTag();
+        if (tag instanceof CharSequence) {
+            String tagLower = tag.toString().toLowerCase(java.util.Locale.ROOT);
+            if (tagLower.contains("popup") || tagLower.contains("header")) {
+                return true;
+            }
+        }
+        if (view.getParent() instanceof View parent) {
+            String parentClass = parent.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+            if (parentClass.contains("popup")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static TypingEffectsConfig resolveConfig(Context context, boolean allowRefresh) {
         long now = SystemClock.uptimeMillis();
         if (context != null && (lastConfigReadMs == 0L
@@ -152,6 +192,7 @@ public final class GboardTypingEffectsRuntime {
                 }
                 if (!view.isShown() || view.getWindowVisibility() != View.VISIBLE) {
                     engine.clearAll();
+                    drawable.releaseResources();
                     drawable.invalidateSelf();
                     return;
                 }
@@ -161,6 +202,8 @@ public final class GboardTypingEffectsRuntime {
                 drawable.invalidateSelf();
                 if (stillActive) {
                     scheduleNextFrame(view);
+                } else if (!engine.hasActiveWarp()) {
+                    drawable.releaseResources();
                 }
             }
         };
@@ -176,8 +219,16 @@ public final class GboardTypingEffectsRuntime {
 
         void setConfig(TypingEffectsConfig cfg) {
             engine.setConfig(cfg);
-            if (!cfg.hasAnyVisualEffectEnabled() && animating) {
+            if (!cfg.enabled || !cfg.keyboardWarpEnabled) {
+                drawable.releaseResources();
+            }
+            if (!cfg.hasAnyVisualEffectEnabled()) {
                 engine.clearAll();
+                View view = viewRef.get();
+                if (view != null) {
+                    view.removeCallbacks(frameRunnable);
+                }
+                animating = false;
                 drawable.invalidateSelf();
             }
         }

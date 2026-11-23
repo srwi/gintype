@@ -166,15 +166,69 @@ public final class GboardCustomHoldPopupsRuntime {
         }
     }
 
-    // Use IdentityHashMap for SoftKeyDef and KeyData (Lqbc) instances so lookups are based on
-    // object identity (===) rather than value equality (.equals()), preventing collisions when
-    // different keys share an identical KeyData value (such as the trailing ✎ sentinel KeyData).
-    private static final Map<Object, Object> AUGMENTED_TO_ORIGINAL_DEF =
-            Collections.synchronizedMap(new IdentityHashMap<Object, Object>());
-    private static final Map<Object, String> AUGMENTED_DEF_BASE_KEY =
-            Collections.synchronizedMap(new IdentityHashMap<Object, String>());
-    private static final Map<Object, PopupItemMeta> KEY_DATA_META =
-            Collections.synchronizedMap(new IdentityHashMap<Object, PopupItemMeta>());
+    /**
+     * Thread-safe weak-key identity map using {@link System#identityHashCode} and {@code ==}
+     * so transient {@code SoftKeyDef} and {@code KeyData} instances created across Shift/layout
+     * switches are automatically reclaimed by GC once no longer referenced by Gboard.
+     */
+    private static final class WeakIdentityMap<K, V> {
+        private final Map<IdentityWeakKey<K>, V> map = new HashMap<IdentityWeakKey<K>, V>();
+        private final java.lang.ref.ReferenceQueue<K> queue =
+                new java.lang.ref.ReferenceQueue<K>();
+
+        private static final class IdentityWeakKey<K> extends java.lang.ref.WeakReference<K> {
+            final int hash;
+
+            IdentityWeakKey(K referent, java.lang.ref.ReferenceQueue<K> queue) {
+                super(referent, queue);
+                this.hash = System.identityHashCode(referent);
+            }
+
+            @Override
+            public int hashCode() {
+                return hash;
+            }
+
+            @Override
+            public boolean equals(Object obj) {
+                if (this == obj) return true;
+                if (!(obj instanceof IdentityWeakKey<?> other)) return false;
+                if (this.hash != other.hash) return false;
+                Object a = this.get();
+                Object b = other.get();
+                return a != null && a == b;
+            }
+        }
+
+        private void expungeStaleEntries() {
+            Object ref;
+            while ((ref = queue.poll()) != null) {
+                map.remove(ref);
+            }
+        }
+
+        synchronized V get(K key) {
+            if (key == null) return null;
+            expungeStaleEntries();
+            return map.get(new IdentityWeakKey<K>(key, null));
+        }
+
+        synchronized void put(K key, V value) {
+            if (key == null) return;
+            expungeStaleEntries();
+            map.put(new IdentityWeakKey<K>(key, queue), value);
+        }
+    }
+
+    // Use WeakIdentityMap for SoftKeyDef and KeyData (Lqbc) instances so lookups are based on
+    // object identity (===) rather than value equality (.equals()), preventing collisions while
+    // allowing GC to reclaim old defs after Shift/layout switches.
+    private static final WeakIdentityMap<Object, Object> AUGMENTED_TO_ORIGINAL_DEF =
+            new WeakIdentityMap<Object, Object>();
+    private static final WeakIdentityMap<Object, String> AUGMENTED_DEF_BASE_KEY =
+            new WeakIdentityMap<Object, String>();
+    private static final WeakIdentityMap<Object, PopupItemMeta> KEY_DATA_META =
+            new WeakIdentityMap<Object, PopupItemMeta>();
     private static final Map<Object, Object> ACTIVE_SOFT_KEY_VIEWS =
             Collections.synchronizedMap(new WeakHashMap<Object, Object>());
     private static final Map<Object, ActivePopupState> ACTIVE_POPUPS_BY_MANAGER =
@@ -269,6 +323,15 @@ public final class GboardCustomHoldPopupsRuntime {
     }
 
     public static void invalidateAndRefreshActiveKeyboards() {
+        invalidateAndRefreshActiveKeyboards(null);
+    }
+
+    public static void invalidateAndRefreshActiveKeyboards(Context context) {
+        if (context != null) {
+            cachedContext = context.getApplicationContext() != null
+                    ? context.getApplicationContext()
+                    : context;
+        }
         lastSettingsReadMs = 0L;
         postToMainThread(GboardCustomHoldPopupsRuntime::refreshActiveSoftKeyViewsOnMainThread);
     }
@@ -1318,17 +1381,19 @@ public final class GboardCustomHoldPopupsRuntime {
                 Object viewObj = entry.getKey();
                 Object originalDef = entry.getValue();
                 if (!(viewObj instanceof View) || originalDef == null) continue;
-                View view = (View) viewObj;
-                if (!view.isAttachedToWindow()) continue;
-                ensureSoftKeyViewReflection(view);
-                if (softKeyViewDefField == null || softKeyViewSetDefMethod == null) continue;
-                long stateBits = softKeyViewStateField != null
-                        ? softKeyViewStateField.getLong(view)
-                        : 0L;
-                // Clear current SoftKeyDef reference so SoftKeyView.s(SoftKeyDef, J) does not
-                // short-circuit on `if (newDef == this.e) return false;`
-                softKeyViewDefField.set(view, null);
-                softKeyViewSetDefMethod.invoke(view, originalDef, stateBits);
+                try {
+                    View view = (View) viewObj;
+                    ensureSoftKeyViewReflection(view);
+                    if (softKeyViewDefField == null || softKeyViewSetDefMethod == null) continue;
+                    long stateBits = softKeyViewStateField != null
+                            ? softKeyViewStateField.getLong(view)
+                            : 0L;
+                    // Clear current SoftKeyDef reference so SoftKeyView.s(SoftKeyDef, J) does not
+                    // short-circuit on `if (newDef == this.e) return false;`
+                    softKeyViewDefField.set(view, null);
+                    softKeyViewSetDefMethod.invoke(view, originalDef, stateBits);
+                } catch (Throwable ignored) {
+                }
             }
         } catch (Throwable t) {
             Log.w(TAG, "refreshActiveSoftKeyViewsOnMainThread failed", t);

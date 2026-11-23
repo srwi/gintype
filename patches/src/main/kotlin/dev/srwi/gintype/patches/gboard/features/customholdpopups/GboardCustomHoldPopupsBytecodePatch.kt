@@ -4,10 +4,16 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
+import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod
+import app.morphe.patcher.util.proxy.mutableTypes.MutableMethod.Companion.toMutable
 import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.builder.MutableMethodImplementation
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
 import dev.srwi.gintype.patches.gboard.shared.gboardPatchesExtensionCarrierPatch
 import dev.srwi.gintype.patches.gboard.shared.isMethodReference
 import dev.srwi.gintype.patches.gboard.shared.mutableClass
@@ -24,6 +30,7 @@ private const val TOUCH_ACTION_BUNDLE_CLASS = "Lqin;"
 private const val POPUP_MANAGER_CLASS = "Lqsl;"
 private const val BASIC_MOTION_EVENT_HANDLER_CLASS =
     "Lcom/google/android/libraries/inputmethod/motioneventhandler/BasicMotionEventHandler;"
+private const val ORIG_FIRE_KEY_DATA_HELPER_NAME = "gboardPatchesOriginalFireKeyData"
 
 internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
     description = "Hooks SoftKeyView.setSoftKeyDef, hold popup selection/dismissal, and key commit dispatch for customizable hold popups.",
@@ -164,21 +171,52 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
         )
         val existingInterceptHooks = fireKeyDataMethod.implementation?.instructions
             ?.count { it.isMethodReference(interceptAbi.reference) } ?: 0
-        if (existingInterceptHooks == 0) {
-            val paramWords = 1 + fireKeyDataMethod.parameterTypes.sumOf { p ->
+        val existingHelper = basicHandlerClass.methods.any { it.name == ORIG_FIRE_KEY_DATA_HELPER_NAME }
+        if (existingInterceptHooks == 0 && !existingHelper) {
+            val paramTypes = fireKeyDataMethod.parameterTypes.map { it.toString() }
+            val paramWords = 1 + paramTypes.sumOf { p ->
                 if (p == "J" || p == "D") 2 else 1
             }
-            val regCount = fireKeyDataMethod.implementation?.registerCount ?: 0
-            if (regCount <= paramWords) {
-                throw PatchException(
-                    "BasicMotionEventHandler.o(...)V has insufficient local registers ($regCount <= $paramWords)",
-                )
-            }
+            val origImpl = fireKeyDataMethod.implementation
+                ?: throw PatchException("No instructions in $BASIC_MOTION_EVENT_HANDLER_CLASS->o(...)V")
             val interceptInvoke = RuntimeCallEmitter.invoke(
                 RuntimeCallId.CUSTOM_HOLD_POPUPS_RUNTIME_SHOULD_INTERCEPT_KEY_DATA_DISPATCH,
                 "p0 .. p4",
             )
-            fireKeyDataMethod.addInstructionsWithLabels(
+            val paramDescriptor = paramTypes.joinToString("")
+            val lastParamReg = paramWords - 1
+            val origAccessFlags = fireKeyDataMethod.accessFlags
+            val origAnnotations = fireKeyDataMethod.annotations
+
+            // Wrap o(...)V into a dedicated helper so we always have a clean local register v0
+            // without clobbering any parameter register (even when o(...)V has 0 local registers).
+            basicHandlerClass.methods.add(
+                MutableMethod(
+                    ImmutableMethod(
+                        BASIC_MOTION_EVENT_HANDLER_CLASS,
+                        ORIG_FIRE_KEY_DATA_HELPER_NAME,
+                        paramTypes.map { ImmutableMethodParameter(it, null, null) },
+                        "V",
+                        AccessFlags.PRIVATE.value or AccessFlags.FINAL.value,
+                        origAnnotations,
+                        null,
+                        ImmutableMethodImplementation.of(origImpl),
+                    ),
+                ),
+            )
+            basicHandlerClass.methods.remove(fireKeyDataMethod)
+
+            val wrapperMethod = ImmutableMethod(
+                BASIC_MOTION_EVENT_HANDLER_CLASS,
+                "o",
+                paramTypes.map { ImmutableMethodParameter(it, null, null) },
+                "V",
+                origAccessFlags,
+                origAnnotations,
+                null,
+                MutableMethodImplementation(paramWords + 1),
+            ).toMutable()
+            wrapperMethod.addInstructionsWithLabels(
                 0,
                 """
                     $interceptInvoke
@@ -186,9 +224,11 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
                     if-eqz v0, :custom_hold_popups_allow_dispatch
                     return-void
                     :custom_hold_popups_allow_dispatch
-                    nop
+                    invoke-direct/range {p0 .. p$lastParamReg}, $BASIC_MOTION_EVENT_HANDLER_CLASS->$ORIG_FIRE_KEY_DATA_HELPER_NAME($paramDescriptor)V
+                    return-void
                 """.trimIndent(),
             )
+            basicHandlerClass.methods.add(wrapperMethod)
         }
     }
 }
