@@ -6,9 +6,11 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.TypedArray;
 import android.graphics.drawable.Drawable;
+import android.text.InputType;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.ViewGroup;
+import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -40,6 +42,9 @@ public final class GboardCustomHoldPopupsSettingsFeature
     private final String enabledSummary;
     private final String lockKeysTitle;
     private final String lockKeysSummary;
+    private final String addBindingTitle;
+    private final String addBindingSummary;
+    private final String addBindingKeyHint;
     private final String emptyTitle;
     private final String emptySummary;
     private final String resetTitle;
@@ -60,6 +65,9 @@ public final class GboardCustomHoldPopupsSettingsFeature
         enabledSummary = text(context, R.string.gboard_patches_custom_hold_popups_enabled_summary);
         lockKeysTitle = text(context, R.string.gboard_patches_custom_hold_popups_lock_keys_title);
         lockKeysSummary = text(context, R.string.gboard_patches_custom_hold_popups_lock_keys_summary);
+        addBindingTitle = text(context, R.string.gboard_patches_custom_hold_popups_add_binding_title);
+        addBindingSummary = text(context, R.string.gboard_patches_custom_hold_popups_add_binding_summary);
+        addBindingKeyHint = text(context, R.string.gboard_patches_custom_hold_popups_add_binding_key_hint);
         emptyTitle = text(context, R.string.gboard_patches_custom_hold_popups_empty_title);
         emptySummary = text(context, R.string.gboard_patches_custom_hold_popups_empty_summary);
         resetTitle = text(context, R.string.gboard_patches_custom_hold_popups_reset_title);
@@ -142,16 +150,29 @@ public final class GboardCustomHoldPopupsSettingsFeature
             sections.add(new GboardPatchesSettingsContract.Section(sectionGeneral, generalRows));
 
             if (entries.isEmpty()) {
+                List<GboardPatchesSettingsContract.Row> emptyRows =
+                        new ArrayList<GboardPatchesSettingsContract.Row>(2);
+                emptyRows.add(new GboardPatchesSettingsContract.CommandRow(
+                        addBindingTitle,
+                        addBindingSummary,
+                        masterEnabled,
+                        () -> showAddBindingKeyPickerDialog(host)));
+                emptyRows.add(new GboardPatchesSettingsContract.CustomViewRow(
+                        viewHost -> createEmptyInfoFooterView(
+                                viewHost.getContext(), emptyTitle, emptySummary)));
                 sections.add(new GboardPatchesSettingsContract.Section(
                         sectionCustomizations,
                         null,
                         GboardPatchesSettingsContract.SectionStyle.DEFAULT,
-                        Collections.singletonList(new GboardPatchesSettingsContract.CustomViewRow(
-                                viewHost -> createEmptyInfoFooterView(
-                                        viewHost.getContext(), emptyTitle, emptySummary)))));
+                        emptyRows));
             } else {
                 List<GboardPatchesSettingsContract.Row> customRows =
-                        new ArrayList<GboardPatchesSettingsContract.Row>(entries.size());
+                        new ArrayList<GboardPatchesSettingsContract.Row>(entries.size() + 1);
+                customRows.add(new GboardPatchesSettingsContract.CommandRow(
+                        addBindingTitle,
+                        addBindingSummary,
+                        masterEnabled,
+                        () -> showAddBindingKeyPickerDialog(host)));
                 for (GboardCustomHoldPopupsSettings.CustomEntry entry : entries) {
                     String displayKey = formatDisplayKey(entry.baseKey);
                     String changeText = entry.userAdded
@@ -205,6 +226,72 @@ public final class GboardCustomHoldPopupsSettingsFeature
             }
             return buildErrorScreen();
         }
+    }
+
+    private void showAddBindingKeyPickerDialog(
+            GboardPatchesSettingsContract.FeatureHost host) {
+        if (host == null) return;
+        Context context = host.getContext();
+        if (!(context instanceof Activity)) return;
+        Activity activity = (Activity) context;
+        GboardPatchesSettingsContract.showManagedDialog(host, onDismiss -> {
+            EditText keyInput = new EditText(activity);
+            keyInput.setSingleLine(true);
+            keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+            keyInput.setHint(addBindingKeyHint);
+            float density = activity.getResources().getDisplayMetrics().density;
+            int padH = Math.round(20f * density);
+            int padV = Math.round(12f * density);
+            LinearLayout wrapper = new LinearLayout(activity);
+            wrapper.setOrientation(LinearLayout.VERTICAL);
+            wrapper.setPadding(padH, padV, padH, padV);
+            wrapper.addView(keyInput, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            AlertDialog picker = new AlertDialog.Builder(activity)
+                    .setTitle(addBindingTitle)
+                    .setView(wrapper)
+                    .setNegativeButton(
+                            GboardSettingsText.get(activity, R.string.gboard_patches_dialog_cancel),
+                            null)
+                    .setPositiveButton(
+                            GboardSettingsText.get(
+                                    activity, R.string.gboard_patches_custom_hold_popups_dialog_action_add),
+                            (d, which) -> {
+                                String rawKey = keyInput.getText() == null
+                                        ? ""
+                                        : keyInput.getText().toString().trim();
+                                String normalized = GboardCustomHoldPopupsSettings.normalizeBaseKey(rawKey);
+                                if (normalized.isEmpty() || normalized.codePointCount(0, normalized.length()) != 1) {
+                                    GboardPatchesSettingsContract.showMessage(
+                                            host,
+                                            GboardSettingsText.get(
+                                                    activity,
+                                                    R.string.gboard_patches_custom_hold_popups_dialog_error_empty));
+                                    return;
+                                }
+                                GboardPatchesSettingsContract.showManagedDialog(host, editorDismiss -> {
+                                    AlertDialog editor = GboardCustomHoldPopupsEditorDialog.show(
+                                            activity,
+                                            GboardCustomHoldPopupsEditorDialog.MODE_ADD,
+                                            normalized,
+                                            "",
+                                            "",
+                                            false,
+                                            -1,
+                                            () -> GboardPatchesSettingsContract.refresh(host),
+                                            editorDismiss);
+                                    return editor != null;
+                                });
+                            })
+                    .create();
+            picker.setOnDismissListener(ignored -> {
+                if (onDismiss != null) {
+                    onDismiss.run();
+                }
+            });
+            picker.show();
+            return true;
+        });
     }
 
     private void showEntryEditorDialog(

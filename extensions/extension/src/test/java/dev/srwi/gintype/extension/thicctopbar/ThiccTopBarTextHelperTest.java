@@ -32,6 +32,14 @@ public final class ThiccTopBarTextHelperTest {
         Assert.assertFalse(ThiccTopBarTextHelper.isBoundaryChar('a'));
         Assert.assertFalse(ThiccTopBarTextHelper.isBoundaryChar('Z'));
         Assert.assertFalse(ThiccTopBarTextHelper.isBoundaryChar('9'));
+
+        // Non-BMP surrogate pairs: mathematical bold '𝐀' (U+1D400) is a letter, emoji '😀' (U+1F600) is a boundary
+        String mathBoldA = "\uD835\uDC00";
+        Assert.assertFalse(ThiccTopBarTextHelper.isBoundaryChar(mathBoldA, 0));
+        Assert.assertFalse(ThiccTopBarTextHelper.isBoundaryChar(mathBoldA, 1));
+        String grinningEmoji = "\uD83D\uDE00";
+        Assert.assertTrue(ThiccTopBarTextHelper.isBoundaryChar(grinningEmoji, 0));
+        Assert.assertTrue(ThiccTopBarTextHelper.isBoundaryChar(grinningEmoji, 1));
     }
 
     @Test

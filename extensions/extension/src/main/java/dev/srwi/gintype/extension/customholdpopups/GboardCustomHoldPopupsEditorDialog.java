@@ -267,18 +267,35 @@ public final class GboardCustomHoldPopupsEditorDialog {
                     dangerColor,
                     dangerBgColor);
             deleteBtn.setOnClickListener(v -> {
-                boolean deleted = GboardCustomHoldPopupsSettings.deleteAddedSymbol(
-                        preferences, normalizedBaseKey, addedIndex, safeCurrent);
-                if (deleted) {
-                    GboardCustomHoldPopupsRuntime.invalidateAndRefreshActiveKeyboards(activity);
-                    if (onSavedOrMutated != null) {
-                        onSavedOrMutated.run();
-                    }
-                    dialog.dismiss();
-                } else {
-                    errorView.setText("This symbol was already modified or removed.");
-                    errorView.setVisibility(View.VISIBLE);
-                }
+                new AlertDialog.Builder(activity)
+                        .setTitle(GboardSettingsText.get(
+                                activity, R.string.gboard_patches_custom_hold_popups_dialog_action_delete))
+                        .setMessage(GboardSettingsText.format(
+                                activity,
+                                R.string.gboard_patches_custom_hold_popups_dialog_delete_confirm_message,
+                                safeCurrent,
+                                displayKey))
+                        .setNegativeButton(
+                                GboardSettingsText.get(activity, R.string.gboard_patches_dialog_cancel),
+                                null)
+                        .setPositiveButton(
+                                GboardSettingsText.get(
+                                        activity, R.string.gboard_patches_custom_hold_popups_dialog_action_delete),
+                                (d, which) -> {
+                                    boolean deleted = GboardCustomHoldPopupsSettings.deleteAddedSymbol(
+                                            preferences, normalizedBaseKey, addedIndex, safeCurrent);
+                                    if (deleted) {
+                                        GboardCustomHoldPopupsRuntime.invalidateAndRefreshActiveKeyboards(activity);
+                                        if (onSavedOrMutated != null) {
+                                            onSavedOrMutated.run();
+                                        }
+                                        dialog.dismiss();
+                                    } else {
+                                        errorView.setText("This symbol was already modified or removed.");
+                                        errorView.setVisibility(View.VISIBLE);
+                                    }
+                                })
+                        .show();
             });
             deleteBtn.setMinHeight(dp(activity, 42));
             buttonRow.addView(deleteBtn, new LinearLayout.LayoutParams(
@@ -291,12 +308,30 @@ public final class GboardCustomHoldPopupsEditorDialog {
                     dangerColor,
                     dangerBgColor);
             resetBtn.setOnClickListener(v -> {
-                GboardCustomHoldPopupsSettings.resetModifiedDefaultSymbol(
-                        preferences, normalizedBaseKey, safeOriginal);
-                if (onSavedOrMutated != null) {
-                    onSavedOrMutated.run();
-                }
-                dialog.dismiss();
+                new AlertDialog.Builder(activity)
+                        .setTitle(GboardSettingsText.get(
+                                activity, R.string.gboard_patches_custom_hold_popups_dialog_action_reset))
+                        .setMessage(GboardSettingsText.format(
+                                activity,
+                                R.string.gboard_patches_custom_hold_popups_dialog_reset_confirm_message,
+                                safeOriginal,
+                                displayKey))
+                        .setNegativeButton(
+                                GboardSettingsText.get(activity, R.string.gboard_patches_dialog_cancel),
+                                null)
+                        .setPositiveButton(
+                                GboardSettingsText.get(
+                                        activity, R.string.gboard_patches_custom_hold_popups_dialog_action_reset),
+                                (d, which) -> {
+                                    GboardCustomHoldPopupsSettings.resetModifiedDefaultSymbol(
+                                            preferences, normalizedBaseKey, safeOriginal);
+                                    GboardCustomHoldPopupsRuntime.invalidateAndRefreshActiveKeyboards(activity);
+                                    if (onSavedOrMutated != null) {
+                                        onSavedOrMutated.run();
+                                    }
+                                    dialog.dismiss();
+                                })
+                        .show();
             });
             resetBtn.setMinHeight(dp(activity, 42));
             buttonRow.addView(resetBtn, new LinearLayout.LayoutParams(
@@ -330,6 +365,12 @@ public final class GboardCustomHoldPopupsEditorDialog {
         primaryBtn.setMinHeight(dp(activity, 42));
         Runnable commitAction = () -> {
             String rawInput = input.getText() == null ? "" : input.getText().toString();
+            if (GboardCustomHoldPopupsSettings.PENCIL_SYMBOL.equals(rawInput.trim())) {
+                errorView.setText(GboardSettingsText.get(
+                        activity, R.string.gboard_patches_custom_hold_popups_dialog_error_reserved_pencil));
+                errorView.setVisibility(View.VISIBLE);
+                return;
+            }
             String sanitized = GboardCustomHoldPopupsSettings.sanitizeSymbol(rawInput);
             if (sanitized.isEmpty()) {
                 errorView.setText(GboardSettingsText.get(

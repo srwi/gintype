@@ -304,14 +304,36 @@ public final class GboardCustomHoldPopupsRuntime {
     private static volatile Method popupIsShowingMethod;        // Lqsl.b()Z
     private static volatile Method popupHideMethod;             // Lqsl.a(J)V
 
+    private static final Object EXTRA_REFLECTION_LOCK = new Object();
+
+    private static final class SettingsSnapshot {
+        static final SettingsSnapshot DEFAULTS = new SettingsSnapshot(
+                GboardCustomHoldPopupsSettings.DEFAULT_ENABLED,
+                GboardCustomHoldPopupsSettings.DEFAULT_LOCK_KEYS,
+                GboardCustomHoldPopupsSettings.DEFAULT_HOLD_DURATION_MS,
+                Collections.emptyMap());
+
+        final boolean enabled;
+        final boolean lockKeys;
+        final int holdDurationMs;
+        final Map<String, GboardCustomHoldPopupsSettings.KeyHoldRules> rules;
+
+        SettingsSnapshot(
+                boolean enabled,
+                boolean lockKeys,
+                int holdDurationMs,
+                Map<String, GboardCustomHoldPopupsSettings.KeyHoldRules> rules) {
+            this.enabled = enabled;
+            this.lockKeys = lockKeys;
+            this.holdDurationMs = holdDurationMs;
+            this.rules = rules != null ? rules : Collections.emptyMap();
+        }
+    }
+
     private static volatile Context cachedContext;
     private static volatile int cachedEditIconResId = -1;
-    private static volatile boolean cachedEnabled = GboardCustomHoldPopupsSettings.DEFAULT_ENABLED;
-    private static volatile boolean cachedLockKeys = GboardCustomHoldPopupsSettings.DEFAULT_LOCK_KEYS;
-    private static volatile int cachedHoldDurationMs =
-            GboardCustomHoldPopupsSettings.DEFAULT_HOLD_DURATION_MS;
-    private static volatile Map<String, GboardCustomHoldPopupsSettings.KeyHoldRules> cachedRules =
-            Collections.emptyMap();
+    private static volatile int cachedPopupLayoutId = 0;
+    private static volatile SettingsSnapshot settingsSnapshot = SettingsSnapshot.DEFAULTS;
     private static volatile long lastSettingsReadMs = 0L;
     private static volatile boolean refreshingKeyboards = false;
 
@@ -336,23 +358,27 @@ public final class GboardCustomHoldPopupsRuntime {
         postToMainThread(GboardCustomHoldPopupsRuntime::refreshActiveSoftKeyViewsOnMainThread);
     }
 
-    private static void refreshSettingsIfNeeded(Context context, boolean force) {
+    private static SettingsSnapshot refreshSettingsIfNeeded(Context context, boolean force) {
         if (context != null) {
-            cachedContext = context;
+            Context app = context.getApplicationContext();
+            cachedContext = app != null ? app : context;
         }
         Context ctx = context != null ? context : cachedContext;
-        if (ctx == null) return;
+        if (ctx == null) return settingsSnapshot;
         long now = SystemClock.uptimeMillis();
         if (!force && lastSettingsReadMs != 0L
                 && now - lastSettingsReadMs < SETTINGS_REFRESH_INTERVAL_MS) {
-            return;
+            return settingsSnapshot;
         }
         SharedPreferences prefs = GboardCustomHoldPopupsSettings.resolvePreferences(ctx);
-        cachedEnabled = GboardCustomHoldPopupsSettings.readEnabled(prefs);
-        cachedLockKeys = GboardCustomHoldPopupsSettings.readLockKeys(prefs);
-        cachedHoldDurationMs = GboardCustomHoldPopupsSettings.readHoldDurationMs(prefs);
-        cachedRules = GboardCustomHoldPopupsSettings.readAllRules(prefs);
+        SettingsSnapshot updated = new SettingsSnapshot(
+                GboardCustomHoldPopupsSettings.readEnabled(prefs),
+                GboardCustomHoldPopupsSettings.readLockKeys(prefs),
+                GboardCustomHoldPopupsSettings.readHoldDurationMs(prefs),
+                GboardCustomHoldPopupsSettings.readAllRules(prefs));
+        settingsSnapshot = updated;
         lastSettingsReadMs = now;
+        return updated;
     }
 
     /**
@@ -369,7 +395,7 @@ public final class GboardCustomHoldPopupsRuntime {
             Context context = softKeyViewObj instanceof View
                     ? ((View) softKeyViewObj).getContext()
                     : cachedContext;
-            refreshSettingsIfNeeded(context, false);
+            SettingsSnapshot snap = refreshSettingsIfNeeded(context, false);
 
             Object originalDef = AUGMENTED_TO_ORIGINAL_DEF.get(softKeyDefObj);
             if (originalDef == null) {
@@ -379,7 +405,7 @@ public final class GboardCustomHoldPopupsRuntime {
                 ACTIVE_SOFT_KEY_VIEWS.put(softKeyViewObj, originalDef);
             }
 
-            if (!cachedEnabled) {
+            if (!snap.enabled) {
                 return originalDef;
             }
             if (!ensureReflectionInitialized(originalDef.getClass().getClassLoader(), originalDef)) {
@@ -398,7 +424,7 @@ public final class GboardCustomHoldPopupsRuntime {
                     rawKeyLabel, normalizedBaseKey);
 
             Object augmented = buildAugmentedSoftKeyDef(
-                    originalDef, normalizedBaseKey, shifted, cachedRules.get(normalizedBaseKey));
+                    originalDef, normalizedBaseKey, shifted, snap.rules.get(normalizedBaseKey), snap.lockKeys);
             if (augmented != null && augmented != originalDef) {
                 AUGMENTED_TO_ORIGINAL_DEF.put(augmented, originalDef);
                 AUGMENTED_DEF_BASE_KEY.put(augmented, normalizedBaseKey);
@@ -415,7 +441,7 @@ public final class GboardCustomHoldPopupsRuntime {
      * Hooked before return in {@code Lqin.D(J)V} ({@code TouchActionBundle.showPopup}).
      */
     public static void onPopupShown(Object touchActionBundleObj) {
-        if (touchActionBundleObj == null || !cachedEnabled) return;
+        if (touchActionBundleObj == null || !settingsSnapshot.enabled) return;
         try {
             ensureBundleAndPopupReflection(touchActionBundleObj, null);
             if (bundlePopupManagerField == null || bundleSoftKeyViewField == null) {
@@ -464,7 +490,7 @@ public final class GboardCustomHoldPopupsRuntime {
      * Hooked before return in {@code Lqsl.c(F, F, Z)Z} ({@code PopupManager.handleMove}).
      */
     public static void onPopupSelectionUpdated(Object popupManagerObj, boolean isUpEvent) {
-        if (popupManagerObj == null || !cachedEnabled) return;
+        if (popupManagerObj == null || !settingsSnapshot.enabled) return;
         try {
             ActivePopupState state = ACTIVE_POPUPS_BY_MANAGER.get(popupManagerObj);
             if (state == null) return;
@@ -510,7 +536,7 @@ public final class GboardCustomHoldPopupsRuntime {
                     return true;
                 }
             }
-            if (!cachedEnabled || keyDataObj == null) {
+            if (!settingsSnapshot.enabled || keyDataObj == null) {
                 return false;
             }
             ensureKeyDataReflection(keyDataObj);
@@ -563,14 +589,15 @@ public final class GboardCustomHoldPopupsRuntime {
             Object selectedKeyData) {
         cancelStateTimerOnly(state);
         state.currentSelectedKeyData = selectedKeyData;
-        if (selectedKeyData == null || cachedLockKeys) {
+        SettingsSnapshot snap = settingsSnapshot;
+        if (selectedKeyData == null || snap.lockKeys) {
             return;
         }
         PopupItemMeta meta = resolvePopupItemMeta(state.baseKey, selectedKeyData);
         if (meta == null || meta.pencilAddOption) {
             return;
         }
-        int holdDurationMs = GboardCustomHoldPopupsSettings.DEFAULT_HOLD_DURATION_MS;
+        int holdDurationMs = snap.holdDurationMs;
         final Object expectedKeyData = selectedKeyData;
         final PopupItemMeta targetMeta = meta;
         Runnable timerTask = new Runnable() {
@@ -1031,8 +1058,9 @@ public final class GboardCustomHoldPopupsRuntime {
             if (longPressActionDef != null) {
                 int[] popupIcons = (int[]) actionDefPopupIconsField.get(longPressActionDef);
                 if (popupIcons != null) {
+                    int editIconId = cachedEditIconResId;
                     for (int iconId : popupIcons) {
-                        if (iconId != 0) {
+                        if (iconId != 0 && iconId != editIconId) {
                             return null;
                         }
                     }
@@ -1120,7 +1148,8 @@ public final class GboardCustomHoldPopupsRuntime {
             Object originalSoftKeyDef,
             String normalizedBaseKey,
             boolean shifted,
-            GboardCustomHoldPopupsSettings.KeyHoldRules keyRules) throws Exception {
+            GboardCustomHoldPopupsSettings.KeyHoldRules keyRules,
+            boolean lockKeys) throws Exception {
         Object actionDefsObj = softKeyDefActionDefsField.get(originalSoftKeyDef);
         if (!(actionDefsObj instanceof List)) return originalSoftKeyDef;
         List<?> originalActionDefs = (List<?>) actionDefsObj;
@@ -1240,7 +1269,7 @@ public final class GboardCustomHoldPopupsRuntime {
         }
 
         // 3. Trailing Edit/Add option to add a new symbol (unless keys are locked)
-        boolean includeEditIcon = !cachedLockKeys;
+        boolean includeEditIcon = !lockKeys;
         if (includeEditIcon) {
             Object pencilKd = createKeyData(
                     PENCIL_SENTINEL_KEY_CODE,
@@ -1278,10 +1307,15 @@ public final class GboardCustomHoldPopupsRuntime {
         boolean actionOnDown = existingLongPressDef != null
                 && actionDefActionOnDownField.getBoolean(existingLongPressDef);
         boolean repeatable = false;
-        int popupLayoutId = existingLongPressDef != null
-                && actionDefPopupLayoutField.getInt(existingLongPressDef) != 0
+        int existingPopupLayoutId = existingLongPressDef != null
                 ? actionDefPopupLayoutField.getInt(existingLongPressDef)
-                : DEFAULT_POPUP_LAYOUT_THEME_ATTR;
+                : 0;
+        if (existingPopupLayoutId != 0 && cachedPopupLayoutId == 0) {
+            cachedPopupLayoutId = existingPopupLayoutId;
+        }
+        int popupLayoutId = existingPopupLayoutId != 0
+                ? existingPopupLayoutId
+                : (cachedPopupLayoutId != 0 ? cachedPopupLayoutId : DEFAULT_POPUP_LAYOUT_THEME_ATTR);
         boolean alwaysShowPopup = true;
         boolean playMediaEffect = existingLongPressDef == null
                 || actionDefPlayMediaField.getBoolean(existingLongPressDef);
@@ -1753,87 +1787,105 @@ public final class GboardCustomHoldPopupsRuntime {
 
     private static void ensureSoftKeyViewReflection(Object softKeyViewObj) {
         if (softKeyViewSetDefMethod != null || softKeyViewObj == null) return;
-        try {
-            Class<?> skvCls = softKeyViewObj.getClass();
-            for (Class<?> c = skvCls; c != null && c != Object.class; c = c.getSuperclass()) {
-                if (softKeyViewDefField == null) {
-                    try {
-                        Field e = c.getDeclaredField("e");
-                        if (e.getType().getName().endsWith("SoftKeyDef")) {
-                            e.setAccessible(true);
-                            softKeyViewDefField = e;
+        synchronized (EXTRA_REFLECTION_LOCK) {
+            if (softKeyViewSetDefMethod != null) return;
+            try {
+                Class<?> skvCls = softKeyViewObj.getClass();
+                Field defField = softKeyViewDefField;
+                Field stateField = softKeyViewStateField;
+                Method setDefMethod = null;
+                for (Class<?> c = skvCls; c != null && c != Object.class; c = c.getSuperclass()) {
+                    if (defField == null) {
+                        try {
+                            Field e = c.getDeclaredField("e");
+                            if (e.getType().getName().endsWith("SoftKeyDef")) {
+                                e.setAccessible(true);
+                                defField = e;
+                            }
+                        } catch (NoSuchFieldException ignored) {
                         }
-                    } catch (NoSuchFieldException ignored) {
                     }
-                }
-                if (softKeyViewStateField == null) {
-                    try {
-                        Field f = c.getDeclaredField("f");
-                        if (f.getType() == long.class) {
-                            f.setAccessible(true);
-                            softKeyViewStateField = f;
+                    if (stateField == null) {
+                        try {
+                            Field f = c.getDeclaredField("f");
+                            if (f.getType() == long.class) {
+                                f.setAccessible(true);
+                                stateField = f;
+                            }
+                        } catch (NoSuchFieldException ignored) {
                         }
-                    } catch (NoSuchFieldException ignored) {
+                    }
+                    if (setDefMethod == null && defField != null) {
+                        try {
+                            Method s = c.getDeclaredMethod(
+                                    "s", defField.getType(), long.class);
+                            s.setAccessible(true);
+                            setDefMethod = s;
+                        } catch (NoSuchMethodException ignored) {
+                        }
                     }
                 }
-                if (softKeyViewSetDefMethod == null && softKeyViewDefField != null) {
-                    try {
-                        Method s = c.getDeclaredMethod(
-                                "s", softKeyViewDefField.getType(), long.class);
-                        s.setAccessible(true);
-                        softKeyViewSetDefMethod = s;
-                    } catch (NoSuchMethodException ignored) {
-                    }
-                }
+                softKeyViewDefField = defField;
+                softKeyViewStateField = stateField;
+                // Publish guard field last so readers observe initialized sibling fields
+                softKeyViewSetDefMethod = setDefMethod;
+            } catch (Throwable ignored) {
             }
-        } catch (Throwable ignored) {
         }
     }
 
     private static void ensureBundleAndPopupReflection(
             Object touchActionBundleObj,
             Object popupManagerObj) {
-        try {
-            if (touchActionBundleObj != null && bundlePopupManagerField == null) {
-                Class<?> bundleCls = touchActionBundleObj.getClass();
-                bundleSoftKeyViewField = findDeclaredFieldOrNull(bundleCls, "m");
-                bundleActionDefField = findDeclaredFieldOrNull(bundleCls, "n");
-                bundlePopupManagerField = findDeclaredFieldOrNull(bundleCls, "q");
-                if (bundleSoftKeyViewField != null && softKeyViewDefField == null) {
+        boolean needBundle = touchActionBundleObj != null && bundlePopupManagerField == null;
+        boolean needPopup = popupManagerObj != null && popupSelectedKeyDataField == null;
+        if (!needBundle && !needPopup) return;
+        synchronized (EXTRA_REFLECTION_LOCK) {
+            try {
+                if (touchActionBundleObj != null && bundlePopupManagerField == null) {
+                    Class<?> bundleCls = touchActionBundleObj.getClass();
+                    Field skvField = findDeclaredFieldOrNull(bundleCls, "m");
+                    bundleSoftKeyViewField = skvField;
+                    bundleActionDefField = findDeclaredFieldOrNull(bundleCls, "n");
+                    if (skvField != null && softKeyViewDefField == null) {
+                        try {
+                            Field e = skvField.getType().getDeclaredField("e");
+                            e.setAccessible(true);
+                            softKeyViewDefField = e;
+                        } catch (Throwable ignored) {
+                        }
+                    }
                     try {
-                        Field e = bundleSoftKeyViewField.getType().getDeclaredField("e");
-                        e.setAccessible(true);
-                        softKeyViewDefField = e;
+                        Method closePopup = bundleCls.getDeclaredMethod("C");
+                        closePopup.setAccessible(true);
+                        bundleClosePopupMethod = closePopup;
                     } catch (Throwable ignored) {
                     }
+                    // Publish guard field last
+                    bundlePopupManagerField = findDeclaredFieldOrNull(bundleCls, "q");
                 }
-                try {
-                    Method closePopup = bundleCls.getDeclaredMethod("C");
-                    closePopup.setAccessible(true);
-                    bundleClosePopupMethod = closePopup;
-                } catch (Throwable ignored) {
+                if (popupManagerObj != null && popupSelectedKeyDataField == null) {
+                    Class<?> pmCls = popupManagerObj.getClass();
+                    popupContextField = findDeclaredFieldOrNull(pmCls, "a");
+                    popupViewField = findDeclaredFieldOrNull(pmCls, "e");
+                    popupKeyboardViewField = findDeclaredFieldOrNull(pmCls, "r");
+                    try {
+                        Method isShowing = pmCls.getDeclaredMethod("b");
+                        isShowing.setAccessible(true);
+                        popupIsShowingMethod = isShowing;
+                    } catch (Throwable ignored) {
+                    }
+                    try {
+                        Method hide = pmCls.getDeclaredMethod("a", long.class);
+                        hide.setAccessible(true);
+                        popupHideMethod = hide;
+                    } catch (Throwable ignored) {
+                    }
+                    // Publish guard field last
+                    popupSelectedKeyDataField = findDeclaredFieldOrNull(pmCls, "f");
                 }
+            } catch (Throwable ignored) {
             }
-            if (popupManagerObj != null && popupSelectedKeyDataField == null) {
-                Class<?> pmCls = popupManagerObj.getClass();
-                popupContextField = findDeclaredFieldOrNull(pmCls, "a");
-                popupViewField = findDeclaredFieldOrNull(pmCls, "e");
-                popupSelectedKeyDataField = findDeclaredFieldOrNull(pmCls, "f");
-                popupKeyboardViewField = findDeclaredFieldOrNull(pmCls, "r");
-                try {
-                    Method isShowing = pmCls.getDeclaredMethod("b");
-                    isShowing.setAccessible(true);
-                    popupIsShowingMethod = isShowing;
-                } catch (Throwable ignored) {
-                }
-                try {
-                    Method hide = pmCls.getDeclaredMethod("a", long.class);
-                    hide.setAccessible(true);
-                    popupHideMethod = hide;
-                } catch (Throwable ignored) {
-                }
-            }
-        } catch (Throwable ignored) {
         }
     }
 

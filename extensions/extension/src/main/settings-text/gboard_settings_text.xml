@@ -789,6 +789,24 @@
     <string name="gboard_patches_custom_hold_popups_dialog_error_empty">
         <translation locale="en">Please enter at least one character.</translation>
         </string>
+    <string name="gboard_patches_custom_hold_popups_dialog_error_reserved_pencil">
+        <translation locale="en">The edit icon (✎) is reserved and cannot be used as a hold symbol.</translation>
+        </string>
+    <string name="gboard_patches_custom_hold_popups_dialog_delete_confirm_message">
+        <translation locale="en">Delete custom symbol &quot;%1$s&quot; from key &quot;%2$s&quot;?</translation>
+        </string>
+    <string name="gboard_patches_custom_hold_popups_dialog_reset_confirm_message">
+        <translation locale="en">Reset this hold slot on key &quot;%2$s&quot; back to &quot;%1$s&quot;?</translation>
+        </string>
+    <string name="gboard_patches_custom_hold_popups_add_binding_title">
+        <translation locale="en">Add hold binding</translation>
+        </string>
+    <string name="gboard_patches_custom_hold_popups_add_binding_summary">
+        <translation locale="en">Choose a key and add a custom hold symbol (works even when keys are locked)</translation>
+        </string>
+    <string name="gboard_patches_custom_hold_popups_add_binding_key_hint">
+        <translation locale="en">Base key (e.g. a, ., 1)</translation>
+        </string>
     <string name="gboard_patches_custom_hold_popups_reset_title">
         <translation locale="en">Reset all custom hold bindings</translation>
         </string>
