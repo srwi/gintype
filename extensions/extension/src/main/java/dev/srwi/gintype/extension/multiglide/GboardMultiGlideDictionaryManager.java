@@ -623,20 +623,33 @@ public final class GboardMultiGlideDictionaryManager {
         boolean learnBigram = prevWord != null && !prevWord.isEmpty();
         if (!learnWord && !learnBigram) return;
 
-        pack.rwLock.writeLock().lock();
-        try {
-            if (learnWord) {
-                int existingFreq = pack.trie.lookupFrequency(committedWord);
-                int freqByte = Math.min(255, Math.max(128, existingFreq + 8));
-                MultiGlideDictionaryLoader.insertWordIntoTrie(
-                        pack.trie, committedWord, freqByte, false, key, pack.hasDedicatedUmlauts);
+        // Perform trie mutation + re-compaction asynchronously on LOADER_EXECUTOR so
+        // uncompactForMutation() never blocks the UI thread and the trie stays compacted.
+        final LanguagePack targetPack = pack;
+        final String targetPrev = prevWord;
+        final String targetWord = committedWord;
+        final String targetKey = key;
+        final boolean doLearnWord = learnWord;
+        final boolean doLearnBigram = learnBigram;
+        LOADER_EXECUTOR.execute(() -> {
+            targetPack.rwLock.writeLock().lock();
+            try {
+                if (doLearnWord) {
+                    int existingFreq = targetPack.trie.lookupFrequency(targetWord);
+                    int freqByte = Math.min(255, Math.max(128, existingFreq + 8));
+                    MultiGlideDictionaryLoader.insertWordIntoTrie(
+                            targetPack.trie, targetWord, freqByte, false, targetKey, targetPack.hasDedicatedUmlauts);
+                    targetPack.trie.compact();
+                }
+                if (doLearnBigram) {
+                    targetPack.bigrams.put(targetPrev, targetWord, 50);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "Async recordCommittedWord failed: " + t.getMessage());
+            } finally {
+                targetPack.rwLock.writeLock().unlock();
             }
-            if (learnBigram) {
-                pack.bigrams.put(prevWord, committedWord, 50);
-            }
-        } finally {
-            pack.rwLock.writeLock().unlock();
-        }
+        });
     }
 
     static String normalizeLanguageKey(String lang) {

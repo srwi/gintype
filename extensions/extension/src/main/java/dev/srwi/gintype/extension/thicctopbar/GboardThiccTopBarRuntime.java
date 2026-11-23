@@ -85,6 +85,7 @@ public final class GboardThiccTopBarRuntime {
     private static volatile long lastWordNavTimestamp = 0;
     private static volatile long candidatesEventSeq = 0L;
     private static volatile WeakReference<ViewGroup> lastHolderViewRef = null;
+    private static volatile String lastEditorIdentity = null;
     private static volatile String lastMultiGlideWord = null;
     private static volatile List<String> lastMultiGlideSuggestions = null;
     private static volatile long lastMultiGlideTimestamp = 0;
@@ -196,6 +197,54 @@ public final class GboardThiccTopBarRuntime {
         handler.postDelayed(postTouchSyncRunnable, POST_TOUCH_SYNC_DELAY_MS);
     }
 
+    private static String buildEditorIdentity(Context context) {
+        android.view.inputmethod.EditorInfo info =
+                dev.srwi.gintype.extension.settings.GboardInputTypeGuard.resolveCurrentEditorInfo(context);
+        if (info == null) {
+            return null;
+        }
+        String pkg = info.packageName != null ? info.packageName : "";
+        return pkg + "|" + info.fieldId + "|" + info.inputType;
+    }
+
+    /**
+     * Resets sentence history, selection state, and the Jump-to-End arrow whenever the user
+     * switches to a different app or text field so state never bleeds across editors.
+     */
+    private static boolean resetIfEditorChanged(ViewGroup holderView) {
+        if (holderView == null) {
+            return false;
+        }
+        String identity = buildEditorIdentity(holderView.getContext());
+        if (identity == null) {
+            return false;
+        }
+        String prev = lastEditorIdentity;
+        if (prev != null && prev.equals(identity)) {
+            return false;
+        }
+        lastEditorIdentity = identity;
+        if (prev == null) {
+            return false;
+        }
+        SENTENCE_BUFFER.clear();
+        activeOriginalSuggestions = null;
+        thiccTopBarLiveGuessActive = false;
+        lastWordNavTimestamp = 0;
+        lastHistoryInteractionTimestamp = 0;
+        lastHistoryReplaceTimestamp = 0;
+        lastSelfReplaceTimestamp = 0;
+        lastSelfReplacedWord = null;
+        hideJumpToEndArrow();
+        ViewGroup parent = parentViewGroup(holderView);
+        ViewGroup attachTarget = parent != null ? parent : holderView;
+        ThiccTopBarView existingBar = ACTIVE_BARS.get(attachTarget);
+        if (existingBar != null) {
+            existingBar.clearHistorySelection();
+        }
+        return true;
+    }
+
     private static void syncBarAfterTouchIfNeeded(ViewGroup holderView) {
         try {
             if (holderView == null) {
@@ -204,6 +253,7 @@ public final class GboardThiccTopBarRuntime {
             if (!GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
                 return;
             }
+            resetIfEditorChanged(holderView);
             if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
                     holderView.getContext())) {
                 hideBarForSensitiveInput(holderView);
@@ -893,6 +943,7 @@ public final class GboardThiccTopBarRuntime {
             return;
         }
         setLastHolderView(holderView);
+        resetIfEditorChanged(holderView);
         if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
                 holderView.getContext())) {
             hideBarForSensitiveInput(holderView);
@@ -1153,6 +1204,7 @@ public final class GboardThiccTopBarRuntime {
             return;
         }
         setLastHolderView(holderView);
+        resetIfEditorChanged(holderView);
         if (dev.srwi.gintype.extension.settings.GboardInputTypeGuard.isThiccTopBarBlockedInput(
                 holderView.getContext())) {
             hideBarForSensitiveInput(holderView);
@@ -1445,13 +1497,28 @@ public final class GboardThiccTopBarRuntime {
         // Commit cleanly via InputConnection (avoids SoftKeyboardView.a(softKey) synthetic touch replay).
         replaceActiveCandidateViaInputConnection(holderView, selectedItem);
 
-        // 3. Record in sentence buffer
+        // 3. Record in sentence buffer with real alternatives (never empty alternatives)
         List<String> altStrings = new ArrayList<>();
-        for (CandidateItem ci : allItems) {
-            altStrings.add(ci.text);
+        if (allItems != null) {
+            for (CandidateItem ci : allItems) {
+                if (ci != null && ci.text != null && !ci.text.isEmpty()) {
+                    altStrings.add(ci.text);
+                }
+            }
         }
-        int selIdx = allItems.indexOf(selectedItem);
-        SENTENCE_BUFFER.addWord(selectedItem.text, altStrings, selIdx >= 0 ? selIdx : 0);
+        if (altStrings.isEmpty() && selectedItem.text != null && !selectedItem.text.isEmpty()) {
+            altStrings.addAll(resolveSuggestionsForWord(selectedItem.text));
+        }
+        if (selectedItem.text != null && !selectedItem.text.isEmpty()) {
+            cacheAlternativeGroup(altStrings, selectedItem.text);
+        }
+        if (holderView != null) {
+            ThiccTopBarTextHelper.syncSentenceBufferFromText(
+                    holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+        } else {
+            int selIdx = findCaseInsensitiveIndex(altStrings, selectedItem.text);
+            SENTENCE_BUFFER.addWord(selectedItem.text, altStrings, selIdx >= 0 ? selIdx : 0);
+        }
     }
 
     static CandidateItem findCandidateByWord(List<CandidateItem> items, String word) {
@@ -2158,6 +2225,7 @@ public final class GboardThiccTopBarRuntime {
             if (holderView == null || !GboardThiccTopBarSettings.readEnabled(holderView.getContext())) {
                 return;
             }
+            resetIfEditorChanged(holderView);
             ThiccTopBarView barView = getOrCreateBarView(holderView);
             if (barView == null) {
                 return;
