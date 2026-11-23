@@ -580,11 +580,7 @@ public final class GboardMultiGlideTraceLogger {
 
     private static File resolveTraceDir(Context context) {
         if (context == null) return null;
-        File dir = context.getExternalFilesDir(null);
-        if (dir == null) {
-            dir = context.getFilesDir();
-        }
-        return dir;
+        return context.getFilesDir();
     }
 
     private static void appendLineToFile(Context context, String jsonLine) {

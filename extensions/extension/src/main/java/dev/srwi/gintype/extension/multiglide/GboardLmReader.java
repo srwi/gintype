@@ -184,9 +184,11 @@ public final class GboardLmReader {
             }
 
             byte[] symData = readChunkBytes(ch, symOff, symSize);
+            SymbolTable symbols = parseMarisaSymbolTable(symData, symOff);
+            symData = null; // Release symbol chunk before reading FST chunk to reduce peak heap
             byte[] fstData = readChunkBytes(ch, fstOff, fstSize);
-            return parseChunks(
-                    symData, symOff, fstData, fstOff,
+            return parseCompactLm(
+                    symbols, fstData, fstOff,
                     lang, hasDedicatedUmlautKeys, maxBigrams, maxCompounds, maxTripleCompounds);
         }
     }

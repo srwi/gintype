@@ -29,6 +29,7 @@ import dev.srwi.gintype.extension.thicctopbar.ThiccTopBarGboardReflector;
 import dev.srwi.gintype.extension.multiglide.GboardMultiGlideDictionaryManager.LanguagePack;
 import dev.srwi.gintype.extension.multiglide.MultiGlideGeometry.KeySpec;
 import dev.srwi.gintype.extension.multiglide.MultiGlideInputToken.WordCandidate;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -160,10 +161,32 @@ public final class GboardMultiGlideRuntime {
     private static volatile boolean suppressingBasicCancelReplay = false;
     private static final Set<Class<?>> probedClasses = Collections.synchronizedSet(new HashSet<>());
     private static volatile Context cachedContext = null;
-    private static volatile Object cachedSampleKeyView = null;
-    private static volatile Object lastGestureHandler = null;
+    private static volatile WeakReference<Object> cachedSampleKeyViewRef = null;
+    private static volatile WeakReference<Object> lastGestureHandlerRef = null;
     private static volatile boolean multiGlideEnabledCached = true;
     private static volatile boolean crashHandlerInstalled = false;
+
+    private static Object getLastGestureHandler() {
+        WeakReference<Object> ref = lastGestureHandlerRef;
+        return (ref != null) ? ref.get() : null;
+    }
+
+    private static void setLastGestureHandler(Object handler) {
+        if (handler == null) {
+            lastGestureHandlerRef = null;
+            return;
+        }
+        WeakReference<Object> ref = lastGestureHandlerRef;
+        if (ref == null || ref.get() != handler) {
+            lastGestureHandlerRef = new WeakReference<>(handler);
+        }
+    }
+
+    private static void cacheAppContext(Context context) {
+        if (context == null) return;
+        Context app = context.getApplicationContext();
+        cachedContext = (app != null) ? app : context;
+    }
 
     static {
         installCrashHandler();
@@ -296,7 +319,7 @@ public final class GboardMultiGlideRuntime {
      */
     public static void onTopBarUserInteraction() {
         try {
-            Object handler = lastGestureHandler;
+            Object handler = getLastGestureHandler();
             if (handler == null) return;
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return;
@@ -307,6 +330,11 @@ public final class GboardMultiGlideRuntime {
             session.core.passiveTapBuffer.clear();
             session.core.singleTouchCombineBuffer.clear();
             session.core.multiGlideTakeoverActive = false;
+            session.core.autospaceInserted = false;
+            session.core.autospaceSnapshot = null;
+            session.core.pendingLeadingSpaceBeforeNextWord = false;
+            session.core.lastCommittedWordUndo = null;
+            session.core.pendingBackspaceTap = false;
             setMultiGlideTrailAccentActive(handler, false, cachedContext);
         } catch (Throwable ignored) {
         }
@@ -315,7 +343,7 @@ public final class GboardMultiGlideRuntime {
     /** Returns true while a MultiGlide word is actively being composed. */
     public static boolean isMultiGlideWordActive() {
         try {
-            Object handler = lastGestureHandler;
+            Object handler = getLastGestureHandler();
             if (handler == null) return false;
             HandlerSession session = SESSIONS.get(handler);
             return session != null && session.core.multiGlideWordActive;
@@ -326,7 +354,7 @@ public final class GboardMultiGlideRuntime {
 
     public static boolean isLivePreviewTouchActive() {
         try {
-            Object handler = lastGestureHandler;
+            Object handler = getLastGestureHandler();
             if (handler == null) return false;
             HandlerSession session = SESSIONS.get(handler);
             return session != null
@@ -339,7 +367,7 @@ public final class GboardMultiGlideRuntime {
 
     public static boolean hasActiveTouch() {
         try {
-            Object handler = lastGestureHandler;
+            Object handler = getLastGestureHandler();
             if (handler == null) return false;
             HandlerSession session = SESSIONS.get(handler);
             return session != null && !session.core.activePointers.isEmpty();
@@ -356,7 +384,7 @@ public final class GboardMultiGlideRuntime {
      */
     public static void clearOrphanedActiveTouches(long touchEndEventTimeMs) {
         try {
-            Object handler = lastGestureHandler;
+            Object handler = getLastGestureHandler();
             if (handler == null) return;
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return;
@@ -375,7 +403,7 @@ public final class GboardMultiGlideRuntime {
     public static void onGestureEventEntry(Object handler, MotionEvent event) {
         if (handler == null || event == null) return;
         try {
-            lastGestureHandler = handler;
+            setLastGestureHandler(handler);
             Context context = extractContext(handler);
             boolean enabled = (context == null) || GboardMultiGlideSettings.readEnabled(context);
             multiGlideEnabledCached = enabled;
@@ -564,7 +592,7 @@ public final class GboardMultiGlideRuntime {
     public static boolean shouldStartGesture(Object handler, boolean stockShouldStart) {
         if (handler == null) return stockShouldStart;
         try {
-            lastGestureHandler = handler;
+            setLastGestureHandler(handler);
             if (!multiGlideEnabledCached) return stockShouldStart;
             HandlerSession session = SESSIONS.get(handler);
             if (session == null) return stockShouldStart;
@@ -592,7 +620,7 @@ public final class GboardMultiGlideRuntime {
     public static boolean resolveLetterStarted(Object handler, boolean stockLetterStarted) {
         if (handler == null) return stockLetterStarted;
         try {
-            lastGestureHandler = handler;
+            setLastGestureHandler(handler);
             if (stockLetterStarted || !multiGlideEnabledCached) {
                 return stockLetterStarted;
             }
@@ -614,7 +642,7 @@ public final class GboardMultiGlideRuntime {
     public static boolean shouldReceiveEventsDuringOtherOwner(Object handler) {
         if (handler == null || !multiGlideEnabledCached) return false;
         try {
-            lastGestureHandler = handler;
+            setLastGestureHandler(handler);
             HandlerSession session = SESSIONS.get(handler);
             return session != null && session.core.shouldReceiveEventsDuringOtherOwner(multiGlideEnabledCached);
         } catch (Throwable ignored) {
@@ -633,7 +661,7 @@ public final class GboardMultiGlideRuntime {
         int actionMasked = event.getActionMasked();
         boolean isActionDown = (actionMasked == MotionEvent.ACTION_DOWN);
         try {
-            Object gestureHandler = lastGestureHandler;
+            Object gestureHandler = getLastGestureHandler();
             if (gestureHandler == null) return false;
             HandlerSession session = SESSIONS.get(gestureHandler);
             if (session == null) return false;
@@ -733,7 +761,7 @@ public final class GboardMultiGlideRuntime {
         if (!multiGlideEnabledCached || event == null) return false;
         if (event.getActionMasked() != MotionEvent.ACTION_POINTER_DOWN) return false;
         try {
-            Object gestureHandler = lastGestureHandler;
+            Object gestureHandler = getLastGestureHandler();
             if (gestureHandler == null) return false;
             HandlerSession session = SESSIONS.get(gestureHandler);
             if (session == null) return false;
@@ -1059,7 +1087,8 @@ public final class GboardMultiGlideRuntime {
             if (!(paintObj instanceof Paint)) return;
             Paint drawPaint = (Paint) paintObj;
 
-            if (!STOCK_TRAIL_FILTERS.containsKey(overlayView)) {
+            Boolean wasActive = OVERLAY_MULTIGLIDE_ACTIVE.get(overlayView);
+            if (!Boolean.TRUE.equals(wasActive)) {
                 ColorFilter capturedFilter = drawPaint.getColorFilter();
                 STOCK_TRAIL_FILTERS.put(overlayView, capturedFilter);
                 int capturedRgb = extractStockTrailRgb(capturedFilter);
@@ -1069,7 +1098,6 @@ public final class GboardMultiGlideRuntime {
                 }
             }
 
-            Boolean wasActive = OVERLAY_MULTIGLIDE_ACTIVE.get(overlayView);
             if (wasActive != null && wasActive == active) {
                 return;
             }
@@ -1749,6 +1777,12 @@ public final class GboardMultiGlideRuntime {
 
             @Override
             public void onWordReadyTimerElapsed() {
+                if (shouldShowSpacebarIndicator(context)) {
+                    View spacebarView = resolveSpacebarTargetView(handler, session.geometry);
+                    session.spacebarOverlay.triggerFlash(
+                            spacebarView,
+                            resolveSpacebarIndicatorAccent(spacebarView, context));
+                }
                 triggerWordReadyVibration(context, handler, session);
             }
 
@@ -1986,7 +2020,7 @@ public final class GboardMultiGlideRuntime {
             if (contextField != null) {
                 Object c = contextField.get(handler);
                 if (c instanceof Context) {
-                    cachedContext = (Context) c;
+                    cacheAppContext((Context) c);
                     return (Context) c;
                 }
             }
@@ -1995,7 +2029,7 @@ public final class GboardMultiGlideRuntime {
                 if (v instanceof View) {
                     Context c = ((View) v).getContext();
                     if (c != null) {
-                        cachedContext = c;
+                        cacheAppContext(c);
                         return c;
                     }
                 }
@@ -2603,16 +2637,17 @@ public final class GboardMultiGlideRuntime {
                 Object sample = null;
                 if (map.size() > 0) {
                     sample = map.valueAt(0);
-                    if (sample != null) cachedSampleKeyView = sample;
+                    if (sample != null) cachedSampleKeyViewRef = new WeakReference<>(sample);
                 }
                 if (sample == null) {
-                    sample = cachedSampleKeyView;
+                    WeakReference<Object> ref = cachedSampleKeyViewRef;
+                    sample = (ref != null) ? ref.get() : null;
                 }
                 if (sample == null && keyboardViewField != null) {
                     Object kbView = keyboardViewField.get(handler);
                     if (kbView instanceof View) {
                         sample = findSampleKeyView((View) kbView);
-                        if (sample != null) cachedSampleKeyView = sample;
+                        if (sample != null) cachedSampleKeyViewRef = new WeakReference<>(sample);
                     }
                 }
                 if (sample != null) {

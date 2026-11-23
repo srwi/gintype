@@ -54,11 +54,9 @@ final class SpacebarTimerOverlay {
             drawable.flashAlpha = 0f;
 
             if (durationMs <= 0L) {
-                startFlash();
                 return;
             }
 
-            final boolean[] wasCancelled = {false};
             ValueAnimator anim = ValueAnimator.ofFloat(0f, 1f);
             anim.setDuration(durationMs);
             anim.setInterpolator(new LinearInterpolator());
@@ -70,17 +68,9 @@ final class SpacebarTimerOverlay {
             });
             anim.addListener(new AnimatorListenerAdapter() {
                 @Override
-                public void onAnimationCancel(Animator animation) {
-                    wasCancelled[0] = true;
-                }
-
-                @Override
                 public void onAnimationEnd(Animator animation) {
                     if (fillAnimator == anim) {
                         fillAnimator = null;
-                    }
-                    if (!wasCancelled[0]) {
-                        startFlash();
                     }
                 }
             });
