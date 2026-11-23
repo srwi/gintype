@@ -17,11 +17,24 @@ The patches in this repository bring two-finger swipe typing (**MultiGlide**), a
 <br>
 <br>
 
-| [**MultiGlide**](#multiglide) | [**Thicc Top Bar**](#thicc-top-bar) |
-| :---: | :---: |
-| <a href="#multiglide"><img src=".github/assets/multiglide.gif" width="380" alt="MultiGlide Demo" /></a> | <a href="#thicc-top-bar"><img src=".github/assets/thicc_top_bar.gif" width="380" alt="Thicc Top Bar Demo" /></a> |
-| [**Typing Effects**](#typing-effects-animations) | [**Custom Hold Popups**](#custom-hold-popups) |
-| <a href="#typing-effects-animations"><img src=".github/assets/visual_effects.gif" width="380" alt="Typing Effects Demo" /></a> | <a href="#custom-hold-popups"><img src=".github/assets/custom_hold_keys.png" width="380" alt="Custom Hold Popups" /></a> |
+<table>
+  <tr>
+    <th width="50%" align="center"><a href="#multiglide">MultiGlide</a></th>
+    <th width="50%" align="center"><a href="#thicc-top-bar">Thicc Top Bar</a></th>
+  </tr>
+  <tr>
+    <td align="center"><a href="#multiglide"><img src=".github/assets/multiglide.gif" width="100%" alt="MultiGlide Demo" /></a></td>
+    <td align="center"><a href="#thicc-top-bar"><img src=".github/assets/thicc_top_bar.gif" width="100%" alt="Thicc Top Bar Demo" /></a></td>
+  </tr>
+  <tr>
+    <th width="50%" align="center"><a href="#typing-effects-animations">Typing Effects</a></th>
+    <th width="50%" align="center"><a href="#custom-hold-popups">Custom Hold Popups</a></th>
+  </tr>
+  <tr>
+    <td align="center"><a href="#typing-effects-animations"><img src=".github/assets/visual_effects.gif" width="100%" alt="Typing Effects Demo" /></a></td>
+    <td align="center"><a href="#custom-hold-popups"><img src=".github/assets/custom_hold_keys.png" width="100%" alt="Custom Hold Popups" /></a></td>
+  </tr>
+</table>
 
 </div>
 
