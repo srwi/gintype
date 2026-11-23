@@ -525,6 +525,48 @@ public final class ThiccTopBarGboardReflector {
      */
     public static List<GboardThiccTopBarRuntime.CandidateItem> extractSlotCandidatesFromHolder(
             ViewGroup holderView, Object fallbackListObj) {
+        List<GboardThiccTopBarRuntime.CandidateItem> listItems =
+                fallbackListObj != null ? extractCandidatesFromIterable(fallbackListObj) : Collections.emptyList();
+        if (listItems.size() == 1) {
+            // Single-candidate updates (such as 1-finger live glide previews) are placed by Gboard
+            // in the center slot (slot 1) while slot 0 can retain a stale view from the prior update.
+            // Trust the live candidate list directly and attach the matching SoftKeyView if present.
+            GboardThiccTopBarRuntime.CandidateItem only = listItems.get(0);
+            View matchedSoftKey = only.softKey;
+            int matchedSlot = only.slotIndex;
+            try {
+                HolderMethodCache methods = resolveHolderMethods(holderView.getClass());
+                Method softKeyAtSlotMethod = methods.softKeyAtSlotMethod;
+                Method candidateAtSlotMethod = methods.candidateAtSlotMethod;
+                Method extractFromKeyMethod = methods.extractFromKeyMethod;
+                for (int slot = 0; slot < 3; slot++) {
+                    Object cand = null;
+                    if (candidateAtSlotMethod != null) {
+                        try {
+                            cand = candidateAtSlotMethod.invoke(holderView, slot);
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    View softKey = (softKeyAtSlotMethod != null) ? (View) softKeyAtSlotMethod.invoke(holderView, slot) : null;
+                    if (cand == null && softKey != null && extractFromKeyMethod != null) {
+                        try {
+                            cand = extractFromKeyMethod.invoke(null, softKey);
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    if (cand != null && only.text.equals(extractCandidateText(cand))) {
+                        matchedSoftKey = softKey;
+                        matchedSlot = slot;
+                        break;
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            return Collections.singletonList(new GboardThiccTopBarRuntime.CandidateItem(
+                    only.text, matchedSlot, only.isRaw, only.isAutoCorrect, only.isPrediction,
+                    only.candidateType, only.rawCandidateObj, matchedSoftKey));
+        }
+
         List<GboardThiccTopBarRuntime.CandidateItem> items = new ArrayList<>();
 
         try {
