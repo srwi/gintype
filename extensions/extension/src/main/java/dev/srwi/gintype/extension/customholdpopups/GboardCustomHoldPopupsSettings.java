@@ -138,12 +138,7 @@ public final class GboardCustomHoldPopupsSettings {
 
     public static SharedPreferences resolvePreferences(Context context) {
         if (context == null) return null;
-        SharedPreferences preferences = GboardPatchesSettings.preferencesOrNull(context);
-        if (preferences == null) {
-            preferences = context.getSharedPreferences(
-                    context.getPackageName() + "_preferences", Context.MODE_PRIVATE);
-        }
-        return preferences;
+        return GboardPatchesSettings.preferencesOrNull(context);
     }
 
     public static void ensureDefaults(SharedPreferences preferences) {

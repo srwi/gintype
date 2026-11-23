@@ -34,8 +34,8 @@ public final class MultiGlideBigramTable {
     private boolean frozen = false;
 
     public void put(String prev, String next, int count) {
-        String key = prev.toLowerCase();
-        String nw = next.toLowerCase();
+        String key = prev.toLowerCase(java.util.Locale.ROOT);
+        String nw = next.toLowerCase(java.util.Locale.ROOT);
 
         List<NextWord> list = table.get(key);
         if (list == null) {
@@ -77,11 +77,11 @@ public final class MultiGlideBigramTable {
 
     public float score(String prevWord, String candidate) {
         if (prevWord == null || prevWord.isEmpty()) return 0f;
-        String key = prevWord.toLowerCase();
+        String key = prevWord.toLowerCase(java.util.Locale.ROOT);
         List<NextWord> list = table.get(key);
         if (list == null || list.isEmpty()) return 0f;
 
-        String cand = candidate.toLowerCase();
+        String cand = candidate.toLowerCase(java.util.Locale.ROOT);
         NextWord entry = null;
         for (int i = 0; i < list.size(); i++) {
             NextWord nw = list.get(i);
@@ -101,7 +101,7 @@ public final class MultiGlideBigramTable {
     }
 
     public List<NextWord> topContinuations(String prevWord, int limit) {
-        String key = prevWord.toLowerCase();
+        String key = prevWord.toLowerCase(java.util.Locale.ROOT);
         List<NextWord> list = table.get(key);
         if (list == null || list.isEmpty()) return Collections.emptyList();
         if (list.size() <= limit) return list;

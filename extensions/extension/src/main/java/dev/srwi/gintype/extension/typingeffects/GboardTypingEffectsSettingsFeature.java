@@ -33,7 +33,7 @@ public final class GboardTypingEffectsSettingsFeature implements GboardPatchesSe
     private static final int PARTICLE_SPEED_STEP_PERCENT = 10;
     private static final int KEY_HIGHLIGHT_DURATION_STEP_MS = 20;
     private static final int WARP_STRENGTH_STEP_PERCENT = 15;
-    private static final int WARP_RADIUS_STEP_DP = 10;
+    private static final int WARP_RADIUS_STEP_DP = 5;
     private static final int WIND_INTENSITY_STEP = 1;
     private static final int WIND_SPREAD_STEP_DP = 5;
 

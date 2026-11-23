@@ -76,7 +76,6 @@ public final class GboardThiccTopBarRuntime {
         }
     };
 
-    private static List<CandidateItem> lastComposingCandidates = Collections.emptyList();
     private static List<String> activeOriginalSuggestions = null;
     private static volatile long lastSelfReplaceTimestamp = 0;
     private static volatile String lastSelfReplacedWord = null;
@@ -191,7 +190,7 @@ public final class GboardThiccTopBarRuntime {
                     || isHistorySelectionSessionActive(holderView, barView)) {
                 return;
             }
-            ViewGroup parent = (ViewGroup) holderView.getParent();
+            ViewGroup parent = parentViewGroup(holderView);
             ViewGroup attachTarget = parent != null ? parent : holderView;
 
             if (ThiccTopBarTextHelper.isSentenceEnded(holderView) || ThiccTopBarTextHelper.isInputEmpty(holderView)) {
@@ -298,9 +297,16 @@ public final class GboardThiccTopBarRuntime {
 
     private static float readActiveTopbarScale(Context context) {
         if (context == null || !GboardThiccTopBarSettings.readEnabled(context)) {
-            return GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE;
+            return GboardThiccTopBarSettings.MIN_TOPBAR_SCALE;
         }
         return GboardThiccTopBarSettings.readTopbarScale(context);
+    }
+
+    private static ViewGroup parentViewGroup(View view) {
+        if (view == null) {
+            return null;
+        }
+        return (view.getParent() instanceof ViewGroup parent) ? parent : null;
     }
 
     private static void syncHeaderHeight(ViewGroup holderView, float scale) {
@@ -782,7 +788,7 @@ public final class GboardThiccTopBarRuntime {
     }
 
     private static void handleDisabledState(ViewGroup holderView) {
-        syncHeaderHeight(holderView, GboardThiccTopBarSettings.DEFAULT_TOPBAR_SCALE);
+        syncHeaderHeight(holderView, GboardThiccTopBarSettings.MIN_TOPBAR_SCALE);
         ViewGroup parent = (holderView.getParent() instanceof ViewGroup p) ? p : null;
         ViewGroup attachTarget = parent != null ? parent : holderView;
         ThiccTopBarView existing = ACTIVE_BARS.get(attachTarget);
@@ -875,7 +881,7 @@ public final class GboardThiccTopBarRuntime {
                 if (barView == null) {
                     return;
                 }
-                ViewGroup parent = (ViewGroup) holderView.getParent();
+                ViewGroup parent = parentViewGroup(holderView);
                 ViewGroup attachTarget = parent != null ? parent : holderView;
 
                 // Extract slot candidates directly from holderView slots
@@ -1023,7 +1029,6 @@ public final class GboardThiccTopBarRuntime {
                 int historyBeforeCount = ThiccTopBarTextHelper.syncSentenceBufferWithSplit(
                         holderView, currentWord, false, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
 
-                lastComposingCandidates = new ArrayList<>(items);
                 final List<CandidateItem> finalItems = new ArrayList<>(items);
                 final List<String> currentWordsList = new ArrayList<>(words);
 
@@ -1100,7 +1105,7 @@ public final class GboardThiccTopBarRuntime {
                     return;
                 }
 
-                ViewGroup parent = (ViewGroup) holderView.getParent();
+                ViewGroup parent = parentViewGroup(holderView);
                 ViewGroup attachTarget = parent != null ? parent : holderView;
                 ThiccTopBarView barView = getOrCreateBarView(holderView);
                 if (barView == null) {
@@ -1225,7 +1230,7 @@ public final class GboardThiccTopBarRuntime {
     }
 
     private static ThiccTopBarView resolveOrCreateBarView(ViewGroup holderView) {
-        ViewGroup parent = (ViewGroup) holderView.getParent();
+        ViewGroup parent = parentViewGroup(holderView);
         ViewGroup attachTarget = parent != null ? parent : holderView;
 
         ThiccTopBarView bar = ACTIVE_BARS.get(attachTarget);
@@ -1463,7 +1468,7 @@ public final class GboardThiccTopBarRuntime {
                 },
                 createHistoryWordClickCallback(holderView, barView)
         );
-        ViewGroup parent = (ViewGroup) holderView.getParent();
+        ViewGroup parent = parentViewGroup(holderView);
         ViewGroup attachTarget = parent != null ? parent : holderView;
         barView.setVisibility(View.VISIBLE);
         ThiccTopBarGboardReflector.applyKeyboardBackground(barView, holderView);
@@ -1882,7 +1887,7 @@ public final class GboardThiccTopBarRuntime {
                 && !ThiccTopBarTextHelper.isInputEmpty(holderView)) {
             showHistoryOnlyBar(holderView, barView);
         } else {
-            ViewGroup parent = (ViewGroup) holderView.getParent();
+            ViewGroup parent = parentViewGroup(holderView);
             ViewGroup attachTarget = parent != null ? parent : holderView;
             barView.setVisibility(View.GONE);
             ThiccTopBarGboardReflector.updateHeaderViewsVisibility(attachTarget, holderView, false);
@@ -1935,7 +1940,7 @@ public final class GboardThiccTopBarRuntime {
             voiceBtn = ThiccTopBarGboardReflector.findVoiceButton(headerContainer);
         }
         if (voiceBtn == null) {
-            ViewGroup holderParent = (ViewGroup) holderView.getParent();
+            ViewGroup holderParent = parentViewGroup(holderView);
             if (holderParent != null) {
                 voiceBtn = ThiccTopBarGboardReflector.findVoiceButton(holderParent);
             }
@@ -1958,15 +1963,17 @@ public final class GboardThiccTopBarRuntime {
             currentVoiceButton = voiceBtn;
             voiceBtn.setVisibility(View.INVISIBLE);
             ViewGroup.LayoutParams lp = copyLayoutParams(voiceBtn);
-            if (currentJumpToEndArrow.getParent() != null) {
-                ((ViewGroup) currentJumpToEndArrow.getParent()).removeView(currentJumpToEndArrow);
+            ViewGroup arrowParent = parentViewGroup(currentJumpToEndArrow);
+            if (arrowParent != null) {
+                arrowParent.removeView(currentJumpToEndArrow);
             }
             voiceParent.addView(currentJumpToEndArrow, lp);
         } else {
-            ViewGroup fallbackTarget = headerContainer != null ? headerContainer : (ViewGroup) holderView.getParent();
+            ViewGroup fallbackTarget = headerContainer != null ? headerContainer : parentViewGroup(holderView);
             if (fallbackTarget != null) {
-                if (currentJumpToEndArrow.getParent() != null) {
-                    ((ViewGroup) currentJumpToEndArrow.getParent()).removeView(currentJumpToEndArrow);
+                ViewGroup arrowParent = parentViewGroup(currentJumpToEndArrow);
+                if (arrowParent != null) {
+                    arrowParent.removeView(currentJumpToEndArrow);
                 }
                 int width = (int) TypedValue.applyDimension(
                         TypedValue.COMPLEX_UNIT_DIP, 44f, context.getResources().getDisplayMetrics());
@@ -1992,7 +1999,7 @@ public final class GboardThiccTopBarRuntime {
             }
             if (currentJumpToEndArrow != null) {
                 currentJumpToEndArrow.setVisibility(View.GONE);
-                ViewGroup p = (ViewGroup) currentJumpToEndArrow.getParent();
+                ViewGroup p = parentViewGroup(currentJumpToEndArrow);
                 if (p != null) {
                     p.removeView(currentJumpToEndArrow);
                 }
@@ -2056,7 +2063,7 @@ public final class GboardThiccTopBarRuntime {
             if (barView == null) {
                 return;
             }
-            ViewGroup parent = (ViewGroup) holderView.getParent();
+            ViewGroup parent = parentViewGroup(holderView);
             ViewGroup attachTarget = parent != null ? parent : holderView;
 
             if (ThiccTopBarGboardReflector.isDictationActive(holderView)) {

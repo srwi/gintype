@@ -133,7 +133,6 @@ public final class GboardTypingEffectsRuntime {
         private final WeakReference<View> viewRef;
         private final TypingEffectsEngine engine;
         private final TypingEffectsOverlayDrawable drawable;
-        private final Rect tempKeyRect = new Rect();
         private final Rect tempOutlineRect = new Rect();
         private final RectF tempVisualRect = new RectF();
         private final Outline tempOutline = new Outline();
@@ -149,6 +148,11 @@ public final class GboardTypingEffectsRuntime {
                 View view = viewRef.get();
                 if (view == null || !view.isAttachedToWindow()) {
                     detach();
+                    return;
+                }
+                if (!view.isShown() || view.getWindowVisibility() != View.VISIBLE) {
+                    engine.clearAll();
+                    drawable.invalidateSelf();
                     return;
                 }
                 syncBounds(view);
@@ -190,6 +194,9 @@ public final class GboardTypingEffectsRuntime {
 
             switch (action) {
                 case MotionEvent.ACTION_DOWN:
+                    // Android guarantees no pointers are active before ACTION_DOWN; flush any orphaned pointers.
+                    engine.onCancel(nowMs);
+                    // fall through
                 case MotionEvent.ACTION_POINTER_DOWN: {
                     int idx = event.getActionIndex();
                     int pointerId = event.getPointerId(idx);
@@ -243,7 +250,7 @@ public final class GboardTypingEffectsRuntime {
             if (!engine.getConfig().keyHighlightEnabled) {
                 return;
             }
-            View keyView = findSoftKeyAt(root, x, y, 0, 0, tempKeyRect);
+            View keyView = findSoftKeyAt(root, x, y, 0, 0);
             if (keyView != null) {
                 float cornerRadius = resolveKeyVisualBounds(root, keyView, tempVisualRect);
                 if (!tempVisualRect.isEmpty()) {
@@ -371,8 +378,7 @@ public final class GboardTypingEffectsRuntime {
                 float x,
                 float y,
                 int offsetX,
-                int offsetY,
-                Rect outRect) {
+                int offsetY) {
             if (node == null || node.getVisibility() != View.VISIBLE) {
                 return null;
             }
@@ -386,7 +392,6 @@ public final class GboardTypingEffectsRuntime {
             }
             String className = node.getClass().getName();
             if (className.endsWith("SoftKeyView")) {
-                outRect.set(offsetX, offsetY, offsetX + w, offsetY + h);
                 return node;
             }
             if (node instanceof ViewGroup) {
@@ -401,7 +406,7 @@ public final class GboardTypingEffectsRuntime {
                     }
                     int childLeft = baseX + child.getLeft() + Math.round(child.getTranslationX());
                     int childTop = baseY + child.getTop() + Math.round(child.getTranslationY());
-                    View hit = findSoftKeyAt(child, x, y, childLeft, childTop, outRect);
+                    View hit = findSoftKeyAt(child, x, y, childLeft, childTop);
                     if (hit != null) {
                         return hit;
                     }

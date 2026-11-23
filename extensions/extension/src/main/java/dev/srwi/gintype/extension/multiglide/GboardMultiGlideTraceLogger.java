@@ -602,6 +602,7 @@ public final class GboardMultiGlideTraceLogger {
                 }
                 //noinspection ResultOfMethodCallIgnored
                 traceFile.renameTo(backup);
+                lastLoggedGeomHash = 0;
             }
             try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(
                     new FileOutputStream(traceFile, true), StandardCharsets.UTF_8))) {

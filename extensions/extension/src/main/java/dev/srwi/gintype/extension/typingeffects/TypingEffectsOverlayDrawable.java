@@ -48,6 +48,8 @@ final class TypingEffectsOverlayDrawable extends Drawable {
     private final RectF keyPulseRect = new RectF();
     private final float[] meshVerts = new float[MESH_VERTEX_COUNT * 2];
     private final int[] meshColors = new int[MESH_VERTEX_COUNT];
+    private final java.util.ArrayList<TypingEffectsEngine.TrailStroke> renderTrailsScratch =
+            new java.util.ArrayList<TypingEffectsEngine.TrailStroke>(8);
 
     private Bitmap captureBitmap = null;
     private Canvas captureCanvas = null;
@@ -131,9 +133,9 @@ final class TypingEffectsOverlayDrawable extends Drawable {
 
         // 1. Rainbow / Palette Swipe Trails
         if (cfg.rainbowTrailEnabled) {
-            List<TypingEffectsEngine.TrailStroke> trails = engine.collectRenderableTrails();
-            for (int i = 0; i < trails.size(); i++) {
-                drawTrail(canvas, trails.get(i), cfg, nowMs, density);
+            engine.collectRenderableTrails(renderTrailsScratch);
+            for (int i = 0; i < renderTrailsScratch.size(); i++) {
+                drawTrail(canvas, renderTrailsScratch.get(i), cfg, nowMs, density);
             }
         }
 

@@ -21,7 +21,7 @@ final class MultiGlideWordSession {
 
     static final float MULTI_TOUCH_SWIPE_THRESHOLD_PX = 22f;
     static final int TEXT_SNAPSHOT_CHARS = 256;
-    static final int MAX_ROLLBACK_EXTRA_CHARS = 32;
+    static final int MAX_ROLLBACK_EXTRA_CHARS = 48;
     static final long MAX_PASSIVE_TAP_GAP_MS = 750L;
     static final int MAX_PASSIVE_TAP_TOKENS = 8;
     static final long ROLLOVER_MULTI_TOUCH_WINDOW_MS = 220L;
@@ -978,12 +978,13 @@ final class MultiGlideWordSession {
         }
         if (autospaceInserted) {
             KeySpec hit = geometry.findKeyAt(x, y);
-            if (hit == null && geometry.isNonCharControlKeyAt(x, y)) {
+            boolean downOnBackspace = geometry.isBackspaceKeyAt(x, y);
+            if (hit == null && !downOnBackspace && geometry.isNonCharControlKeyAt(x, y)) {
                 // Modifier / layout-switch key (e.g. ?123, Shift): preserve autospaceInserted
                 // so a subsequent punctuation key like ':' on the symbols layout still retracts.
                 autospaceFirstSpaceTapDownTimeMs = 0L;
             } else {
-                if (hit == null) {
+                if (hit == null && !downOnSpace && !downOnBackspace) {
                     hit = geometry.nearestAnyKey(x, y);
                 }
                 if (hit != null && geometry.isPunctuationChar(hit.character) && editor != null) {
@@ -1330,8 +1331,8 @@ final class MultiGlideWordSession {
                         int cut = eval.splitIndex;
                         String splitBaseline = (cut == rawPrefix.length())
                                 ? textSnapshotAtActionDown
-                                : (tapBaseline != null ? tapBaseline : "")
-                                        + rawPrefix.substring(0, cut);
+                                : tailSnapshot((tapBaseline != null ? tapBaseline : "")
+                                        + rawPrefix.substring(0, cut));
                         List<MultiGlideInputToken> remainingRightTaps = new ArrayList<>();
                         if (cut < rawPrefix.length() && rawPrefix.length() == tapTokens.size()) {
                             for (int i = cut; i < tapTokens.size(); i++) {
@@ -1967,6 +1968,7 @@ final class MultiGlideWordSession {
                 multiGlideTakeoverActive = false;
                 if (callbacks != null) {
                     callbacks.onTrailAccentChanged(false);
+                    callbacks.onNativeTopBarBlankChanged(false);
                 }
                 if (editor != null) {
                     lastObservedTextBeforeCursor = editor.readTextBeforeCursorSnapshot();
@@ -1991,6 +1993,7 @@ final class MultiGlideWordSession {
             multiGlideTakeoverActive = false;
             if (callbacks != null) {
                 callbacks.onTrailAccentChanged(false);
+                callbacks.onNativeTopBarBlankChanged(false);
             }
             if (editor != null) {
                 lastObservedTextBeforeCursor = editor.readTextBeforeCursorSnapshot();

@@ -464,19 +464,19 @@ public final class GboardLmReader {
         int numTail = buf.getInt(74);
         float scale = buf.getFloat(79);
         long ngramSize = buf.getLong(83);
-        if (numWords <= 0 || numTail < 0 || numTail > numWords || ngramSize < 24 || scale <= 0f) {
+        if (numWords <= 0 || numTail < 0 || numTail > numWords || ngramSize < 24 || !Float.isFinite(scale) || scale <= 0f) {
             throw new IOException("Invalid CompactLmFst header: numWords=" + numWords
                     + ", numTail=" + numTail + ", scale=" + scale + ", ngramSize=" + ngramSize);
         }
 
         int ngramOff = align16Relative(chunkFileOffset, 91);
         long bsOffLong = ngramOff + ((ngramSize + 7L) & ~7L);
-        int bsBytes = ((numWords + 63) / 64) * 8;
-        if (bsOffLong + bsBytes + numTail > data.length) {
+        long bsBytesLong = ((numWords + 63L) / 64L) * 8L;
+        if (bsOffLong < 0 || bsBytesLong < 0 || bsOffLong + bsBytesLong + numTail > data.length) {
             throw new IOException("CompactLmFst tail weights exceed chunk length");
         }
         int bsOff = (int) bsOffLong;
-        int tailOff = bsOff + bsBytes;
+        int tailOff = (int) (bsOffLong + bsBytesLong);
 
         long numStates = buf.getLong(ngramOff);
         long numFutures = buf.getLong(ngramOff + 8);
@@ -485,19 +485,25 @@ public final class GboardLmReader {
         int fInt = checkChunkSize(numFutures, "numFutures");
         int nfinInt = checkChunkSize(numFinal, "numFinal");
 
-        int b1 = ((2 * sInt + 1 + 63) / 64) * 8;
-        int b2 = ((fInt + sInt + 1 + 63) / 64) * 8;
-        int b3 = ((sInt + 63) / 64) * 8;
+        long b1Long = ((2L * sInt + 1L + 63L) / 64L) * 8L;
+        long b2Long = ((fInt + (long) sInt + 1L + 63L) / 64L) * 8L;
+        long b3Long = ((sInt + 63L) / 64L) * 8L;
 
-        int oCtxBv = ngramOff + 24;
-        int oFutBv = oCtxBv + b1;
-        int oCtxWords = oFutBv + b2 + b3;
-        int oFutWords = oCtxWords + (sInt + 1) * 2;
-        int oCtxWeights = oFutWords + fInt * 2;
-        int oFutWeights = oCtxWeights + (sInt + 1) + nfinInt;
-        if (oFutWeights + fInt > data.length) {
+        long oCtxBvLong = ngramOff + 24L;
+        long oFutBvLong = oCtxBvLong + b1Long;
+        long oCtxWordsLong = oFutBvLong + b2Long + b3Long;
+        long oFutWordsLong = oCtxWordsLong + (sInt + 1L) * 2L;
+        long oCtxWeightsLong = oFutWordsLong + fInt * 2L;
+        long oFutWeightsLong = oCtxWeightsLong + (sInt + 1L) + nfinInt;
+        if (oFutWeightsLong < 0 || oFutWeightsLong + fInt > data.length) {
             throw new IOException("NGramFst arrays exceed chunk bounds");
         }
+        int oCtxBv = (int) oCtxBvLong;
+        int oFutBv = (int) oFutBvLong;
+        int oCtxWords = (int) oCtxWordsLong;
+        int oFutWords = (int) oFutWordsLong;
+        int oCtxWeights = (int) oCtxWeightsLong;
+        int oFutWeights = (int) oFutWeightsLong;
 
         String[] symWords = symbols.cleanWords;
         int numComp = numWords - numTail;

@@ -12,8 +12,10 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
+import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -25,6 +27,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import dev.srwi.gintype.extension.R;
 import dev.srwi.gintype.extension.settings.GboardSettingsText;
@@ -67,7 +70,7 @@ public final class GboardCustomHoldPopupsEditorDialog {
             int addedIndex,
             Runnable onSavedOrMutated,
             Runnable onDialogDismissed) {
-        if (activity == null || activity.isFinishing()) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
             if (onDialogDismissed != null) {
                 onDialogDismissed.run();
             }
@@ -208,6 +211,21 @@ public final class GboardCustomHoldPopupsEditorDialog {
         errorParams.topMargin = dp(activity, 6);
         card.addView(errorView, errorParams);
 
+        input.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (errorView.getVisibility() == View.VISIBLE) {
+                    errorView.setVisibility(View.GONE);
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+
         // Action buttons bar
         LinearLayout buttonRow = new LinearLayout(activity);
         buttonRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -216,8 +234,13 @@ public final class GboardCustomHoldPopupsEditorDialog {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         buttonRowParams.topMargin = dp(activity, 20);
 
+        ScrollView scrollContainer = new ScrollView(activity);
+        scrollContainer.setFillViewport(true);
+        scrollContainer.addView(card, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         AlertDialog dialog = new AlertDialog.Builder(activity)
-                .setView(card)
+                .setView(scrollContainer)
                 .create();
         Window window = dialog.getWindow();
         if (window != null) {
@@ -251,8 +274,9 @@ public final class GboardCustomHoldPopupsEditorDialog {
                 }
                 dialog.dismiss();
             });
+            deleteBtn.setMinHeight(dp(activity, 42));
             buttonRow.addView(deleteBtn, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(activity, 42)));
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         } else if (isModifiedDefault) {
             TextView resetBtn = buildPillButton(
                     activity,
@@ -268,8 +292,9 @@ public final class GboardCustomHoldPopupsEditorDialog {
                 }
                 dialog.dismiss();
             });
+            resetBtn.setMinHeight(dp(activity, 42));
             buttonRow.addView(resetBtn, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(activity, 42)));
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
         // Spacer
@@ -283,8 +308,9 @@ public final class GboardCustomHoldPopupsEditorDialog {
                 textSecondary,
                 Color.TRANSPARENT);
         cancelBtn.setOnClickListener(v -> dialog.dismiss());
+        cancelBtn.setMinHeight(dp(activity, 42));
         LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(activity, 42));
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         cancelParams.rightMargin = dp(activity, 8);
         buttonRow.addView(cancelBtn, cancelParams);
 
@@ -295,6 +321,7 @@ public final class GboardCustomHoldPopupsEditorDialog {
                         ? R.string.gboard_patches_custom_hold_popups_dialog_action_add
                         : R.string.gboard_patches_custom_hold_popups_dialog_action_save);
         TextView primaryBtn = buildPillButton(activity, primaryLabel, onAccentColor, accentColor);
+        primaryBtn.setMinHeight(dp(activity, 42));
         Runnable commitAction = () -> {
             String rawInput = input.getText() == null ? "" : input.getText().toString();
             String sanitized = GboardCustomHoldPopupsSettings.sanitizeSymbol(rawInput);
@@ -329,7 +356,7 @@ public final class GboardCustomHoldPopupsEditorDialog {
             return false;
         });
         buttonRow.addView(primaryBtn, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(activity, 42)));
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         card.addView(buttonRow, buttonRowParams);
 
         dialog.setOnShowListener(ignored -> {

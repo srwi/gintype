@@ -179,9 +179,9 @@ public final class GboardCustomHoldPopupsRuntime {
             Collections.synchronizedMap(new WeakHashMap<Object, Object>());
     private static final Map<Object, ActivePopupState> ACTIVE_POPUPS_BY_MANAGER =
             Collections.synchronizedMap(new IdentityHashMap<Object, ActivePopupState>());
-    private static final Set<Object> CONSUMED_BUNDLES =
-            Collections.synchronizedSet(Collections.newSetFromMap(
-                    new IdentityHashMap<Object, Boolean>()));
+    private static final long CONSUMED_BUNDLE_TTL_MS = 500L;
+    private static final Map<Object, Long> CONSUMED_BUNDLES =
+            Collections.synchronizedMap(new IdentityHashMap<Object, Long>());
 
     private static volatile boolean reflectionReady = false;
     private static volatile boolean reflectionFailed = false;
@@ -440,8 +440,12 @@ public final class GboardCustomHoldPopupsRuntime {
             Object keyDataObj,
             Object softKeyDefObj) {
         try {
-            if (touchActionBundleObj != null && CONSUMED_BUNDLES.remove(touchActionBundleObj)) {
-                return true;
+            if (touchActionBundleObj != null) {
+                Long consumedAt = CONSUMED_BUNDLES.remove(touchActionBundleObj);
+                if (consumedAt != null
+                        && (SystemClock.uptimeMillis() - consumedAt) <= CONSUMED_BUNDLE_TTL_MS) {
+                    return true;
+                }
             }
             if (!cachedEnabled || keyDataObj == null) {
                 return false;
@@ -542,7 +546,7 @@ public final class GboardCustomHoldPopupsRuntime {
 
             // Mark this touch bundle as consumed so releasing the finger will not commit a symbol
             if (state.touchActionBundle != null) {
-                CONSUMED_BUNDLES.add(state.touchActionBundle);
+                CONSUMED_BUNDLES.put(state.touchActionBundle, SystemClock.uptimeMillis());
             }
             ACTIVE_POPUPS_BY_MANAGER.remove(popupManager);
 
@@ -1134,11 +1138,14 @@ public final class GboardCustomHoldPopupsRuntime {
                             origSymbol);
                     finalLabel = origLabel;
                 }
+                String storedRuleSymbol = (customReplacement != null && !customReplacement.isEmpty())
+                        ? customReplacement
+                        : normalizedOrig;
                 KEY_DATA_META.put(
                         finalKd,
                         new PopupItemMeta(
                                 normalizedBaseKey,
-                                finalLabel,
+                                storedRuleSymbol,
                                 normalizedOrig,
                                 false,
                                 -1,
@@ -1377,6 +1384,7 @@ public final class GboardCustomHoldPopupsRuntime {
         try {
             InputConnection ic = resolveActiveInputConnection(basicHandlerObj, context);
             if (ic != null) {
+                ic.finishComposingText();
                 ic.commitText(text, 1);
                 return true;
             }

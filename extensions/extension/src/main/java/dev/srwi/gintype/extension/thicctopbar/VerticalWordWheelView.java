@@ -16,6 +16,7 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -586,7 +587,10 @@ public class VerticalWordWheelView extends LinearLayout {
                 float dX = event.getX() - downX;
                 if (Math.abs(dY) > touchSlop && Math.abs(dY) > Math.abs(dX) * 1.1f) {
                     // Vertical flick gesture detected
-                    getParent().requestDisallowInterceptTouchEvent(true);
+                    ViewParent parent = getParent();
+                    if (parent != null) {
+                        parent.requestDisallowInterceptTouchEvent(true);
+                    }
                     hasFlicked = true;
                     isFlickGesture = true;
 
@@ -614,7 +618,7 @@ public class VerticalWordWheelView extends LinearLayout {
                         newWidth = getMeasuredWidth();
                     }
                     if (size >= 2) {
-                        animateSwap(flickUp, !invertVerticalSwipe, oldWidth, newWidth);
+                        animateSwap(flickUp ^ invertVerticalSwipe, true, oldWidth, newWidth);
                     }
 
                     String newWord = getSelectedWord();
@@ -627,12 +631,18 @@ public class VerticalWordWheelView extends LinearLayout {
                     return true;
                 } else if (Math.abs(dX) > touchSlop && Math.abs(dX) > Math.abs(dY)) {
                     // Horizontal scroll gesture - allow parent HorizontalScrollView to scroll
-                    getParent().requestDisallowInterceptTouchEvent(false);
+                    ViewParent parent = getParent();
+                    if (parent != null) {
+                        parent.requestDisallowInterceptTouchEvent(false);
+                    }
                 }
                 return true;
 
-            case MotionEvent.ACTION_UP:
-                getParent().requestDisallowInterceptTouchEvent(false);
+            case MotionEvent.ACTION_UP: {
+                ViewParent parent = getParent();
+                if (parent != null) {
+                    parent.requestDisallowInterceptTouchEvent(false);
+                }
                 if (!isFlickGesture) {
                     // Tapping anywhere in the column selects/commits without swapping alternatives
                     performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
@@ -647,12 +657,17 @@ public class VerticalWordWheelView extends LinearLayout {
                 hasFlicked = false;
                 isFlickGesture = false;
                 return true;
+            }
 
-            case MotionEvent.ACTION_CANCEL:
-                getParent().requestDisallowInterceptTouchEvent(false);
+            case MotionEvent.ACTION_CANCEL: {
+                ViewParent parent = getParent();
+                if (parent != null) {
+                    parent.requestDisallowInterceptTouchEvent(false);
+                }
                 hasFlicked = false;
                 isFlickGesture = false;
                 return true;
+            }
         }
 
         return super.onTouchEvent(event);

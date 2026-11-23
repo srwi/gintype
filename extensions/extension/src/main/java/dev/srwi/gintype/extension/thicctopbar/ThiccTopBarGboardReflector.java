@@ -8,7 +8,6 @@ import android.graphics.Canvas;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.inputmethodservice.InputMethodService;
-import android.media.AudioManager;
 import android.os.Build;
 import android.util.Log;
 import android.util.TypedValue;
@@ -22,6 +21,7 @@ import java.util.Locale;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -436,13 +436,20 @@ public final class ThiccTopBarGboardReflector {
         Method extractFromKeyMethod = null;
         Method declaredCountMethodA = null;
 
-        // Search by signature to survive obfuscation changes in new Gboard versions
-        for (Method m : holderClass.getMethods()) {
-            if (m.getParameterCount() == 0 && m.getReturnType() == int.class && ("a".equals(m.getName()) || slotCountMethod == null)) {
+        // Search declared methods on holderClass to avoid matching inherited Object/View/ViewGroup methods
+        for (Method m : holderClass.getDeclaredMethods()) {
+            boolean isStatic = Modifier.isStatic(m.getModifiers());
+            if (!isStatic && m.getParameterCount() == 0 && m.getReturnType() == int.class
+                    && ("a".equals(m.getName()) || slotCountMethod == null)) {
+                m.setAccessible(true);
                 slotCountMethod = m;
-            } else if (m.getParameterCount() == 1 && m.getParameterTypes()[0] == int.class && View.class.isAssignableFrom(m.getReturnType())) {
+            } else if (!isStatic && m.getParameterCount() == 1 && m.getParameterTypes()[0] == int.class
+                    && View.class.isAssignableFrom(m.getReturnType())
+                    && softKeyAtSlotMethod == null) {
+                m.setAccessible(true);
                 softKeyAtSlotMethod = m;
             } else if (m.getParameterCount() == 1 && "z".equals(m.getName())) {
+                m.setAccessible(true);
                 extractFromKeyMethod = m;
             }
         }
@@ -525,7 +532,8 @@ public final class ThiccTopBarGboardReflector {
             }
 
             if (count > 0) {
-                for (int slot = 0; slot < count; slot++) {
+                int safeCount = Math.min(count, 32);
+                for (int slot = 0; slot < safeCount; slot++) {
                     Object cand = null;
                     if (candidateAtSlotMethod != null) {
                         try {
@@ -746,9 +754,6 @@ public final class ThiccTopBarGboardReflector {
     public static boolean isDictationActive(View root) {
         if (root == null) return false;
         try {
-            if (isAppAudioRecordingActive(root.getContext())) {
-                return true;
-            }
             if (findDictationViewInHierarchy(root)) {
                 return true;
             }
@@ -807,21 +812,6 @@ public final class ThiccTopBarGboardReflector {
         String s = resName.toLowerCase(Locale.ROOT);
         return "key_pos_header_notice".equals(s)
                 || "key_pos_header_action_overlay".equals(s);
-    }
-
-    private static boolean isAppAudioRecordingActive(Context context) {
-        if (context == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            return false;
-        }
-        try {
-            Object service = context.getSystemService(Context.AUDIO_SERVICE);
-            if (service instanceof AudioManager audioManager) {
-                List<?> configs = audioManager.getActiveRecordingConfigurations();
-                return configs != null && !configs.isEmpty();
-            }
-        } catch (Throwable ignored) {
-        }
-        return false;
     }
 
     private static boolean findDictationViewInHierarchy(View view) {
@@ -887,17 +877,36 @@ public final class ThiccTopBarGboardReflector {
      */
     public static void applyKeyboardBackground(View barView, ViewGroup holderView) {
         if (barView == null) return;
+        boolean isDark = (barView.getContext().getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         try {
             // 1. Try to copy background from holderView or attachTarget
             if (holderView != null) {
-                if (holderView.getBackground() != null) {
-                    barView.setBackground(holderView.getBackground().getConstantState().newDrawable().mutate());
-                    return;
+                Drawable holderBg = holderView.getBackground();
+                if (holderBg != null) {
+                    if (holderBg instanceof ColorDrawable cd) {
+                        barView.setBackgroundColor(cd.getColor());
+                        return;
+                    }
+                    Drawable.ConstantState cs = holderBg.getConstantState();
+                    if (cs != null) {
+                        barView.setBackground(cs.newDrawable().mutate());
+                        return;
+                    }
                 }
-                View parent = (View) holderView.getParent();
-                if (parent != null && parent.getBackground() != null) {
-                    barView.setBackground(parent.getBackground().getConstantState().newDrawable().mutate());
-                    return;
+                if (holderView.getParent() instanceof View parent) {
+                    Drawable parentBg = parent.getBackground();
+                    if (parentBg != null) {
+                        if (parentBg instanceof ColorDrawable cd) {
+                            barView.setBackgroundColor(cd.getColor());
+                            return;
+                        }
+                        Drawable.ConstantState cs = parentBg.getConstantState();
+                        if (cs != null) {
+                            barView.setBackground(cs.newDrawable().mutate());
+                            return;
+                        }
+                    }
                 }
             }
 
@@ -909,8 +918,11 @@ public final class ThiccTopBarGboardReflector {
                     barView.setBackgroundColor(cd.getColor());
                     return;
                 }
-                barView.setBackground(bg.getConstantState().newDrawable().mutate());
-                return;
+                Drawable.ConstantState cs = bg.getConstantState();
+                if (cs != null) {
+                    barView.setBackground(cs.newDrawable().mutate());
+                    return;
+                }
             }
 
             // 3. Resolve theme surface color
@@ -924,11 +936,10 @@ public final class ThiccTopBarGboardReflector {
             }
 
             // 4. Default adaptive surface colors (Google dark grey / light grey)
-            boolean isDark = (barView.getContext().getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
             barView.setBackgroundColor(isDark ? 0xFF202124 : 0xFFF8F9FA);
         } catch (Throwable t) {
             Log.w(TAG, "applyKeyboardBackground error: " + t.getMessage());
-            barView.setBackgroundColor(0xFF202124);
+            barView.setBackgroundColor(isDark ? 0xFF202124 : 0xFFF8F9FA);
         } finally {
             isKeyboardDark(barView);
         }
@@ -1113,7 +1124,7 @@ public final class ThiccTopBarGboardReflector {
                     holderView.setVisibility(View.INVISIBLE);
                 }
 
-                ViewGroup parent = (ViewGroup) attachTarget.getParent();
+                ViewGroup parent = (attachTarget.getParent() instanceof ViewGroup p) ? p : null;
                 if (parent != null) {
                     if (parent.getChildCount() > 0 && parent.getChildAt(parent.getChildCount() - 1) != attachTarget) {
                         attachTarget.bringToFront();
@@ -1145,7 +1156,7 @@ public final class ThiccTopBarGboardReflector {
                     }
                 }
 
-                ViewGroup parent = (ViewGroup) attachTarget.getParent();
+                ViewGroup parent = (attachTarget.getParent() instanceof ViewGroup p) ? p : null;
                 if (parent != null) {
                     for (int i = 0; i < parent.getChildCount(); i++) {
                         View sibling = parent.getChildAt(i);

@@ -109,7 +109,7 @@ public final class GboardTypingEffectsSettings {
 
     public static final int MIN_WIND_SPREAD_DP = 25;
     public static final int MAX_WIND_SPREAD_DP = 120;
-    public static final int DEFAULT_WIND_SPREAD_DP = 68;
+    public static final int DEFAULT_WIND_SPREAD_DP = 70;
 
     private GboardTypingEffectsSettings() {
     }

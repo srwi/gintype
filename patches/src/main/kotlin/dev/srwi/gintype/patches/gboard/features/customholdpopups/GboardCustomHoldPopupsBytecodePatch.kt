@@ -4,6 +4,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
+import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
@@ -132,10 +133,13 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
             RuntimeCallId.CUSTOM_HOLD_POPUPS_RUNTIME_ON_POPUP_HIDDEN,
             "p0",
         )
-        for (methodName in listOf("a", "close")) {
+        for ((methodName, expectedParams) in listOf("a" to listOf("J"), "close" to emptyList())) {
             val method = popupManagerClass.methods.firstOrNull {
-                it.name == methodName && it.returnType == "V"
-            } ?: throw PatchException("Could not find $methodName in $POPUP_MANAGER_CLASS")
+                (it.accessFlags and AccessFlags.STATIC.value) == 0 &&
+                    it.name == methodName &&
+                    it.returnType == "V" &&
+                    it.parameterTypes == expectedParams
+            } ?: throw PatchException("Could not find $methodName($expectedParams)V in $POPUP_MANAGER_CLASS")
             val existingHideHooks = method.implementation?.instructions
                 ?.count { it.isMethodReference(hideAbi.reference) } ?: 0
             if (existingHideHooks == 0) {
@@ -146,7 +150,8 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
         // 5. BasicMotionEventHandler.o(...)V — intercept pencil (✎), 2s hold-to-edit suppression, and multi-char snippet commits
         val basicHandlerClass = mutableClass(BASIC_MOTION_EVENT_HANDLER_CLASS)
         val fireKeyDataMethod = basicHandlerClass.methods.firstOrNull {
-            it.name == "o" &&
+            (it.accessFlags and AccessFlags.STATIC.value) == 0 &&
+                it.name == "o" &&
                 it.returnType == "V" &&
                 it.parameterTypes.size >= 4 &&
                 it.parameterTypes[0] == TOUCH_ACTION_BUNDLE_CLASS &&
@@ -160,6 +165,15 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
         val existingInterceptHooks = fireKeyDataMethod.implementation?.instructions
             ?.count { it.isMethodReference(interceptAbi.reference) } ?: 0
         if (existingInterceptHooks == 0) {
+            val paramWords = 1 + fireKeyDataMethod.parameterTypes.sumOf { p ->
+                if (p == "J" || p == "D") 2 else 1
+            }
+            val regCount = fireKeyDataMethod.implementation?.registerCount ?: 0
+            if (regCount <= paramWords) {
+                throw PatchException(
+                    "BasicMotionEventHandler.o(...)V has insufficient local registers ($regCount <= $paramWords)",
+                )
+            }
             val interceptInvoke = RuntimeCallEmitter.invoke(
                 RuntimeCallId.CUSTOM_HOLD_POPUPS_RUNTIME_SHOULD_INTERCEPT_KEY_DATA_DISPATCH,
                 "p0 .. p4",
@@ -168,8 +182,8 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
                 0,
                 """
                     $interceptInvoke
-                    move-result v8
-                    if-eqz v8, :custom_hold_popups_allow_dispatch
+                    move-result v0
+                    if-eqz v0, :custom_hold_popups_allow_dispatch
                     return-void
                     :custom_hold_popups_allow_dispatch
                     nop

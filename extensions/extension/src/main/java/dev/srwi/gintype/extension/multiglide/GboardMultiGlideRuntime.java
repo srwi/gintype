@@ -212,7 +212,8 @@ public final class GboardMultiGlideRuntime {
             String report = sw.toString();
 
             java.io.File file = new java.io.File(cachedContext.getCacheDir(), "gboard_crash.txt");
-            try (java.io.FileWriter fw = new java.io.FileWriter(file, true)) {
+            boolean append = !file.exists() || file.length() < 128 * 1024L;
+            try (java.io.FileWriter fw = new java.io.FileWriter(file, append)) {
                 fw.write(report);
                 fw.write("\n\n");
             }
@@ -1394,16 +1395,18 @@ public final class GboardMultiGlideRuntime {
                 ? GboardMultiGlideSettings.readEffectiveSingleTouchCombineDelayMs(context)
                 : GboardMultiGlideSettings.DEFAULT_SINGLE_TOUCH_COMBINE_DELAY_MS;
         boolean doubleSpacePeriodEnabled = readDoubleSpacePeriodEnabled(context);
-        boolean autoSpaceBeforeWord = (context != null)
-                && GboardMultiGlideSettings.isAutoSpaceBeforeWord(context);
+        boolean autoSpaceBeforeWord = (context == null)
+                ? GboardMultiGlideSettings.DEFAULT_AUTO_SPACE_BEFORE_WORD
+                : GboardMultiGlideSettings.isAutoSpaceBeforeWord(context);
         int tapToMultiGlideDelayMs = (context != null)
                 ? GboardMultiGlideSettings.readEffectiveTapToMultiGlideDelayMs(context)
                 : GboardMultiGlideSettings.DEFAULT_TAP_TO_MULTIGLIDE_DELAY_MS;
         String backspaceMode = (context != null)
                 ? GboardMultiGlideSettings.readBackspaceMode(context)
                 : GboardMultiGlideSettings.DEFAULT_BACKSPACE_MODE;
-        boolean smartTapSwipeSplitEnabled = (context != null)
-                && GboardMultiGlideSettings.readSmartTapSwipeSplitEnabled(context);
+        boolean smartTapSwipeSplitEnabled = (context == null)
+                ? GboardMultiGlideSettings.DEFAULT_SMART_TAP_SWIPE_SPLIT_ENABLED
+                : GboardMultiGlideSettings.readSmartTapSwipeSplitEnabled(context);
         return new MultiGlideWordSession.SettingsSnapshot(
                 enabled, autoSpaceEnabled, autoSpaceDelayMs, combineDelayMs,
                 doubleSpacePeriodEnabled, autoSpaceBeforeWord, tapToMultiGlideDelayMs,
@@ -1662,8 +1665,9 @@ public final class GboardMultiGlideRuntime {
                 session.autospaceRunnable = () -> {
                     boolean autoSpaceEnabled = (context == null)
                             || GboardMultiGlideSettings.isAutoSpaceEnabled(context);
-                    boolean autoSpaceBeforeWord = (context != null)
-                            && GboardMultiGlideSettings.isAutoSpaceBeforeWord(context);
+                    boolean autoSpaceBeforeWord = (context == null)
+                            ? GboardMultiGlideSettings.DEFAULT_AUTO_SPACE_BEFORE_WORD
+                            : GboardMultiGlideSettings.isAutoSpaceBeforeWord(context);
                     session.core.finalizeAutospace(autoSpaceEnabled, autoSpaceBeforeWord, editor, self);
                 };
                 session.mainHandler.postDelayed(session.autospaceRunnable, delayMs);
@@ -1692,8 +1696,9 @@ public final class GboardMultiGlideRuntime {
                 session.stockSwipeAutospaceRunnable = () -> {
                     boolean autoSpaceEnabled = (context == null)
                             || GboardMultiGlideSettings.isAutoSpaceEnabled(context);
-                    boolean autoSpaceBeforeWord = (context != null)
-                            && GboardMultiGlideSettings.isAutoSpaceBeforeWord(context);
+                    boolean autoSpaceBeforeWord = (context == null)
+                            ? GboardMultiGlideSettings.DEFAULT_AUTO_SPACE_BEFORE_WORD
+                            : GboardMultiGlideSettings.isAutoSpaceBeforeWord(context);
                     session.core.finalizeStockSwipeAutospace(
                             autoSpaceEnabled, autoSpaceBeforeWord, editor, self);
                 };
@@ -2308,7 +2313,7 @@ public final class GboardMultiGlideRuntime {
             nativeLayoutHeightArrField = eField;
         } else if (intArrays.size() >= 4) {
             for (Field f : intArrays) {
-                String n = f.getName().toLowerCase();
+                String n = f.getName().toLowerCase(java.util.Locale.ROOT);
                 if (n.contains("width")) nativeLayoutWidthArrField = f;
                 else if (n.contains("height")) nativeLayoutHeightArrField = f;
             }
@@ -2474,7 +2479,7 @@ public final class GboardMultiGlideRuntime {
 
     private static boolean isBackspaceDescription(String desc) {
         if (desc == null || desc.isEmpty()) return false;
-        String lower = desc.toLowerCase();
+        String lower = desc.toLowerCase(java.util.Locale.ROOT);
         return lower.contains("delete")
                 || lower.contains("backspace")
                 || lower.contains("löschen")

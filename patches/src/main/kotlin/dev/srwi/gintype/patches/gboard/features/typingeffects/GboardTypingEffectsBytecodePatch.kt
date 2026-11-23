@@ -77,6 +77,12 @@ internal val gboardTypingEffectsBytecodePatch = bytecodePatch(
         val existingSuppressHooks = onDrawMethod.implementation?.instructions
             ?.count { it.isMethodReference(suppressAbi.reference) } ?: 0
         if (existingSuppressHooks == 0) {
+            val regCount = onDrawMethod.implementation?.registerCount ?: 0
+            if (regCount < 3) {
+                throw PatchException(
+                    "onDraw(Canvas) in $GESTURE_OVERLAY_VIEW_CLASS has insufficient local registers ($regCount)",
+                )
+            }
             val suppressInvoke = RuntimeCallEmitter.invoke(
                 RuntimeCallId.TYPING_EFFECTS_RUNTIME_SHOULD_SUPPRESS_STOCK_TRAIL,
                 "p0",

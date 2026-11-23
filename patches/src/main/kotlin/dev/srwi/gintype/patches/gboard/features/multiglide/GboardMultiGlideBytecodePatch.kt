@@ -190,13 +190,16 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
             nextInsn != null &&
             nextInsn.opcode == Opcode.IGET_OBJECT &&
             nextInsn.registerA in 0..15 &&
+            nextInsn.registerA != nextInsn.registerB &&
             nextInsn.registerA != thisReg &&
             nextInsn.registerA != qitReg &&
             nextInsn.registerA != oheReg
         ) {
             nextInsn.registerA
         } else {
-            2
+            throw PatchException(
+                "Could not identify a safe scratch register after gesture dispatch in $ABSTRACT_GESTURE_HANDLER_CLASS",
+            )
         }
 
         val originalInvokeDescriptor =
@@ -261,6 +264,12 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
         } ?: throw PatchException(
             "Could not find reset gesture state method B() in $ABSTRACT_GESTURE_HANDLER_CLASS",
         )
+        val resetRegCount = resetMethod.implementation?.registerCount ?: 0
+        if (resetRegCount <= 1) {
+            throw PatchException(
+                "Reset method $RESET_GESTURE_STATE_METHOD_NAME() has insufficient local registers ($resetRegCount)",
+            )
+        }
         val shouldInterceptResetInvoke = RuntimeCallEmitter.invoke(
             RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET,
             "p0",

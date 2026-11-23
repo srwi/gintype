@@ -120,7 +120,7 @@ internal fun MutableMethod.applyMatrixSuggestionsClearDelegate() {
         ?: error("No instructions in $definingClass->$name")
     val existing = instructions.count { it.isMethodReference(abi.reference) }
     if (existing > 0) {
-        check(existing == 1 && instructions.first().isMethodReference(abi.reference)) {
+        check(existing == 1) {
             "Malformed matrix suggestions clear delegate in $definingClass->$name"
         }
         return
@@ -168,7 +168,7 @@ internal fun MutableMethod.applySoftKeyboardViewTouchDelegate() {
         ?: error("No instructions in $definingClass->$name")
     val existing = instructions.count { it.isMethodReference(abi.reference) }
     if (existing > 0) {
-        check(existing == 1 && instructions.first().isMethodReference(abi.reference)) {
+        check(existing == 1) {
             "Malformed SoftKeyboardView touch delegate in $definingClass->$name"
         }
         return

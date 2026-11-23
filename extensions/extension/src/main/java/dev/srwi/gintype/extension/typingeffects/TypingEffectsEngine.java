@@ -540,16 +540,21 @@ public final class TypingEffectsEngine {
 
     public List<TrailStroke> collectRenderableTrails() {
         List<TrailStroke> result = new ArrayList<TrailStroke>(fadingTrails.size() + activePointers.size());
+        collectRenderableTrails(result);
+        return result;
+    }
+
+    public void collectRenderableTrails(List<TrailStroke> out) {
+        out.clear();
         if (!config.enabled || !config.rainbowTrailEnabled) {
-            return result;
+            return;
         }
-        result.addAll(fadingTrails);
+        out.addAll(fadingTrails);
         for (PointerState state : activePointers.values()) {
             if (state.isSwipe && state.stroke.points.size() >= 2) {
-                result.add(state.stroke);
+                out.add(state.stroke);
             }
         }
-        return result;
     }
 
     public List<Particle> getParticles() {
@@ -594,6 +599,37 @@ public final class TypingEffectsEngine {
         float edgeMarginPx = 18f * density;
         boolean anyMoved = false;
 
+        // Pre-extract active pointer coordinates and damped well amplitudes once per frame
+        // instead of allocating iterators and recomputing exp/cos for every mesh vertex.
+        int activeCount = activePointers.size();
+        float[] activeX = activeCount > 0 ? new float[activeCount] : null;
+        float[] activeY = activeCount > 0 ? new float[activeCount] : null;
+        int aIdx = 0;
+        if (activeCount > 0) {
+            for (PointerState state : activePointers.values()) {
+                activeX[aIdx] = state.lastX;
+                activeY[aIdx] = state.lastY;
+                aIdx++;
+            }
+        }
+
+        int wellCap = fadingWarpWells.size();
+        float[] wellX = wellCap > 0 ? new float[wellCap] : null;
+        float[] wellY = wellCap > 0 ? new float[wellCap] : null;
+        float[] wellAmp = wellCap > 0 ? new float[wellCap] : null;
+        int wellCount = 0;
+        for (int i = 0; i < wellCap; i++) {
+            FadingWarpWell well = fadingWarpWells.get(i);
+            float t = (nowMs - well.releaseMs) / (float) Math.max(1L, well.durationMs);
+            if (t < 0f || t >= 1f) continue;
+            float amp = (float) (Math.exp(-5.0 * t) * Math.cos(2.5 * Math.PI * t));
+            if (Math.abs(amp) < 0.008f) continue;
+            wellX[wellCount] = well.x;
+            wellY[wellCount] = well.y;
+            wellAmp[wellCount] = amp;
+            wellCount++;
+        }
+
         int vIdx = 0;
         int cIdx = 0;
         for (int r = 0; r <= rows; r++) {
@@ -613,9 +649,9 @@ public final class TypingEffectsEngine {
 
                 if (edgeFactor > 0.001f) {
                     // Active finger presses create a smooth depression funnel.
-                    for (PointerState state : activePointers.values()) {
-                        float dx = state.lastX - baseX;
-                        float dy = state.lastY - baseY;
+                    for (int i = 0; i < aIdx; i++) {
+                        float dx = activeX[i] - baseX;
+                        float dy = activeY[i] - baseY;
                         float dist = (float) Math.hypot(dx, dy);
                         if (dist < radiusPx) {
                             float u = 1f - (dist / radiusPx);
@@ -628,14 +664,10 @@ public final class TypingEffectsEngine {
                     }
 
                     // Released fingers ripple back with a damped trampoline spring.
-                    for (int i = 0; i < fadingWarpWells.size(); i++) {
-                        FadingWarpWell well = fadingWarpWells.get(i);
-                        float t = (nowMs - well.releaseMs) / (float) Math.max(1L, well.durationMs);
-                        if (t < 0f || t >= 1f) continue;
-                        float amp = (float) (Math.exp(-5.0 * t) * Math.cos(2.5 * Math.PI * t));
-                        if (Math.abs(amp) < 0.008f) continue;
-                        float dx = well.x - baseX;
-                        float dy = well.y - baseY;
+                    for (int i = 0; i < wellCount; i++) {
+                        float amp = wellAmp[i];
+                        float dx = wellX[i] - baseX;
+                        float dy = wellY[i] - baseY;
                         float dist = (float) Math.hypot(dx, dy);
                         if (dist < radiusPx) {
                             float u = 1f - (dist / radiusPx);
@@ -755,8 +787,9 @@ public final class TypingEffectsEngine {
     }
 
     private float computeColorPhase(long nowMs, float offset) {
-        float speedFactor = config.rainbowSpeedPercent / 100f;
-        float timeCycles = (nowMs % 100000L) * 0.00045f * speedFactor;
+        double speedFactor = config.rainbowSpeedPercent / 100.0;
+        double cycles = nowMs * 0.00045 * speedFactor;
+        float timeCycles = (float) (cycles - Math.floor(cycles));
         return timeCycles + offset;
     }
 

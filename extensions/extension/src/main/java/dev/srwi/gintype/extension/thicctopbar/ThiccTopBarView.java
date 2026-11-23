@@ -968,8 +968,13 @@ public class ThiccTopBarView extends HorizontalScrollView {
     }
 
     public void ensureColumnVisible(int columnIndex) {
+        ensureColumnVisible(columnIndex, 0);
+    }
+
+    private void ensureColumnVisible(int columnIndex, int attempt) {
         cancelEntranceAnimation();
         post(() -> {
+            if (!isAttachedToWindow() || getVisibility() != View.VISIBLE) return;
             int barWidth = getWidth();
             if (barWidth <= 0) return;
 
@@ -981,9 +986,11 @@ public class ThiccTopBarView extends HorizontalScrollView {
             } else if (!historyWheels.isEmpty()) {
                 target = historyWheels.get(historyWheels.size() - 1);
             }
-            if (target == null) return;
+            if (target == null || target.getParent() != contentLayout) return;
             if (target.getWidth() == 0 && target.getLeft() == 0) {
-                post(() -> ensureColumnVisible(columnIndex));
+                if (attempt < 2) {
+                    post(() -> ensureColumnVisible(columnIndex, attempt + 1));
+                }
                 return;
             }
 
