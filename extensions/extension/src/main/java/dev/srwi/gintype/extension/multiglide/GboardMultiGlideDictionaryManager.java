@@ -190,10 +190,15 @@ public final class GboardMultiGlideDictionaryManager {
                 : context;
         FutureTask<LanguagePack> task = scheduleLoadTask(appContext, key, hasDedicatedUmlauts, false);
         try {
-            LanguagePack loaded = task.get();
+            LanguagePack loaded = isMainThread()
+                    ? task.get(UI_THREAD_LOAD_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    : task.get();
             if (loaded != null) {
                 return loaded;
             }
+        } catch (java.util.concurrent.TimeoutException e) {
+            Log.w(TAG, "Timed out waiting " + UI_THREAD_LOAD_TIMEOUT_MS
+                    + "ms on UI thread for Gboard LM load (" + key + "); continuing asynchronously");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException e) {
@@ -204,6 +209,17 @@ public final class GboardMultiGlideDictionaryManager {
             return current;
         }
         return existing;
+    }
+
+    private static final long UI_THREAD_LOAD_TIMEOUT_MS = 150L;
+
+    private static boolean isMainThread() {
+        try {
+            android.os.Looper main = android.os.Looper.getMainLooper();
+            return main != null && android.os.Looper.myLooper() == main;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static FutureTask<LanguagePack> scheduleLoadTask(

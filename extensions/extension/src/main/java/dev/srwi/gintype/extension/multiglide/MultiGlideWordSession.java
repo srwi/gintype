@@ -706,7 +706,13 @@ final class MultiGlideWordSession {
         }
     }
 
-    final MultiGlideGeometry geometry = new MultiGlideGeometry();
+    volatile MultiGlideGeometry geometry = new MultiGlideGeometry();
+
+    void setGeometry(MultiGlideGeometry newGeometry) {
+        if (newGeometry != null) {
+            this.geometry = newGeometry;
+        }
+    }
     final Map<Integer, PointerTrack> activePointers = new LinkedHashMap<>();
     final List<MultiGlideInputToken> completedTokens = new ArrayList<>(4);
     final List<MultiGlideInputToken> wordTokens = new ArrayList<>(16);
@@ -936,6 +942,14 @@ final class MultiGlideWordSession {
     }
 
     String formatWordForCurrentContext(String word) {
+        return formatWordForContext(word, textSnapshotAtActionDown, suppressNextLeadingSpace);
+    }
+
+    static String formatWordForContext(
+            String word,
+            String textSnapshotAtActionDown,
+            boolean suppressNextLeadingSpace
+    ) {
         if (word == null || word.isEmpty()) {
             return word;
         }

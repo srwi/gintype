@@ -75,9 +75,16 @@ public final class GboardMultiGlideRuntime {
 
     private static final class HandlerSession {
         final MultiGlideWordSession core = new MultiGlideWordSession();
-        final MultiGlideGeometry geometry = core.geometry;
+        volatile MultiGlideGeometry geometry = core.geometry;
         final Handler mainHandler = new Handler(Looper.getMainLooper());
         final SpacebarTimerOverlay spacebarOverlay = new SpacebarTimerOverlay();
+
+        void updateGeometry(MultiGlideGeometry next) {
+            if (next != null) {
+                core.setGeometry(next);
+                geometry = next;
+            }
+        }
 
         boolean geometryReady = false;
         boolean geometryFromNativeLayout = false;
@@ -904,7 +911,8 @@ public final class GboardMultiGlideRuntime {
         final int gen = session.liveDecodeGeneration.get();
         final String prevWord = session.core.lastCommittedWord;
         final boolean replacingTapPrefix = session.core.hasPendingTapPrefixInEditor();
-        final MultiGlideWordSession coreRef = session.core;
+        final String snapshotAtDown = session.core.textSnapshotAtActionDown;
+        final boolean suppressLeadingSpace = session.core.suppressNextLeadingSpace;
         final MultiGlideGeometry geomRef = session.geometry;
         LIVE_PREVIEW_EXECUTOR.execute(() -> {
             try {
@@ -925,7 +933,8 @@ public final class GboardMultiGlideRuntime {
                         || candidates.isEmpty()) {
                     return;
                 }
-                String formatted = coreRef.formatWordForCurrentContext(candidates.get(0).word);
+                String formatted = MultiGlideWordSession.formatWordForContext(
+                        candidates.get(0).word, snapshotAtDown, suppressLeadingSpace);
                 if (formatted != null && !formatted.isEmpty()) {
                     GboardThiccTopBarRuntime.updateLiveGuess(formatted, replacingTapPrefix);
                 }
@@ -2206,12 +2215,7 @@ public final class GboardMultiGlideRuntime {
         String lang = GboardMultiGlideDictionaryManager.detectActiveLanguage(context);
         boolean qwertz = "de".equalsIgnoreCase(lang);
         MultiGlideGeometry fallback = MultiGlideGeometry.createStandardLayout(width, height, qwertz);
-        List<KeySpec> specs = new ArrayList<>(26);
-        for (int i = 0; i < MultiGlideAlphabet.ALPHABET_SIZE; i++) {
-            KeySpec ks = fallback.keySpecByIdx(i);
-            if (ks != null) specs.add(ks);
-        }
-        session.geometry.setKeys(specs, fallback.keyWidthPx, fallback.keyHeightPx, false);
+        session.updateGeometry(fallback);
         session.geometryReady = true;
         session.geometryFromNativeLayout = false;
     }
@@ -2235,7 +2239,9 @@ public final class GboardMultiGlideRuntime {
         }
         float avgW = letterCount > 0 ? sumW / letterCount : 96f;
         float avgH = letterCount > 0 ? sumH / letterCount : 140f;
-        session.geometry.setKeys(keys, avgW, avgH, hasUmlauts);
+        MultiGlideGeometry next = new MultiGlideGeometry();
+        next.setKeys(keys, avgW, avgH, hasUmlauts);
+        session.updateGeometry(next);
         session.geometryReady = true;
         session.geometryFromNativeLayout = fromNativeLayout;
     }

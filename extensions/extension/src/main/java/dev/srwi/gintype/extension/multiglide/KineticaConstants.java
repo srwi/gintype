@@ -117,7 +117,40 @@ public final class KineticaConstants {
     public static final float MIN_SWIPE_ARC_KW = 1.8f;
     public static final float KW_PER_LETTER = 1.5f;
 
-    private static volatile float saturatedTerm = computeSaturatedTerm(GEO_EXPONENT);
+    public static final class RuntimeTuning {
+        public final int beamWidth;
+        public final int beamMaxAttempts;
+        public final float freqWeightFloor;
+        public final float geoExponent;
+        public final float saturatedTerm;
+        public final float beamFreqWeight;
+
+        RuntimeTuning(
+                int beamWidth,
+                int beamMaxAttempts,
+                float freqWeightFloor,
+                float geoExponent,
+                float beamFreqWeight
+        ) {
+            this.beamWidth = beamWidth;
+            this.beamMaxAttempts = beamMaxAttempts;
+            this.freqWeightFloor = freqWeightFloor;
+            this.geoExponent = geoExponent;
+            this.saturatedTerm = computeSaturatedTerm(geoExponent);
+            this.beamFreqWeight = beamFreqWeight;
+        }
+    }
+
+    private static volatile RuntimeTuning runtimeTuning = new RuntimeTuning(
+            BASELINE_BEAM_WIDTH,
+            BASELINE_BEAM_MAX_ATTEMPTS,
+            FREQ_WEIGHT_FLOOR,
+            GEO_EXPONENT,
+            BEAM_FREQ_WEIGHT);
+
+    public static RuntimeTuning runtimeTuning() {
+        return runtimeTuning;
+    }
 
     private static float computeSaturatedTerm(float geoExponent) {
         return (float) (1.0 / Math.pow(1.0 + GEO_SATURATION_KW, geoExponent));
@@ -143,11 +176,14 @@ public final class KineticaConstants {
             float geoExponent,
             float beamFreqWeight
     ) {
+        int maxAttempts = beamMaxAttemptsForWidth(beamWidth);
+        RuntimeTuning next = new RuntimeTuning(
+                beamWidth, maxAttempts, freqWeightFloor, geoExponent, beamFreqWeight);
+        runtimeTuning = next;
         BEAM_WIDTH = beamWidth;
-        BEAM_MAX_ATTEMPTS = beamMaxAttemptsForWidth(beamWidth);
+        BEAM_MAX_ATTEMPTS = maxAttempts;
         FREQ_WEIGHT_FLOOR = freqWeightFloor;
         GEO_EXPONENT = geoExponent;
-        saturatedTerm = computeSaturatedTerm(geoExponent);
         BEAM_FREQ_WEIGHT = beamFreqWeight;
     }
 
@@ -163,11 +199,11 @@ public final class KineticaConstants {
      */
     public static float geometricTerm(float dTotal, float cap) {
         float d = (dTotal < cap) ? dTotal : cap;
-        return (float) (1.0 / Math.pow(1.0 + d, GEO_EXPONENT));
+        return (float) (1.0 / Math.pow(1.0 + d, runtimeTuning.geoExponent));
     }
 
     public static float geometricTermUnsaturated(float dTotal) {
-        return (float) (1.0 / Math.pow(1.0 + dTotal, GEO_EXPONENT));
+        return (float) (1.0 / Math.pow(1.0 + dTotal, runtimeTuning.geoExponent));
     }
 
     /**
@@ -184,15 +220,16 @@ public final class KineticaConstants {
         if (minScore <= 0f) return Float.POSITIVE_INFINITY;
         float ratio = numerator / minScore;
         if (ratio <= 1f) return 0f;
-        float d = (float) Math.pow(ratio, 1.0 / GEO_EXPONENT) - 1.0f;
+        float d = (float) Math.pow(ratio, 1.0 / runtimeTuning.geoExponent) - 1.0f;
         return (d >= cap) ? Float.POSITIVE_INFINITY : d;
     }
 
     public static float boostWeight(float dGeometric) {
         float excess = dGeometric - GEO_SATURATION_KW;
         if (excess <= 0f) return 1.0f;
-        float exp = GEO_EXPONENT;
-        float sat = saturatedTerm;
+        RuntimeTuning t = runtimeTuning;
+        float exp = t.geoExponent;
+        float sat = t.saturatedTerm;
         float cur = (float) (1.0 / Math.pow(1.0 + Math.min(excess, GEO_SATURATION_KW), exp));
         return (cur - sat) / (1.0f - sat);
     }
