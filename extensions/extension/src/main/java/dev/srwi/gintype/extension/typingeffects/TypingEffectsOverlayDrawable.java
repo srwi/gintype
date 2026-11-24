@@ -29,6 +29,7 @@ final class TypingEffectsOverlayDrawable extends Drawable {
 
     private final WeakReference<View> hostViewRef;
     private final TypingEffectsEngine engine;
+    private final boolean isHeaderView;
     private final Paint meshPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint trailGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint trailMainPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -59,6 +60,8 @@ final class TypingEffectsOverlayDrawable extends Drawable {
     TypingEffectsOverlayDrawable(View hostView, TypingEffectsEngine engine) {
         this.hostViewRef = new WeakReference<View>(hostView);
         this.engine = engine;
+        this.isHeaderView = dev.srwi.gintype.extension.thicctopbar.ThiccTopBarGboardReflector
+                .isHeaderSoftKeyboardView(hostView);
 
         trailGlowPaint.setStyle(Paint.Style.STROKE);
         trailGlowPaint.setStrokeCap(Paint.Cap.ROUND);
@@ -116,7 +119,7 @@ final class TypingEffectsOverlayDrawable extends Drawable {
         // 0. Continuous Trampoline Keyboard Mat Warp (captures the whole keyboard + key glows
         //    and warps them together as one unified elastic surface!)
         boolean drewWarpedMat = false;
-        if (cfg.keyboardWarpEnabled && engine.hasActiveWarp()) {
+        if (cfg.keyboardWarpEnabled && !isHeaderView && engine.hasActiveWarp()) {
             drewWarpedMat = drawTrampolineWarpMat(canvas, cfg, nowMs, density);
         }
 
