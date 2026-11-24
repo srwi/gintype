@@ -154,10 +154,6 @@ public final class GboardTypingEffectsRuntime {
         if (view == null) {
             return true;
         }
-        if (dev.srwi.gintype.extension.thicctopbar.ThiccTopBarGboardReflector
-                .isHeaderSoftKeyboardView(view)) {
-            return true;
-        }
         String className = view.getClass().getName().toLowerCase(java.util.Locale.ROOT);
         if (className.contains("popup")) {
             return true;
@@ -165,7 +161,7 @@ public final class GboardTypingEffectsRuntime {
         Object tag = view.getTag();
         if (tag instanceof CharSequence) {
             String tagLower = tag.toString().toLowerCase(java.util.Locale.ROOT);
-            if (tagLower.contains("popup") || tagLower.contains("header")) {
+            if (tagLower.contains("popup")) {
                 return true;
             }
         }

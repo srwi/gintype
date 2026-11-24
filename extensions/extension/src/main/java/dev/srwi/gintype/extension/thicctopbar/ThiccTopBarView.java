@@ -130,10 +130,14 @@ public class ThiccTopBarView extends HorizontalScrollView {
                 TypedValue.COMPLEX_UNIT_DIP, dp, getResources().getDisplayMetrics());
     }
 
-    private static final long SCROLL_ANIM_DURATION_MS = 180L;
+    private static final long SCROLL_ANIM_DURATION_MS = 85L;
 
     private ValueAnimator activeEntranceAnimator;
     private ValueAnimator activeScrollAnimator;
+    private int activeScrollTargetX = 0;
+    private Runnable pendingEnsureVisibleRunnable;
+    private int pendingWindowShiftAnchorCol = -1;
+    private int pendingWindowShiftAnchorViewportLeft = 0;
     private ViewTreeObserver.OnPreDrawListener pendingPreDrawListener;
     private boolean pendingEntranceAnimation = false;
     private int pendingEntrancePrevWidth = 0;
@@ -944,8 +948,51 @@ public class ThiccTopBarView extends HorizontalScrollView {
             clearLastCommittedMidSentenceCache();
             cancelEntranceAnimation();
             cancelScrollAnimation();
+            clearPendingEnsureVisible();
+            pendingWindowShiftAnchorCol = -1;
         }
         super.setVisibility(visibility);
+    }
+
+    /**
+     * Captures the viewport-relative X position of {@code prevColumnIndex} before a sliding-window
+     * rebuild so scroll position can be preserved across the window shift instead of jumping.
+     */
+    public void captureWindowShiftScrollAnchor(int prevColumnIndex, int deltaWindowStart) {
+        pendingWindowShiftAnchorCol = -1;
+        if (prevColumnIndex < 0 || prevColumnIndex >= historyWheels.size() || deltaWindowStart == 0) {
+            return;
+        }
+        int shiftedCol = prevColumnIndex - deltaWindowStart;
+        if (shiftedCol < 0) {
+            return;
+        }
+        View prevTarget = historyWheels.get(prevColumnIndex);
+        if (prevTarget == null || prevTarget.getParent() != contentLayout) {
+            return;
+        }
+        if (prevTarget.getWidth() == 0 && prevTarget.getLeft() == 0) {
+            return;
+        }
+        pendingWindowShiftAnchorCol = shiftedCol;
+        pendingWindowShiftAnchorViewportLeft = (contentLayout.getLeft() + prevTarget.getLeft()) - getScrollX();
+    }
+
+    /**
+     * Computes the {@code scrollX} that keeps an anchored column at its previous viewport-relative
+     * left edge after a sliding-window rebuild, clamped to {@code [0, maxScrollX]}.
+     */
+    static int computeWindowShiftPreservedScrollX(
+            int newAnchorLeft,
+            int prevAnchorViewportLeft,
+            int barWidth,
+            int contentWidth) {
+        if (barWidth <= 0 || contentWidth <= 0) {
+            return 0;
+        }
+        int maxScrollX = Math.max(0, contentWidth - barWidth);
+        int desired = newAnchorLeft - prevAnchorViewportLeft;
+        return Math.max(0, Math.min(maxScrollX, desired));
     }
 
     public void selectHistoryWord(int historyIndex) {
@@ -1002,35 +1049,68 @@ public class ThiccTopBarView extends HorizontalScrollView {
         ensureColumnVisible(columnIndex, 0);
     }
 
+    private void clearPendingEnsureVisible() {
+        if (pendingEnsureVisibleRunnable != null) {
+            removeCallbacks(pendingEnsureVisibleRunnable);
+            pendingEnsureVisibleRunnable = null;
+        }
+    }
+
     private void ensureColumnVisible(int columnIndex, int attempt) {
         cancelEntranceAnimation();
-        post(() -> {
-            if (!isAttachedToWindow() || getVisibility() != View.VISIBLE) return;
-            int barWidth = getWidth();
-            if (barWidth <= 0) return;
-
-            View target = null;
-            if (columnIndex >= 0 && columnIndex < historyWheels.size()) {
-                target = historyWheels.get(columnIndex);
-            } else if (currentWheelView != null && currentWheelView.getParent() == contentLayout) {
-                target = currentWheelView;
-            } else if (!historyWheels.isEmpty()) {
-                target = historyWheels.get(historyWheels.size() - 1);
-            }
-            if (target == null || target.getParent() != contentLayout) return;
-            if (target.getWidth() == 0 && target.getLeft() == 0) {
-                if (attempt < 2) {
-                    post(() -> ensureColumnVisible(columnIndex, attempt + 1));
+        clearPendingEnsureVisible();
+        Runnable task = new Runnable() {
+            @Override
+            public void run() {
+                if (pendingEnsureVisibleRunnable == this) {
+                    pendingEnsureVisibleRunnable = null;
                 }
-                return;
-            }
+                if (!isAttachedToWindow() || getVisibility() != View.VISIBLE) return;
+                int barWidth = getWidth();
+                if (barWidth <= 0) return;
 
-            int targetLeft = contentLayout.getLeft() + target.getLeft();
-            int targetRight = contentLayout.getLeft() + target.getRight();
-            int scrollX = computeEnsureVisibleScrollX(
-                    targetLeft, targetRight, getScrollX(), barWidth, contentLayout.getWidth());
-            animateScrollTo(scrollX);
-        });
+                View target = null;
+                if (columnIndex >= 0 && columnIndex < historyWheels.size()) {
+                    target = historyWheels.get(columnIndex);
+                } else if (currentWheelView != null && currentWheelView.getParent() == contentLayout) {
+                    target = currentWheelView;
+                } else if (!historyWheels.isEmpty()) {
+                    target = historyWheels.get(historyWheels.size() - 1);
+                }
+                if (target == null || target.getParent() != contentLayout) return;
+                if (target.getWidth() == 0 && target.getLeft() == 0) {
+                    if (attempt < 2) {
+                        ensureColumnVisible(columnIndex, attempt + 1);
+                    }
+                    return;
+                }
+
+                if (pendingWindowShiftAnchorCol >= 0) {
+                    int anchorCol = pendingWindowShiftAnchorCol;
+                    int anchorViewportLeft = pendingWindowShiftAnchorViewportLeft;
+                    pendingWindowShiftAnchorCol = -1;
+                    if (anchorCol < historyWheels.size()) {
+                        View anchorView = historyWheels.get(anchorCol);
+                        if (anchorView != null && anchorView.getParent() == contentLayout
+                                && (anchorView.getWidth() > 0 || anchorView.getLeft() > 0)) {
+                            int newAnchorLeft = contentLayout.getLeft() + anchorView.getLeft();
+                            int preservedScrollX = computeWindowShiftPreservedScrollX(
+                                    newAnchorLeft, anchorViewportLeft, barWidth, contentLayout.getWidth());
+                            cancelScrollAnimation();
+                            scrollTo(preservedScrollX, 0);
+                        }
+                    }
+                }
+
+                int targetLeft = contentLayout.getLeft() + target.getLeft();
+                int targetRight = contentLayout.getLeft() + target.getRight();
+                int scrollX = computeEnsureVisibleScrollX(
+                        targetLeft, targetRight, getScrollX(), barWidth, contentLayout.getWidth());
+                animateScrollTo(scrollX);
+            }
+        };
+        pendingEnsureVisibleRunnable = task;
+        post(task);
     }
 
     private void cancelScrollAnimation() {
@@ -1047,7 +1127,11 @@ public class ThiccTopBarView extends HorizontalScrollView {
             scrollTo(targetScrollX, 0);
             return;
         }
+        if (activeScrollAnimator != null && activeScrollTargetX == targetScrollX) {
+            return;
+        }
         cancelScrollAnimation();
+        activeScrollTargetX = targetScrollX;
         ValueAnimator animator = ValueAnimator.ofInt(startScrollX, targetScrollX);
         animator.setDuration(SCROLL_ANIM_DURATION_MS);
         animator.setInterpolator(new DecelerateInterpolator(1.5f));

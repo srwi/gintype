@@ -1642,12 +1642,17 @@ public final class GboardThiccTopBarRuntime {
     private static void refreshBarAfterCursorNavigation(ViewGroup holderView, ThiccTopBarView barView) {
         boolean hadActiveWheel = barView.getCurrentWheelView().getParent() != null;
         int prevHistoryCount = barView.getHistoryWheelCount();
+        int prevSelectedCol = barView.getSelectedHistoryIndex();
         int prevWindowStart = SENTENCE_BUFFER.getWindowStartWordIndex();
         ThiccTopBarTextHelper.syncSentenceBufferFromText(holderView, null, SENTENCE_BUFFER, WORD_ALTERNATIVES_CACHE);
+        int newWindowStart = SENTENCE_BUFFER.getWindowStartWordIndex();
         if (!ThiccTopBarTextHelper.isCursorAtEnd(holderView)) {
             if (!SENTENCE_BUFFER.isEmpty() && (hadActiveWheel
                     || prevHistoryCount != SENTENCE_BUFFER.getEntries().size()
-                    || prevWindowStart != SENTENCE_BUFFER.getWindowStartWordIndex())) {
+                    || prevWindowStart != newWindowStart)) {
+                if (!hadActiveWheel && prevWindowStart != newWindowStart && prevSelectedCol >= 0) {
+                    barView.captureWindowShiftScrollAnchor(prevSelectedCol, newWindowStart - prevWindowStart);
+                }
                 showHistoryOnlyBar(holderView, barView);
             }
             if (!ThiccTopBarTextHelper.hasSelection(holderView)) {
