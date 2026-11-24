@@ -40,13 +40,15 @@ internal val gboardThiccTopBarBytecodePatch = bytecodePatch(
 
         appendMethod.applyMatrixSuggestionsAppendDelegate()
 
-        // Resilient clear-candidates lookup: match by name 'l' or clear signature () -> void
+        // Resilient clear-candidates lookup: match by name 'l' or non-static clear signature () -> void
         val clearMethod = holderClass.methods.firstOrNull {
-            it.name == CLEAR_CANDIDATES_METHOD_NAME &&
+            (it.accessFlags and AccessFlags.STATIC.value) == 0 &&
+                it.name == CLEAR_CANDIDATES_METHOD_NAME &&
                 it.returnType == CLEAR_CANDIDATES_RETURN_TYPE &&
                 it.parameterTypes.isEmpty()
         } ?: holderClass.methods.firstOrNull {
-            it.returnType == CLEAR_CANDIDATES_RETURN_TYPE &&
+            (it.accessFlags and AccessFlags.STATIC.value) == 0 &&
+                it.returnType == CLEAR_CANDIDATES_RETURN_TYPE &&
                 it.parameterTypes.isEmpty() &&
                 !it.name.startsWith("<") &&
                 it.name != "onDetachedFromWindow" &&
@@ -244,6 +246,7 @@ internal fun MutableClass.applyHeaderTargetHeightWrapper() {
 
     val origAccessFlags = targetMethod.accessFlags
     val origName = targetMethod.name
+    val origAnnotations = targetMethod.annotations
     methods.remove(targetMethod)
     val scaleInvokeSmali = RuntimeCallEmitter.invoke(
         RuntimeCallId.THICC_TOP_BAR_RUNTIME_SCALE_HEADER_TARGET_HEIGHT,
@@ -255,6 +258,7 @@ internal fun MutableClass.applyHeaderTargetHeightWrapper() {
         returnType = "I",
         accessFlags = origAccessFlags,
         registerCount = 2,
+        annotations = origAnnotations,
         body = """
             invoke-direct {p0}, $type->$ORIG_TARGET_HEIGHT_HELPER_NAME()I
             move-result v0

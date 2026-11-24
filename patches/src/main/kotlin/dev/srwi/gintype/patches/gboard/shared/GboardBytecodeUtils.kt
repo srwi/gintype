@@ -120,6 +120,7 @@ internal fun MutableClass.addHelperMethodIfMissing(
     accessFlags: Int,
     registerCount: Int,
     body: String,
+    annotations: Set<com.android.tools.smali.dexlib2.iface.Annotation>? = null,
 ) {
     if (methods.any {
             it.name == name && it.returnType == returnType && it.parameterTypes == parameterTypes
@@ -134,7 +135,7 @@ internal fun MutableClass.addHelperMethodIfMissing(
             parameterTypes.map { ImmutableMethodParameter(it, null, null) },
             returnType,
             accessFlags,
-            null,
+            annotations,
             null,
             MutableMethodImplementation(registerCount)
         ).toMutable().apply {

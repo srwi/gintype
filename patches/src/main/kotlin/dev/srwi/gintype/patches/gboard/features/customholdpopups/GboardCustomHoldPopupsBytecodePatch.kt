@@ -121,15 +121,18 @@ internal val gboardCustomHoldPopupsBytecodePatch = bytecodePatch(
             )
             val instructions = handleMoveMethod.implementation?.instructions?.toList()
                 ?: throw PatchException("No implementation in $POPUP_MANAGER_CLASS->c(F, F, Z)Z")
-            val selectedKeyFieldPutIndex = instructions.indexOfFirst { insn ->
-                if (insn.opcode != Opcode.IPUT_OBJECT) return@indexOfFirst false
-                val ref = (insn as? ReferenceInstruction)?.reference as? FieldReference ?: return@indexOfFirst false
-                ref.definingClass == POPUP_MANAGER_CLASS && ref.name == "f"
-            }
-            if (selectedKeyFieldPutIndex < 0) {
+            val selectedKeyFieldPutIndices = instructions.mapIndexedNotNull { idx, insn ->
+                if (insn.opcode != Opcode.IPUT_OBJECT) return@mapIndexedNotNull null
+                val ref = (insn as? ReferenceInstruction)?.reference as? FieldReference
+                    ?: return@mapIndexedNotNull null
+                if (ref.definingClass == POPUP_MANAGER_CLASS && ref.name == "f") idx else null
+            }.sortedDescending()
+            if (selectedKeyFieldPutIndices.isEmpty()) {
                 throw PatchException("No iput-object Lqsl;->f in $POPUP_MANAGER_CLASS->c(F, F, Z)Z")
             }
-            handleMoveMethod.addInstructions(selectedKeyFieldPutIndex + 1, selectionUpdatedInvoke)
+            for (putIdx in selectedKeyFieldPutIndices) {
+                handleMoveMethod.addInstructions(putIdx + 1, selectionUpdatedInvoke)
+            }
         }
 
         // 4. Lqsl.a(J)V & Lqsl.close()V — cancel 2s hold timer when popup hides or closes

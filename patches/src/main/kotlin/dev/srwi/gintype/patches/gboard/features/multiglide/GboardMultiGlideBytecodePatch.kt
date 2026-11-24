@@ -4,7 +4,7 @@ import app.morphe.patcher.extensions.InstructionExtensions.addInstruction
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructionsWithLabels
 import app.morphe.patcher.extensions.InstructionExtensions.instructions
-import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
+import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.patch.PatchException
 import app.morphe.patcher.patch.bytecodePatch
 import com.android.tools.smali.dexlib2.AccessFlags
@@ -223,39 +223,45 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
         )
 
         // Mutate in descending instruction-index order to preserve earlier indices.
-        handleGestureMethod.removeInstruction(dispatchIndex)
-        handleGestureMethod.addInstructionsWithLabels(
-            dispatchIndex,
-            """
-                $shouldInterceptInvoke
-                move-result v$scratchReg
-                if-nez v$scratchReg, :multiglide_skip_gesture_dispatch
-                invoke-interface {v$qitReg, v$oheReg}, $originalInvokeDescriptor
-                :multiglide_skip_gesture_dispatch
-                nop
-            """.trimIndent(),
-        )
+        // Use addInstructionsWithLabels(idx + 1, ...) + replaceInstruction(idx, ...) so branch
+        // targets and try-block boundaries anchored at dispatchIndex stay at the start of the guard.
+        val entryAbi = RuntimeAbiCatalog.abi(RuntimeCallId.MULTIGLIDE_RUNTIME_ON_GESTURE_EVENT_ENTRY)
+        val alreadyHookedHandleGesture = handleGestureMethod.implementation?.instructions
+            ?.any { it.isMethodReference(entryAbi.reference) } == true
+        if (!alreadyHookedHandleGesture) {
+            handleGestureMethod.addInstructionsWithLabels(
+                dispatchIndex + 1,
+                """
+                    move-result v$scratchReg
+                    if-nez v$scratchReg, :multiglide_skip_gesture_dispatch
+                    invoke-interface {v$qitReg, v$oheReg}, $originalInvokeDescriptor
+                    :multiglide_skip_gesture_dispatch
+                    nop
+                """.trimIndent(),
+            )
+            handleGestureMethod.replaceInstruction(dispatchIndex, shouldInterceptInvoke)
 
-        handleGestureMethod.addInstructionsWithLabels(
-            shouldStartCallIndex + 2,
-            """
-                $shouldStartGestureInvoke
-                move-result v$tResultReg
-            """.trimIndent(),
-        )
+            handleGestureMethod.addInstructionsWithLabels(
+                shouldStartCallIndex + 2,
+                """
+                    $shouldStartGestureInvoke
+                    move-result v$tResultReg
+                """.trimIndent(),
+            )
 
-        handleGestureMethod.addInstructionsWithLabels(
-            letterStartedIgetIndex + 1,
-            """
-                $resolveLetterStartedInvoke
-                move-result v$letterStartedReg
-            """.trimIndent(),
-        )
+            handleGestureMethod.addInstructionsWithLabels(
+                letterStartedIgetIndex + 1,
+                """
+                    $resolveLetterStartedInvoke
+                    move-result v$letterStartedReg
+                """.trimIndent(),
+            )
 
-        handleGestureMethod.addInstruction(
-            2,
-            onEventEntryInvoke,
-        )
+            handleGestureMethod.addInstruction(
+                2,
+                onEventEntryInvoke,
+            )
+        }
 
         val resetMethod = handlerClass.methods.firstOrNull {
             it.name == RESET_GESTURE_STATE_METHOD_NAME &&
@@ -270,21 +276,28 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
                 "Reset method $RESET_GESTURE_STATE_METHOD_NAME() has insufficient local registers ($resetRegCount)",
             )
         }
+        val shouldInterceptResetAbi = RuntimeAbiCatalog.abi(
+            RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET,
+        )
         val shouldInterceptResetInvoke = RuntimeCallEmitter.invoke(
             RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_INTERCEPT_GESTURE_RESET,
             "p0",
         )
-        resetMethod.addInstructionsWithLabels(
-            0,
-            """
-                $shouldInterceptResetInvoke
-                move-result v0
-                if-eqz v0, :multiglide_skip_reset_early_return
-                return-void
-                :multiglide_skip_reset_early_return
-                nop
-            """.trimIndent(),
-        )
+        val alreadyHookedReset = resetMethod.implementation?.instructions
+            ?.any { it.isMethodReference(shouldInterceptResetAbi.reference) } == true
+        if (!alreadyHookedReset) {
+            resetMethod.addInstructionsWithLabels(
+                0,
+                """
+                    $shouldInterceptResetInvoke
+                    move-result v0
+                    if-eqz v0, :multiglide_skip_reset_early_return
+                    return-void
+                    :multiglide_skip_reset_early_return
+                    nop
+                """.trimIndent(),
+            )
+        }
 
         // Override AbstractMotionEventHandler.gu()Z so dispatcher ownership transitions from
         // BasicMotionEventHandler do not cancel AbstractGestureMotionEventHandler while active.
@@ -294,22 +307,40 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
         } ?: throw PatchException(
             "Could not uniquely locate zero-arg boolean method (gu) in $ABSTRACT_MOTION_EVENT_HANDLER_CLASS",
         )
+        val shouldReceiveAbi = RuntimeAbiCatalog.abi(
+            RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_RECEIVE_EVENTS_DURING_OTHER_OWNER,
+        )
         val shouldReceiveInvoke = RuntimeCallEmitter.invoke(
             RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_RECEIVE_EVENTS_DURING_OTHER_OWNER,
             "p0",
         )
-        handlerClass.addHelperMethodIfMissing(
-            name = receiveEventsMethod.name,
-            parameterTypes = emptyList(),
-            returnType = "Z",
-            accessFlags = AccessFlags.PUBLIC.value,
-            registerCount = 2,
-            body = """
-                $shouldReceiveInvoke
-                move-result v0
-                return v0
-            """.trimIndent(),
-        )
+        val existingOverride = handlerClass.methods.firstOrNull {
+            it.name == receiveEventsMethod.name &&
+                it.parameterTypes.isEmpty() &&
+                it.returnType == "Z"
+        }
+        if (existingOverride != null) {
+            val isOurOverride = existingOverride.implementation?.instructions
+                ?.any { it.isMethodReference(shouldReceiveAbi.reference) } == true
+            if (!isOurOverride) {
+                throw PatchException(
+                    "$ABSTRACT_GESTURE_HANDLER_CLASS already defines ${receiveEventsMethod.name}()Z; refusing to silently skip override.",
+                )
+            }
+        } else {
+            handlerClass.addHelperMethodIfMissing(
+                name = receiveEventsMethod.name,
+                parameterTypes = emptyList(),
+                returnType = "Z",
+                accessFlags = AccessFlags.PUBLIC.value,
+                registerCount = 2,
+                body = """
+                    $shouldReceiveInvoke
+                    move-result v0
+                    return v0
+                """.trimIndent(),
+            )
+        }
 
         // Hook BasicMotionEventHandler.t(MotionEvent) to suppress competing tap/popup processing
         // once MultiGlide takeover is active, and locate Lqil.c(MotionEvent, Z) to suppress premature
@@ -360,21 +391,28 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
         }
         val basicThisReg = basicRegCount - 2
         val basicEventReg = basicRegCount - 1
+        val suppressBasicAbi = RuntimeAbiCatalog.abi(
+            RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_SUPPRESS_BASIC_HANDLER,
+        )
         val suppressBasicInvoke = RuntimeCallEmitter.invoke(
             RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_SUPPRESS_BASIC_HANDLER,
             "v$basicThisReg, v$basicEventReg",
         )
-        basicEventMethod.addInstructionsWithLabels(
-            0,
-            """
-                $suppressBasicInvoke
-                move-result v0
-                if-eqz v0, :multiglide_continue_basic_handler
-                return-void
-                :multiglide_continue_basic_handler
-                nop
-            """.trimIndent(),
-        )
+        val alreadyHookedBasic = basicEventMethod.implementation?.instructions
+            ?.any { it.isMethodReference(suppressBasicAbi.reference) } == true
+        if (!alreadyHookedBasic) {
+            basicEventMethod.addInstructionsWithLabels(
+                0,
+                """
+                    $suppressBasicInvoke
+                    move-result v0
+                    if-eqz v0, :multiglide_continue_basic_handler
+                    return-void
+                    :multiglide_continue_basic_handler
+                    nop
+                """.trimIndent(),
+            )
+        }
 
         // Hook Lqil.c(MotionEvent, Z) right before Lqil.t(Lqin, MotionEvent, I)V on ACTION_POINTER_DOWN.
         val touchBundleHandlerClass = mutableClass(touchBundleCallRef.definingClass)
@@ -428,22 +466,28 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
         }
         val commitMethodDescriptor =
             "${commitMethodRef.definingClass}->${commitMethodRef.name}(${commitMethodRef.parameterTypes.joinToString("")})${commitMethodRef.returnType}"
+        val suppressRolloverAbi = RuntimeAbiCatalog.abi(
+            RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_SUPPRESS_ROLLOVER_COMMIT,
+        )
         val suppressRolloverInvoke = RuntimeCallEmitter.invoke(
             RuntimeCallId.MULTIGLIDE_RUNTIME_SHOULD_SUPPRESS_ROLLOVER_COMMIT,
             "v$tbEventReg",
         )
-        touchBundleMethod.removeInstruction(softKeyOIndex + 3)
-        touchBundleMethod.addInstructionsWithLabels(
-            softKeyOIndex + 3,
-            """
-                $suppressRolloverInvoke
-                move-result v$flagReg
-                if-nez v$flagReg, :multiglide_skip_rollover_commit
-                invoke-static {v${commitInsn.registerC}, v${commitInsn.registerD}, v${commitInsn.registerE}}, $commitMethodDescriptor
-                :multiglide_skip_rollover_commit
-                nop
-            """.trimIndent(),
-        )
+        val alreadyHookedRollover = touchBundleMethod.implementation?.instructions
+            ?.any { it.isMethodReference(suppressRolloverAbi.reference) } == true
+        if (!alreadyHookedRollover) {
+            touchBundleMethod.addInstructionsWithLabels(
+                softKeyOIndex + 4,
+                """
+                    move-result v$flagReg
+                    if-nez v$flagReg, :multiglide_skip_rollover_commit
+                    invoke-static {v${commitInsn.registerC}, v${commitInsn.registerD}, v${commitInsn.registerE}}, $commitMethodDescriptor
+                    :multiglide_skip_rollover_commit
+                    nop
+                """.trimIndent(),
+            )
+            touchBundleMethod.replaceInstruction(softKeyOIndex + 3, suppressRolloverInvoke)
+        }
 
         // Preload active language dictionary when SoftKeyboardView is inflated or attached so
         // the first two-finger swipe does not stall waiting for .lm parsing.

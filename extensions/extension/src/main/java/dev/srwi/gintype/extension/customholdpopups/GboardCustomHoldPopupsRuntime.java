@@ -567,18 +567,9 @@ public final class GboardCustomHoldPopupsRuntime {
                 return true;
             }
 
-            // 2. If user selected a multi-character custom symbol/snippet from a LONG_PRESS popup,
-            // commit the full text directly via InputConnection if it has more than 1 code point
-            // or if stock DECODE would not commit the full snippet.
-            if (meta != null && actionEnumObj != null && actionEnumObj == actionLongPressEnum) {
-                String text = meta.currentSymbol;
-                if (text != null && text.length() > 1) {
-                    Context ctx = resolveContext(basicHandlerObj, touchActionBundleObj);
-                    if (commitTextDirectlyToInputConnection(basicHandlerObj, ctx, text)) {
-                        return true;
-                    }
-                }
-            }
+            // 2. Multi-character snippets and emojis are created with PLAIN_TEXT (-10009) + COMMIT
+            // intention in buildAugmentedSoftKeyDef so Gboard dispatches them natively through its
+            // own decoder/shift pipeline (and triggers ThiccTopBarRuntime.onKeyDataDispatched).
         } catch (Throwable t) {
             Log.w(TAG, "shouldInterceptKeyDataDispatch failed", t);
         }
