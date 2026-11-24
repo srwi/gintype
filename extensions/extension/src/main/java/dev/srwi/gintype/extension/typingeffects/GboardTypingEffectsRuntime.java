@@ -205,6 +205,7 @@ public final class GboardTypingEffectsRuntime {
         }
 
         private final WeakReference<View> viewRef;
+        private final boolean isHeaderView;
         private final TypingEffectsEngine engine;
         private final TypingEffectsOverlayDrawable drawable;
         private final SparseArray<CachedKeyHit> pointerKeyCache = new SparseArray<>();
@@ -245,6 +246,8 @@ public final class GboardTypingEffectsRuntime {
 
         OverlayController(View view) {
             this.viewRef = new WeakReference<View>(view);
+            this.isHeaderView = dev.srwi.gintype.extension.thicctopbar.ThiccTopBarGboardReflector
+                    .isHeaderSoftKeyboardView(view);
             float density = view.getResources() != null
                     ? view.getResources().getDisplayMetrics().density
                     : 2.5f;
@@ -337,6 +340,9 @@ public final class GboardTypingEffectsRuntime {
 
         private void notifyTouchedKey(View root, int pointerId, float x, float y, long nowMs) {
             if (!engine.getConfig().keyHighlightEnabled) {
+                return;
+            }
+            if (isHeaderView && isPointInsideVisibleThiccTopBar(root, x, y, 0, 0)) {
                 return;
             }
             CachedKeyHit cached = pointerKeyCache.get(pointerId);
@@ -485,6 +491,44 @@ public final class GboardTypingEffectsRuntime {
                 }
             }
             return null;
+        }
+
+        private static boolean isPointInsideVisibleThiccTopBar(
+                View node,
+                float x,
+                float y,
+                int offsetX,
+                int offsetY) {
+            if (node == null || node.getVisibility() != View.VISIBLE) {
+                return false;
+            }
+            int w = node.getWidth();
+            int h = node.getHeight();
+            if (w <= 0 || h <= 0) {
+                return false;
+            }
+            if (x < offsetX || x > offsetX + w || y < offsetY || y > offsetY + h) {
+                return false;
+            }
+            if (node instanceof dev.srwi.gintype.extension.thicctopbar.ThiccTopBarView) {
+                return true;
+            }
+            if (node instanceof ViewGroup group) {
+                int baseX = offsetX - group.getScrollX();
+                int baseY = offsetY - group.getScrollY();
+                for (int i = group.getChildCount() - 1; i >= 0; i--) {
+                    View child = group.getChildAt(i);
+                    if (child == null || child.getVisibility() != View.VISIBLE) {
+                        continue;
+                    }
+                    int childLeft = baseX + child.getLeft() + Math.round(child.getTranslationX());
+                    int childTop = baseY + child.getTop() + Math.round(child.getTranslationY());
+                    if (isPointInsideVisibleThiccTopBar(child, x, y, childLeft, childTop)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         private static View findSoftKeyAt(
