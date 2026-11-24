@@ -11,9 +11,17 @@ public final class MultiGlideAccentFolder {
     private MultiGlideAccentFolder() {}
 
     public static String fold(String word) {
-        StringBuilder sb = new StringBuilder(word.length());
+        StringBuilder sb = new StringBuilder(word.length() + 2);
         for (int i = 0; i < word.length(); i++) {
             char c = Character.toLowerCase(word.charAt(i));
+            if (c == 'æ') {
+                sb.append("ae");
+                continue;
+            }
+            if (c == 'œ') {
+                sb.append("oe");
+                continue;
+            }
             char mapped = mapSingleChar(c);
             if (mapped != 0) {
                 sb.append(mapped);
@@ -26,6 +34,20 @@ public final class MultiGlideAccentFolder {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Returns true if {@code c} is a Latin letter (including accented letters and ligatures such
+     * as {@code ñ, å, ø, æ, œ, ç, ş, ğ}) that folds to ASCII {@code a-z} via {@link #fold(String)}.
+     */
+    public static boolean isFoldableLatinLetter(char c) {
+        char lower = Character.toLowerCase(c);
+        if (lower >= 'a' && lower <= 'z') return true;
+        if (lower == 'æ' || lower == 'œ') return true;
+        if (mapSingleChar(lower) != 0) return true;
+        String nfd = Normalizer.normalize(String.valueOf(lower), Normalizer.Form.NFD);
+        char base = nfd.isEmpty() ? 0 : nfd.charAt(0);
+        return base >= 'a' && base <= 'z';
     }
 
     public static String foldGermanDigraphs(String word, boolean hasdedicatedUmlautKeys) {
@@ -62,6 +84,12 @@ public final class MultiGlideAccentFolder {
                     } else {
                         sb.append('u');
                     }
+                    break;
+                case 'æ':
+                    sb.append("ae");
+                    break;
+                case 'œ':
+                    sb.append("oe");
                     break;
                 default:
                     char mapped = mapSingleChar(c);

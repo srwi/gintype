@@ -2181,7 +2181,6 @@ public final class GboardMultiGlideRuntime {
                 : 680;
 
         if (session.geometryReady
-                && session.geometry.isValid()
                 && width == session.lastKeyboardWidth
                 && height == session.lastKeyboardHeight
                 && session.lastNativeLayoutObj == nativeLayout
@@ -2432,11 +2431,8 @@ public final class GboardMultiGlideRuntime {
         return buckets.size();
     }
 
-    private static boolean isSupportedGeometryChar(char ch) {
-        return (ch >= 'a' && ch <= 'z')
-                || ch == 'ä'
-                || ch == 'ö'
-                || ch == 'ü'
+    static boolean isSupportedGeometryChar(char ch) {
+        return MultiGlideAccentFolder.isFoldableLatinLetter(ch)
                 || MultiGlideGeometry.NO_SPACE_BEFORE.indexOf(ch) >= 0;
     }
 

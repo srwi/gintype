@@ -905,4 +905,27 @@ public class MultiGlideDecoderTest {
         assertFalse(GboardMultiGlideRuntime.isAttachingDirectlyToWord("Seiten ", false));
         assertEquals("leiste", GboardMultiGlideRuntime.lowercaseFirstChar("Leiste"));
     }
+
+    @Test
+    public void foldsLigaturesAndRecognizesExtendedLatinGeometryLetters() {
+        assertEquals("coeur", MultiGlideAccentFolder.fold("cœur"));
+        assertEquals("aeon", MultiGlideAccentFolder.fold("Æon"));
+        assertEquals("oeuvre", MultiGlideAccentFolder.fold("Œuvre"));
+
+        for (char c : new char[] {'ñ', 'å', 'ø', 'æ', 'œ', 'ç', 'ş', 'ğ', 'ä', 'ö', 'ü'}) {
+            assertTrue("Expected foldable Latin letter: " + c, MultiGlideAccentFolder.isFoldableLatinLetter(c));
+            assertTrue("Expected supported geometry char: " + c, GboardMultiGlideRuntime.isSupportedGeometryChar(c));
+        }
+        assertFalse(GboardMultiGlideRuntime.isSupportedGeometryChar('ж'));
+        assertFalse(GboardMultiGlideRuntime.isSupportedGeometryChar('ع'));
+
+        MultiGlideGeometry nonLatinGeo = new MultiGlideGeometry();
+        List<KeySpec> nonLatinSpecs = new ArrayList<>();
+        for (int i = 0; i < 26; i++) {
+            nonLatinSpecs.add(new KeySpec('\0', 100f + (i % 10) * 96f, 200f + (i / 10) * 140f, 96f, 140f));
+        }
+        nonLatinGeo.setKeys(nonLatinSpecs, 96f, 140f, false);
+        assertFalse(nonLatinGeo.isValid());
+        assertFalse(nonLatinGeo.isOnLetterArea(200f, 200f));
+    }
 }
