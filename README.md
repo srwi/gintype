@@ -1,14 +1,14 @@
 <div align="center">
 
-# GinType
+# GinType (Gboard Patches)
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Target Gboard](https://img.shields.io/badge/Gboard-18.5.4-green.svg)](https://play.google.com/store/apps/details?id=com.google.android.inputmethod.latin)
 [![Framework: Morphe](https://img.shields.io/badge/Patcher-Morphe-orange.svg)](https://morphe.software)
 
-**Bringing NinType-style two-finger gesture typing and power features to Gboard**
+**Morphe patches for Google Gboard — bringing NinType-style two-finger gesture typing and power features to Gboard.**
 
-The patches in this repository bring two-finger swipe typing (**MultiGlide**), an **improved suggestion bar (Thicc Top Bar)**, **custom key hold popups**, and **typing animations** to Google Gboard, inspired by the legendary Nintype/Keyboard69 by jormy.
+The patches in this repository bring two-finger swipe typing (**MultiGlide**), an **improved suggestion bar (Thicc Top Bar)**, **custom key hold popups**, and **typing animations** to Gboard, inspired by [Nintype/Keyboard69](https://apps.apple.com/us/app/nintype/id796959534) by jormy.
 
 <br>
 <a href="https://morphe.software/add-source?github=srwi/GinType">
