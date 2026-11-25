@@ -165,6 +165,10 @@ final class MultiGlideWordSession {
             return "en";
         }
 
+        default List<String> activeLanguages() {
+            return java.util.Collections.singletonList(activeLanguage());
+        }
+
         default int lookupWordFrequency(String word) {
             return 0;
         }

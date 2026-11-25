@@ -34,6 +34,7 @@ public final class GboardMultiGlideDictionaryManager {
     private static final long MISS_RETRY_COOLDOWN_MS = 1500L;
     private static final long REFRESH_PROBE_INTERVAL_MS = 10_000L;
     private static final int MAX_DIR_SCAN_DEPTH = 5;
+    static final int MAX_ACTIVE_LANGUAGES = 4;
 
     public static final class LanguagePack {
         public final String lang;
@@ -96,6 +97,7 @@ public final class GboardMultiGlideDictionaryManager {
     private static volatile Method getFacilitatorNoArgMethod;
     private static volatile Method getFacilitatorContextMethod;
     private static volatile Method getLocaleMethod;
+    private static volatile Field facilitatorLocaleListField;
     private static volatile List<Method> facilitatorLmListMethods;
     private static volatile Field lmDescFileField;
     private static volatile Field lmDescLangField;
@@ -105,27 +107,196 @@ public final class GboardMultiGlideDictionaryManager {
     private GboardMultiGlideDictionaryManager() {}
 
     public static String detectActiveLanguage(Context context) {
+        List<String> langs = detectActiveLanguages(context);
+        return langs.isEmpty() ? "de" : langs.get(0);
+    }
+
+    /**
+     * Detects all active Gboard languages in priority order (primary language first, followed by
+     * secondary multilingual languages from {@code Delight5Facilitator}'s active locale list and
+     * loaded {@code MAIN} LM descriptors), deduplicated and capped at {@link #MAX_ACTIVE_LANGUAGES}.
+     */
+    public static List<String> detectActiveLanguages(Context context) {
+        List<String> out = new ArrayList<>(MAX_ACTIVE_LANGUAGES);
         try {
             Object facilitator = getDelight5Facilitator(context);
-            if (facilitator != null && getLocaleMethod != null) {
-                Object localeObj = getLocaleMethod.invoke(facilitator);
-                if (localeObj instanceof Locale) {
-                    String lang = ((Locale) localeObj).getLanguage();
-                    if (lang != null && !lang.isEmpty()) {
-                        return normalizeLanguageKey(lang);
+            if (facilitator != null) {
+                if (getLocaleMethod != null) {
+                    Object localeObj = getLocaleMethod.invoke(facilitator);
+                    if (localeObj instanceof Locale) {
+                        addNormalizedLanguage(out, ((Locale) localeObj).getLanguage());
+                    }
+                }
+                collectActiveLocalesFromFacilitatorField(facilitator, out);
+                collectMainLmLanguagesFromFacilitator(facilitator, out);
+            }
+        } catch (Throwable ignored) {
+        }
+        if (out.isEmpty()) {
+            try {
+                Locale def = Locale.getDefault();
+                if (def != null) {
+                    addNormalizedLanguage(out, def.getLanguage());
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        if (out.isEmpty()) {
+            out.add("de");
+        }
+        return out;
+    }
+
+    private static void addNormalizedLanguage(List<String> out, String rawLang) {
+        if (rawLang == null || rawLang.trim().isEmpty() || out.size() >= MAX_ACTIVE_LANGUAGES) {
+            return;
+        }
+        String norm = normalizeLanguageKey(rawLang);
+        if (!out.contains(norm)) {
+            out.add(norm);
+        }
+    }
+
+    private static void collectActiveLocalesFromFacilitatorField(Object facilitator, List<String> out) {
+        try {
+            Field f = facilitatorLocaleListField;
+            if (f == null) {
+                f = findLocaleListField(facilitator);
+                if (f != null) {
+                    facilitatorLocaleListField = f;
+                }
+            }
+            if (f == null) return;
+            Object val = f.get(facilitator);
+            if (val instanceof List<?>) {
+                List<?> list = (List<?>) val;
+                for (int i = 0; i < list.size() && out.size() < MAX_ACTIVE_LANGUAGES; i++) {
+                    Object item = list.get(i);
+                    if (item instanceof Locale) {
+                        addNormalizedLanguage(out, ((Locale) item).getLanguage());
                     }
                 }
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    private static Field findLocaleListField(Object facilitator) {
+        if (facilitator == null) return null;
         try {
-            Locale def = Locale.getDefault();
-            if (def != null && def.getLanguage() != null && !def.getLanguage().isEmpty()) {
-                return normalizeLanguageKey(def.getLanguage());
+            Field sField = facilitator.getClass().getDeclaredField("s");
+            if (!Modifier.isStatic(sField.getModifiers()) && List.class.isAssignableFrom(sField.getType())) {
+                sField.setAccessible(true);
+                Object val = sField.get(facilitator);
+                if (isLocaleList(val)) {
+                    return sField;
+                }
             }
         } catch (Throwable ignored) {
         }
-        return "de";
+        for (Field f : facilitator.getClass().getDeclaredFields()) {
+            if (Modifier.isStatic(f.getModifiers()) || !List.class.isAssignableFrom(f.getType())) {
+                continue;
+            }
+            try {
+                f.setAccessible(true);
+                Object val = f.get(facilitator);
+                if (isLocaleList(val)) {
+                    return f;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
+    }
+
+    private static boolean isLocaleList(Object val) {
+        if (!(val instanceof List<?>)) return false;
+        List<?> list = (List<?>) val;
+        return !list.isEmpty() && list.get(0) instanceof Locale;
+    }
+
+    private static void collectMainLmLanguagesFromFacilitator(Object facilitator, List<String> out) {
+        List<Method> methods = facilitatorLmListMethods;
+        if (methods == null || out.size() >= MAX_ACTIVE_LANGUAGES) return;
+        for (Method listMethod : methods) {
+            Object listObj;
+            try {
+                listObj = listMethod.invoke(facilitator);
+            } catch (Throwable ignored) {
+                continue;
+            }
+            if (!(listObj instanceof List<?>)) continue;
+            List<?> descriptors = (List<?>) listObj;
+            for (int i = 0; i < descriptors.size() && out.size() < MAX_ACTIVE_LANGUAGES; i++) {
+                Object desc = descriptors.get(i);
+                if (desc == null) continue;
+                Integer type = extractDescriptorType(desc);
+                if (type != null && type != 1) continue;
+                String descLang = extractDescriptorLanguage(desc);
+                if (descLang != null && !descLang.isEmpty()) {
+                    File file = extractDescriptorFile(desc);
+                    if (file != null && GboardLmReader.isLmFile(file)) {
+                        addNormalizedLanguage(out, descLang);
+                    }
+                }
+            }
+        }
+    }
+
+    public static List<LanguagePack> getOrScheduleLoads(
+            Context context,
+            List<String> langs,
+            boolean hasDedicatedUmlauts
+    ) {
+        if (langs == null || langs.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        List<LanguagePack> ready = new ArrayList<>(langs.size());
+        for (int i = 0; i < langs.size(); i++) {
+            LanguagePack pack = getOrScheduleLoad(context, langs.get(i), hasDedicatedUmlauts);
+            if (pack != null) {
+                ready.add(pack);
+            }
+        }
+        return ready;
+    }
+
+    public static List<LanguagePack> getLoadedIfReady(List<String> langs, boolean hasDedicatedUmlauts) {
+        if (langs == null || langs.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        List<LanguagePack> ready = new ArrayList<>(langs.size());
+        for (int i = 0; i < langs.size(); i++) {
+            LanguagePack pack = getLoadedIfReady(langs.get(i), hasDedicatedUmlauts);
+            if (pack != null) {
+                ready.add(pack);
+            }
+        }
+        return ready;
+    }
+
+    public static List<LanguagePack> loadBlockingIfNeeded(
+            Context context,
+            List<String> langs,
+            boolean hasDedicatedUmlauts
+    ) {
+        if (langs == null || langs.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        List<LanguagePack> ready = new ArrayList<>(langs.size());
+        for (int i = 0; i < langs.size(); i++) {
+            String lang = langs.get(i);
+            // Block (within UI timeout) only for the primary language; schedule secondary packs
+            // asynchronously so multilingual decoding never stalls the UI thread.
+            LanguagePack pack = (i == 0)
+                    ? loadBlockingIfNeeded(context, lang, hasDedicatedUmlauts)
+                    : getOrScheduleLoad(context, lang, hasDedicatedUmlauts);
+            if (pack != null) {
+                ready.add(pack);
+            }
+        }
+        return ready;
     }
 
     public static LanguagePack getOrScheduleLoad(Context context, String lang, boolean hasDedicatedUmlauts) {

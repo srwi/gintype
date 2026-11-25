@@ -279,10 +279,11 @@ public final class GboardMultiGlideRuntime {
                     GboardThiccTopBarRuntime.registerFallbackHolderView(holder);
                 }
             }
-            String activeLang = GboardMultiGlideDictionaryManager.detectActiveLanguage(context);
-            boolean hasDedicatedUmlauts = readUmlautHint(context, activeLang);
-            GboardMultiGlideDictionaryManager.getOrScheduleLoad(
-                    context, activeLang, hasDedicatedUmlauts);
+            List<String> activeLangs = GboardMultiGlideDictionaryManager.detectActiveLanguages(context);
+            String primaryLang = activeLangs.get(0);
+            boolean hasDedicatedUmlauts = readUmlautHint(context, primaryLang);
+            GboardMultiGlideDictionaryManager.getOrScheduleLoads(
+                    context, activeLangs, hasDedicatedUmlauts);
         } catch (Throwable ignored) {
         }
     }
@@ -438,13 +439,14 @@ public final class GboardMultiGlideRuntime {
             HandlerSession session = getOrCreateSession(handler);
             ensureGeometryUpdated(handler, session, context);
 
-            String activeLang = GboardMultiGlideDictionaryManager.detectActiveLanguage(context);
+            List<String> activeLangs = GboardMultiGlideDictionaryManager.detectActiveLanguages(context);
+            String activeLang = activeLangs.get(0);
             if (context != null) {
                 if (session.geometry.isValid() && session.geometryFromNativeLayout) {
                     recordUmlautHint(context, activeLang, session.geometry.hasDedicatedUmlauts());
                 }
-                GboardMultiGlideDictionaryManager.getOrScheduleLoad(
-                        context, activeLang, session.geometry.hasDedicatedUmlauts());
+                GboardMultiGlideDictionaryManager.getOrScheduleLoads(
+                        context, activeLangs, session.geometry.hasDedicatedUmlauts());
             }
 
             probeHandlerFields(handler);
@@ -455,9 +457,9 @@ public final class GboardMultiGlideRuntime {
             long eventTime = event.getEventTime();
             MultiGlideWordSession.SettingsSnapshot settings = readSettingsSnapshot(context);
             MultiGlideWordSession.EditorAdapter editor = createEditorAdapter(handler, context);
-            MultiGlideWordSession.DecodePort decoder = createDecodePort(context, session, activeLang);
+            MultiGlideWordSession.DecodePort decoder = createDecodePort(context, session, activeLangs);
             MultiGlideWordSession.LifecycleCallbacks callbacks =
-                    createCallbacks(handler, session, context, activeLang, editor);
+                    createCallbacks(handler, session, context, activeLangs, editor);
             float multiGlideThreshold = session.core.multiGlideThresholdPx();
 
             switch (actionMasked) {
@@ -528,7 +530,7 @@ public final class GboardMultiGlideRuntime {
                     }
 
                     maybeActivateTakeover(handler, session, multiGlideThreshold, true);
-                    maybeScheduleLivePreviewDecode(session, context, activeLang, eventTime);
+                    maybeScheduleLivePreviewDecode(session, context, activeLangs, eventTime);
                     break;
                 }
 
@@ -551,7 +553,7 @@ public final class GboardMultiGlideRuntime {
                     }
 
                     maybeActivateTakeover(handler, session, multiGlideThreshold, true);
-                    maybeScheduleLivePreviewDecode(session, context, activeLang, eventTime);
+                    maybeScheduleLivePreviewDecode(session, context, activeLangs, eventTime);
                     break;
                 }
 
@@ -686,9 +688,9 @@ public final class GboardMultiGlideRuntime {
                     && event.getPointerCount() > 0) {
                 Context context = extractContext(gestureHandler);
                 MultiGlideWordSession.EditorAdapter editor = createEditorAdapter(gestureHandler, context);
-                String activeLang = GboardMultiGlideDictionaryManager.detectActiveLanguage(context);
+                List<String> activeLangs = GboardMultiGlideDictionaryManager.detectActiveLanguages(context);
                 MultiGlideWordSession.LifecycleCallbacks callbacks =
-                        createCallbacks(gestureHandler, session, context, activeLang, editor);
+                        createCallbacks(gestureHandler, session, context, activeLangs, editor);
                 session.core.maybeCancelPendingBackspaceTap(
                         event.getX(0), event.getY(0), event.getEventTime(), callbacks);
             }
@@ -701,10 +703,10 @@ public final class GboardMultiGlideRuntime {
                     Context context = extractContext(gestureHandler);
                     MultiGlideWordSession.SettingsSnapshot settings = readSettingsSnapshot(context);
                     MultiGlideWordSession.EditorAdapter editor = createEditorAdapter(gestureHandler, context);
-                    String activeLang = GboardMultiGlideDictionaryManager.detectActiveLanguage(context);
-                    MultiGlideWordSession.DecodePort decoder = createDecodePort(context, session, activeLang);
+                    List<String> activeLangs = GboardMultiGlideDictionaryManager.detectActiveLanguages(context);
+                    MultiGlideWordSession.DecodePort decoder = createDecodePort(context, session, activeLangs);
                     MultiGlideWordSession.LifecycleCallbacks callbacks =
-                            createCallbacks(gestureHandler, session, context, activeLang, editor);
+                            createCallbacks(gestureHandler, session, context, activeLangs, editor);
                     if (session.core.tryConsumePendingBackspaceTap(
                             event.getEventTime(),
                             event.getX(0),
@@ -873,7 +875,7 @@ public final class GboardMultiGlideRuntime {
     private static void maybeScheduleLivePreviewDecode(
             HandlerSession session,
             Context context,
-            String activeLang,
+            List<String> activeLangs,
             long eventTimeMs
     ) {
         if (context == null
@@ -890,14 +892,14 @@ public final class GboardMultiGlideRuntime {
             session.livePreviewSettleRunnable = () -> {
                 session.livePreviewSettleRunnable = null;
                 maybeScheduleLivePreviewDecode(
-                        session, context, activeLang, android.os.SystemClock.uptimeMillis());
+                        session, context, activeLangs, android.os.SystemClock.uptimeMillis());
             };
             session.mainHandler.postDelayed(session.livePreviewSettleRunnable, delayMs);
             return;
         }
-        LanguagePack pack = GboardMultiGlideDictionaryManager.getLoadedIfReady(
-                activeLang, session.geometry.hasDedicatedUmlauts());
-        if (pack == null || !session.geometry.isValid()) {
+        List<LanguagePack> packs = GboardMultiGlideDictionaryManager.getLoadedIfReady(
+                activeLangs, session.geometry.hasDedicatedUmlauts());
+        if (packs.isEmpty() || !session.geometry.isValid()) {
             return;
         }
         List<MultiGlideInputToken> snapshotTokens = session.core.buildLiveSnapshotTokens();
@@ -908,7 +910,7 @@ public final class GboardMultiGlideRuntime {
             session.livePreviewSettleRunnable = () -> {
                 session.livePreviewSettleRunnable = null;
                 maybeScheduleLivePreviewDecode(
-                        session, context, activeLang, android.os.SystemClock.uptimeMillis());
+                        session, context, activeLangs, android.os.SystemClock.uptimeMillis());
             };
             session.mainHandler.postDelayed(session.livePreviewSettleRunnable, LIVE_PREVIEW_INTERVAL_MS);
             return;
@@ -927,14 +929,13 @@ public final class GboardMultiGlideRuntime {
                     return;
                 }
                 GboardMultiGlideSettings.syncDecoderConstants(context);
-                List<WordCandidate> candidates;
-                pack.rwLock.readLock().lock();
-                try {
-                    candidates = session.livePreviewDecoder.decode(
-                            snapshotTokens, pack.trie, pack.bigrams, geomRef, prevWord);
-                } finally {
-                    pack.rwLock.readLock().unlock();
-                }
+                List<WordCandidate> candidates = MultiGlideMultilingualDecoder.decodeAcrossPacks(
+                        session.livePreviewDecoder,
+                        snapshotTokens,
+                        packs,
+                        geomRef,
+                        prevWord,
+                        snapshotAtDown);
                 if (session.liveDecodeGeneration.get() != gen
                         || candidates == null
                         || candidates.isEmpty()) {
@@ -1622,25 +1623,30 @@ public final class GboardMultiGlideRuntime {
     private static MultiGlideWordSession.DecodePort createDecodePort(
             Context context,
             HandlerSession session,
-            String activeLang
+            List<String> activeLangs
     ) {
+        final List<String> langs = (activeLangs != null && !activeLangs.isEmpty())
+                ? activeLangs
+                : Collections.singletonList("en");
+        final String primaryLang = langs.get(0);
         return new MultiGlideWordSession.DecodePort() {
             @Override
             public List<WordCandidate> decode(List<MultiGlideInputToken> tokens, String prevWord) {
                 try {
-                    LanguagePack pack = GboardMultiGlideDictionaryManager.loadBlockingIfNeeded(
-                            context, activeLang, session.geometry.hasDedicatedUmlauts());
-                    if (pack == null) {
+                    List<LanguagePack> packs = GboardMultiGlideDictionaryManager.loadBlockingIfNeeded(
+                            context, langs, session.geometry.hasDedicatedUmlauts());
+                    if (packs.isEmpty()) {
                         return Collections.emptyList();
                     }
                     GboardMultiGlideSettings.syncDecoderConstants(context);
                     KineticaDtwDecoder decoder = new KineticaDtwDecoder();
-                    pack.rwLock.readLock().lock();
-                    try {
-                        return decoder.decode(tokens, pack.trie, pack.bigrams, session.geometry, prevWord);
-                    } finally {
-                        pack.rwLock.readLock().unlock();
-                    }
+                    return MultiGlideMultilingualDecoder.decodeAcrossPacks(
+                            decoder,
+                            tokens,
+                            packs,
+                            session.geometry,
+                            prevWord,
+                            session.core.textSnapshotAtActionDown);
                 } catch (Throwable t) {
                     Log.e(TAG, "decodePort failed", t);
                     return Collections.emptyList();
@@ -1649,25 +1655,38 @@ public final class GboardMultiGlideRuntime {
 
             @Override
             public String activeLanguage() {
-                return activeLang != null ? activeLang : "en";
+                return primaryLang != null ? primaryLang : "en";
+            }
+
+            @Override
+            public List<String> activeLanguages() {
+                return langs;
             }
 
             @Override
             public int lookupWordFrequency(String word) {
                 if (word == null || word.isEmpty()) return 0;
-                LanguagePack pack = GboardMultiGlideDictionaryManager.getLoadedIfReady(
-                        activeLang, session.geometry.hasDedicatedUmlauts());
-                if (pack == null) {
-                    pack = GboardMultiGlideDictionaryManager.loadBlockingIfNeeded(
-                            context, activeLang, session.geometry.hasDedicatedUmlauts());
+                List<LanguagePack> packs = GboardMultiGlideDictionaryManager.getLoadedIfReady(
+                        langs, session.geometry.hasDedicatedUmlauts());
+                if (packs.isEmpty()) {
+                    packs = GboardMultiGlideDictionaryManager.loadBlockingIfNeeded(
+                            context, langs, session.geometry.hasDedicatedUmlauts());
                 }
-                if (pack == null || pack.trie == null) return 0;
-                pack.rwLock.readLock().lock();
-                try {
-                    return pack.trie.lookupFrequency(word);
-                } finally {
-                    pack.rwLock.readLock().unlock();
+                int maxFreq = 0;
+                for (int i = 0; i < packs.size(); i++) {
+                    LanguagePack pack = packs.get(i);
+                    if (pack == null || pack.trie == null) continue;
+                    pack.rwLock.readLock().lock();
+                    try {
+                        int freq = pack.trie.lookupFrequency(word);
+                        if (freq > maxFreq) {
+                            maxFreq = freq;
+                        }
+                    } finally {
+                        pack.rwLock.readLock().unlock();
+                    }
                 }
+                return maxFreq;
             }
 
             @Override
@@ -1675,15 +1694,23 @@ public final class GboardMultiGlideRuntime {
                 if (prevWord == null || prevWord.isEmpty() || word == null || word.isEmpty()) {
                     return 0f;
                 }
-                LanguagePack pack = GboardMultiGlideDictionaryManager.getLoadedIfReady(
-                        activeLang, session.geometry.hasDedicatedUmlauts());
-                if (pack == null || pack.bigrams == null) return 0f;
-                pack.rwLock.readLock().lock();
-                try {
-                    return pack.bigrams.score(prevWord, word);
-                } finally {
-                    pack.rwLock.readLock().unlock();
+                List<LanguagePack> packs = GboardMultiGlideDictionaryManager.getLoadedIfReady(
+                        langs, session.geometry.hasDedicatedUmlauts());
+                float maxScore = 0f;
+                for (int i = 0; i < packs.size(); i++) {
+                    LanguagePack pack = packs.get(i);
+                    if (pack == null || pack.bigrams == null) continue;
+                    pack.rwLock.readLock().lock();
+                    try {
+                        float score = pack.bigrams.score(prevWord, word);
+                        if (score > maxScore) {
+                            maxScore = score;
+                        }
+                    } finally {
+                        pack.rwLock.readLock().unlock();
+                    }
                 }
+                return maxScore;
             }
         };
     }
@@ -1692,9 +1719,14 @@ public final class GboardMultiGlideRuntime {
             Object handler,
             HandlerSession session,
             Context context,
-            String activeLang,
+            List<String> activeLangs,
             MultiGlideWordSession.EditorAdapter editor
     ) {
+        final List<String> langs = (activeLangs != null && !activeLangs.isEmpty())
+                ? activeLangs
+                : Collections.singletonList("de");
+        final String primaryLang = langs.get(0);
+        final String activeLangLabel = langs.size() > 1 ? String.join("+", langs) : primaryLang;
         return new MultiGlideWordSession.LifecycleCallbacks() {
             @Override
             public void onTrailAccentChanged(boolean active) {
@@ -1826,7 +1858,7 @@ public final class GboardMultiGlideRuntime {
                         session.geometryFromNativeLayout,
                         session.lastKeyboardWidth,
                         session.lastKeyboardHeight,
-                        activeLang,
+                        activeLangLabel,
                         tokens,
                         word,
                         capitalizeFirst,
@@ -1851,7 +1883,11 @@ public final class GboardMultiGlideRuntime {
                     String prevWord,
                     List<String> alternatives
             ) {
-                GboardMultiGlideDictionaryManager.recordCommittedWord(prevWord, word, activeLang);
+                List<LanguagePack> packs = GboardMultiGlideDictionaryManager.getLoadedIfReady(
+                        langs, session.geometry.hasDedicatedUmlauts());
+                String commitLang = MultiGlideMultilingualDecoder.resolveCommitLanguage(
+                        word, prevWord, packs, primaryLang);
+                GboardMultiGlideDictionaryManager.recordCommittedWord(prevWord, word, commitLang);
                 GboardMultiGlideTraceLogger.logCommit(context, word, autospaceInserted, prevWord);
                 if (alternatives != null) {
                     GboardThiccTopBarRuntime.recordMultiGlideDecodedWord(word, alternatives);
@@ -1874,7 +1910,7 @@ public final class GboardMultiGlideRuntime {
                         session.geometryFromNativeLayout,
                         session.lastKeyboardWidth,
                         session.lastKeyboardHeight,
-                        activeLang,
+                        activeLangLabel,
                         reason,
                         hasSwipe,
                         strokeHadMultiTouch,

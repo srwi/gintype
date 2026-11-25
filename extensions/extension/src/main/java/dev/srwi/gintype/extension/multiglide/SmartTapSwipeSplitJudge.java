@@ -107,6 +107,10 @@ final class SmartTapSwipeSplitJudge {
     }
 
     static boolean canStandAlone(String word, String lang, int freq) {
+        return canStandAlone(word, Collections.singletonList(lang), freq);
+    }
+
+    static boolean canStandAlone(String word, List<String> langs, int freq) {
         if (word == null) return false;
         int len = word.length();
         if (len < MIN_PREFIX_LEN || len > MAX_SPLIT_LEFT_LEN) return false;
@@ -117,8 +121,14 @@ final class SmartTapSwipeSplitJudge {
         }
         String lower = word.toLowerCase(Locale.ROOT);
         if (len == 1) {
-            Set<String> allowed = ONE_LETTER_WORDS_BY_LANG.get(normalizeLang(lang));
-            return allowed != null && allowed.contains(lower);
+            if (langs == null || langs.isEmpty()) return false;
+            for (int i = 0; i < langs.size(); i++) {
+                Set<String> allowed = ONE_LETTER_WORDS_BY_LANG.get(normalizeLang(langs.get(i)));
+                if (allowed != null && allowed.contains(lower)) {
+                    return true;
+                }
+            }
+            return false;
         }
         if (len == MAX_SPLIT_LEFT_LEN) {
             return freq >= MIN_PREFIX_FREQ_4;
@@ -127,9 +137,17 @@ final class SmartTapSwipeSplitJudge {
     }
 
     static String contextForm(String rawPrefix, String lang) {
+        return contextForm(rawPrefix, Collections.singletonList(lang));
+    }
+
+    static String contextForm(String rawPrefix, List<String> langs) {
         if (rawPrefix == null) return null;
-        if ("en".equals(normalizeLang(lang)) && "i".equalsIgnoreCase(rawPrefix)) {
-            return "I";
+        if ("i".equalsIgnoreCase(rawPrefix) && langs != null) {
+            for (int i = 0; i < langs.size(); i++) {
+                if ("en".equals(normalizeLang(langs.get(i)))) {
+                    return "I";
+                }
+            }
         }
         return rawPrefix;
     }
@@ -142,7 +160,24 @@ final class SmartTapSwipeSplitJudge {
             List<WordCandidate> combinedCandidates,
             List<WordCandidate> splitCandidates
     ) {
-        if (!canStandAlone(leftWord, lang, leftFreq)) {
+        return shouldSplit(
+                leftWord,
+                Collections.singletonList(lang),
+                leftFreq,
+                leftBigramScore,
+                combinedCandidates,
+                splitCandidates);
+    }
+
+    static boolean shouldSplit(
+            String leftWord,
+            List<String> langs,
+            int leftFreq,
+            float leftBigramScore,
+            List<WordCandidate> combinedCandidates,
+            List<WordCandidate> splitCandidates
+    ) {
+        if (!canStandAlone(leftWord, langs, leftFreq)) {
             return false;
         }
         if (splitCandidates == null || splitCandidates.isEmpty()) {
@@ -190,7 +225,10 @@ final class SmartTapSwipeSplitJudge {
         List<WordCandidate> combinedCandidates =
                 decoder.decode(combinedTokens, prevWordBeforePrefix);
 
-        String lang = decoder.activeLanguage();
+        List<String> langs = decoder.activeLanguages();
+        if (langs == null || langs.isEmpty()) {
+            langs = Collections.singletonList(decoder.activeLanguage());
+        }
         int prefixLen = rawPrefix.length();
         boolean alignedTokens = (prefixLen == tapTokens.size());
         int maxCut = Math.min(MAX_SPLIT_LEFT_LEN, prefixLen);
@@ -206,7 +244,7 @@ final class SmartTapSwipeSplitJudge {
             }
             String leftWord = rawPrefix.substring(0, k);
             int leftFreq = decoder.lookupWordFrequency(leftWord);
-            if (!canStandAlone(leftWord, lang, leftFreq)) {
+            if (!canStandAlone(leftWord, langs, leftFreq)) {
                 continue;
             }
 
@@ -222,11 +260,11 @@ final class SmartTapSwipeSplitJudge {
             }
 
             List<WordCandidate> rightCandidates =
-                    decoder.decode(rightTokens, contextForm(leftWord, lang));
+                    decoder.decode(rightTokens, contextForm(leftWord, langs));
             float leftBigram = decoder.lookupBigramScore(prevWordBeforePrefix, leftWord);
             if (!shouldSplit(
                     leftWord,
-                    lang,
+                    langs,
                     leftFreq,
                     leftBigram,
                     combinedCandidates,
