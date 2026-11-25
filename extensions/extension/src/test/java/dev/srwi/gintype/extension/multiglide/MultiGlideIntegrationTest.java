@@ -572,6 +572,115 @@ public class MultiGlideIntegrationTest {
     }
 
     @Test
+    public void respectsShiftCapsLockAndUnshiftedStateAcrossMultiGlideWords() {
+        SettingsSnapshot onSettings = new SettingsSnapshot(true, true, 300, 150);
+        DecodePort decoder = (tokens, prevWord) -> Arrays.asList(cand("haus", 1f), cand("haut", 0.9f));
+
+        // 1) Mid-sentence with one-shot Shift: capitalizes first letter of bestWord & alternatives
+        editor.reset();
+        editor.simulateCursorMoveTo("ich habe ");
+        performTwoFingerSwipeWithCaps(1000L, onSettings, decoder, MultiGlideWordSession.CapsMode.SHIFT);
+        assertEquals("ich habe Haus", editor.text());
+        assertEquals(Arrays.asList("Haus", "Haut"), callbacks.lastAlternatives);
+        session.finalizeAutospace(true, editor, callbacks);
+
+        // 2) Mid-sentence with Caps Lock: uppercases entire word & alternatives
+        editor.reset();
+        editor.simulateCursorMoveTo("ich habe ");
+        performTwoFingerSwipeWithCaps(2000L, onSettings, decoder, MultiGlideWordSession.CapsMode.CAPS_LOCK);
+        assertEquals("ich habe HAUS", editor.text());
+        assertEquals(Arrays.asList("HAUS", "HAUT"), callbacks.lastAlternatives);
+        session.finalizeAutospace(true, editor, callbacks);
+
+        // 3) Sentence start with Shift explicitly turned OFF (NONE): stays lowercase
+        editor.reset();
+        performTwoFingerSwipeWithCaps(3000L, onSettings, decoder, MultiGlideWordSession.CapsMode.NONE);
+        assertEquals("haus", editor.text());
+        assertEquals(Arrays.asList("haus", "haut"), callbacks.lastAlternatives);
+        session.finalizeAutospace(true, editor, callbacks);
+
+        // 4) Backspace -> Shift -> Word: attaches without space, and respects explicit Shift
+        editor.reset();
+        DecodePort leisteDecoder = (tokens, prev) -> Collections.singletonList(cand("Leiste", 1f));
+        editor.simulateCursorMoveTo("Seiten ");
+        session.onActionDown(0, backspaceX, backspaceY, 4000L, onSettings, editor, callbacks,
+                MultiGlideWordSession.CapsMode.NONE);
+        editor.simulateBackspace();
+        session.onActionUp(4050L, onSettings, editor, leisteDecoder, callbacks);
+        performTwoFingerSwipeWithCaps(4200L, onSettings, leisteDecoder, MultiGlideWordSession.CapsMode.SHIFT);
+        assertEquals("SeitenLeiste", editor.text());
+        session.finalizeAutospace(true, editor, callbacks);
+
+        // 5) Passive tap prefix with Shift ('h' -> "H") followed by unshifted swipe: preserves SHIFT
+        editor.reset();
+        editor.simulateCursorMoveTo("ich habe ");
+        session.onActionDown(0, letterAX, letterAY, 5000L, onSettings, editor, callbacks,
+                MultiGlideWordSession.CapsMode.SHIFT);
+        editor.stockType("H");
+        session.onActionUp(5040L, onSettings, editor, decoder, callbacks);
+        // Second stroke is multi-touch swipe after Gboard unshifted
+        performTwoFingerSwipeWithCaps(5120L, onSettings, decoder, MultiGlideWordSession.CapsMode.NONE);
+        assertEquals("ich habe Haus", editor.text());
+        session.finalizeAutospace(true, editor, callbacks);
+
+        // 6) Short 2-letter word ("es") with Shift and Caps Lock, plus overlapping Shift -> letter pointer down
+        DecodePort esDecoder = (tokens, prev) -> Collections.singletonList(cand("es", 1f));
+        editor.reset();
+        editor.simulateCursorMoveTo("ich habe ");
+        performTwoFingerSwipeWithCaps(6000L, onSettings, esDecoder, MultiGlideWordSession.CapsMode.SHIFT);
+        assertEquals("ich habe Es", editor.text());
+        session.finalizeAutospace(true, editor, callbacks);
+
+        editor.reset();
+        editor.simulateCursorMoveTo("ich habe ");
+        performTwoFingerSwipeWithCaps(7000L, onSettings, esDecoder, MultiGlideWordSession.CapsMode.CAPS_LOCK);
+        assertEquals("ich habe ES", editor.text());
+        session.finalizeAutospace(true, editor, callbacks);
+
+        // Overlapping Shift (non-letter pointer 0 with NONE) + letter pointer 1 (SHIFT active)
+        editor.reset();
+        editor.simulateCursorMoveTo("ich habe ");
+        session.onActionDown(0, backspaceX, backspaceY, 8000L, onSettings, editor, callbacks,
+                MultiGlideWordSession.CapsMode.NONE);
+        session.onPointerDown(1, letterAX, letterAY, 8015L);
+        session.mergeCapsModeOnPointerDown(MultiGlideWordSession.CapsMode.SHIFT);
+        session.activePointers.get(1).addPoint(letterSX, letterSY, 8035L, session.geometry);
+        session.onPointerUp(0, backspaceX, backspaceY, 8045L, true, callbacks);
+        session.onActionUp(8065L, onSettings, editor, esDecoder, callbacks);
+        assertEquals("ich habe Es", editor.text());
+        session.finalizeAutospace(true, editor, callbacks);
+
+        // 7) Gboard live keyboard-state bitmask mapping (Lqce / Lqaz constants)
+        assertEquals(MultiGlideWordSession.CapsMode.NONE,
+                GboardMultiGlideRuntime.capsModeFromKeyboardState(0x0L));
+        assertEquals(MultiGlideWordSession.CapsMode.NONE,
+                GboardMultiGlideRuntime.capsModeFromKeyboardState(0x100L)); // COMPOSING only
+        assertEquals(MultiGlideWordSession.CapsMode.SHIFT,
+                GboardMultiGlideRuntime.capsModeFromKeyboardState(0x1L)); // auto SHIFT
+        assertEquals(MultiGlideWordSession.CapsMode.SHIFT,
+                GboardMultiGlideRuntime.capsModeFromKeyboardState(0x41L)); // MANUAL_SHIFT
+        assertEquals(MultiGlideWordSession.CapsMode.CAPS_LOCK,
+                GboardMultiGlideRuntime.capsModeFromKeyboardState(0x3L)); // SHIFT_LOCK (double-tap Shift)
+        assertEquals(MultiGlideWordSession.CapsMode.CAPS_LOCK,
+                GboardMultiGlideRuntime.capsModeFromKeyboardState(0x60000000000L)); // CAPS_LOCK
+        assertEquals(MultiGlideWordSession.CapsMode.SHIFT,
+                GboardMultiGlideRuntime.capsModeFromKeyboardState(0x20000000000L)); // CAPS
+    }
+
+    private void performTwoFingerSwipeWithCaps(
+            long t0,
+            SettingsSnapshot settings,
+            DecodePort decoder,
+            MultiGlideWordSession.CapsMode capsMode
+    ) {
+        session.onActionDown(0, letterAX, letterAY, t0, settings, editor, callbacks, capsMode);
+        session.onPointerDown(1, letterLX, letterLY, t0 + 20L);
+        session.activePointers.get(0).addPoint(letterSX, letterSY, t0 + 40L, session.geometry);
+        session.onPointerUp(0, letterSX, letterSY, t0 + 50L, true, callbacks);
+        session.onActionUp(t0 + 70L, settings, editor, decoder, callbacks);
+    }
+
+    @Test
     public void notifiesThiccTopBarListenerOnPreviewAndCommit() {
         SettingsSnapshot onSettings = new SettingsSnapshot(true, true, 300, 150);
         DecodePort decoder = (tokens, prevWord) -> {

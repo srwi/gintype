@@ -28,6 +28,17 @@ final class MultiGlideWordSession {
     static final long DOUBLE_SPACE_PERIOD_TIMEOUT_MS = 500L;
     static final long BACKSPACE_HOLD_TIMEOUT_MS = 280L;
 
+    enum CapsMode {
+        /** Keyboard is explicitly unshifted: do not force sentence-start capitalization. */
+        NONE,
+        /** One-shot Shift or auto-caps is active: capitalize the first character. */
+        SHIFT,
+        /** Caps Lock is active: uppercase the entire word. */
+        CAPS_LOCK,
+        /** Keyboard state unavailable: infer sentence-start capitalization from text before cursor. */
+        AUTO
+    }
+
     static final class SettingsSnapshot {
         final boolean enabled;
         final boolean autoSpaceEnabled;
@@ -455,11 +466,13 @@ final class MultiGlideWordSession {
         final List<MultiGlideInputToken> tokens = new ArrayList<>();
         String baselineText = null;
         long lastUpTimeMs = 0L;
+        CapsMode initialCapsMode = CapsMode.AUTO;
 
         void clear() {
             tokens.clear();
             baselineText = null;
             lastUpTimeMs = 0L;
+            initialCapsMode = CapsMode.AUTO;
         }
 
         protected abstract boolean isValidTypedPrefix(String typedPrefix);
@@ -733,6 +746,7 @@ final class MultiGlideWordSession {
     String lastObservedTextBeforeCursor = null;
     String expectedSnapshotAfterPreview = null;
     String lastCommittedWord = null;
+    CapsMode currentWordCapsMode = CapsMode.AUTO;
     long lastTouchUpTimeMs = 0L;
     long lastActionDownTimeMs = 0L;
     boolean lastDownOnLetterArea = false;
@@ -814,6 +828,7 @@ final class MultiGlideWordSession {
         expectedSnapshotAfterPreview = null;
         multiGlideWordActive = false;
         leadingSpaceEvaluated = false;
+        currentWordCapsMode = CapsMode.AUTO;
         lastTouchUpTimeMs = 0L;
         lastPromotedPassiveCount = 0;
     }
@@ -942,7 +957,8 @@ final class MultiGlideWordSession {
     }
 
     String formatWordForCurrentContext(String word) {
-        return formatWordForContext(word, textSnapshotAtActionDown, suppressNextLeadingSpace);
+        return formatWordForContext(
+                word, textSnapshotAtActionDown, suppressNextLeadingSpace, currentWordCapsMode);
     }
 
     static String formatWordForContext(
@@ -950,16 +966,56 @@ final class MultiGlideWordSession {
             String textSnapshotAtActionDown,
             boolean suppressNextLeadingSpace
     ) {
+        return formatWordForContext(
+                word, textSnapshotAtActionDown, suppressNextLeadingSpace, CapsMode.AUTO);
+    }
+
+    static String formatWordForContext(
+            String word,
+            String textSnapshotAtActionDown,
+            boolean suppressNextLeadingSpace,
+            CapsMode capsMode
+    ) {
+        boolean attaching = isAttachingAfterDeletion(
+                textSnapshotAtActionDown, false, suppressNextLeadingSpace);
+        return applyWordCasing(word, attaching, capsMode, textSnapshotAtActionDown);
+    }
+
+    static String applyWordCasing(
+            String word,
+            boolean attachingAfterDeletion,
+            CapsMode capsMode,
+            String capContext
+    ) {
         if (word == null || word.isEmpty()) {
             return word;
         }
-        if (isAttachingAfterDeletion(textSnapshotAtActionDown, false, suppressNextLeadingSpace)) {
+        CapsMode mode = (capsMode != null) ? capsMode : CapsMode.AUTO;
+        if (mode == CapsMode.CAPS_LOCK) {
+            return word.toUpperCase(java.util.Locale.ROOT);
+        }
+        if (mode == CapsMode.SHIFT) {
+            return capitalizeFirstChar(word);
+        }
+        if (attachingAfterDeletion) {
             return lowercaseFirstChar(word);
         }
-        if (shouldCapitalizeFirstLetter(textSnapshotAtActionDown)) {
+        if (mode == CapsMode.AUTO && shouldCapitalizeFirstLetter(capContext)) {
             return capitalizeFirstChar(word);
         }
         return word;
+    }
+
+    static CapsMode mergePromotedCapsMode(CapsMode bufferCapsMode, CapsMode strokeCapsMode) {
+        CapsMode buf = (bufferCapsMode != null) ? bufferCapsMode : CapsMode.AUTO;
+        CapsMode stroke = (strokeCapsMode != null) ? strokeCapsMode : CapsMode.AUTO;
+        if (buf == CapsMode.CAPS_LOCK || stroke == CapsMode.CAPS_LOCK) {
+            return CapsMode.CAPS_LOCK;
+        }
+        if (buf == CapsMode.SHIFT || stroke == CapsMode.SHIFT) {
+            return CapsMode.SHIFT;
+        }
+        return stroke;
     }
 
     boolean onActionDown(
@@ -970,6 +1026,20 @@ final class MultiGlideWordSession {
             SettingsSnapshot settings,
             EditorAdapter editor,
             LifecycleCallbacks callbacks
+    ) {
+        return onActionDown(
+                pointerId, x, y, eventTimeMs, settings, editor, callbacks, CapsMode.AUTO);
+    }
+
+    boolean onActionDown(
+            int pointerId,
+            float x,
+            float y,
+            long eventTimeMs,
+            SettingsSnapshot settings,
+            EditorAdapter editor,
+            LifecycleCallbacks callbacks,
+            CapsMode capsMode
     ) {
         lastActionDownTimeMs = eventTimeMs;
         boolean downOnLetter = geometry.isOnLetterArea(x, y);
@@ -1143,6 +1213,7 @@ final class MultiGlideWordSession {
             clearWordBuffer(callbacks);
             updateBackspaceCompoundStateOnActionDown(snapshotNow, downOnLetter, x, y);
 
+            currentWordCapsMode = (capsMode != null) ? capsMode : CapsMode.AUTO;
             lastObservedTextBeforeCursor = snapshotNow;
             textSnapshotAtActionDown = snapshotNow;
             passiveTapBuffer.validateOnActionDown(
@@ -1215,6 +1286,13 @@ final class MultiGlideWordSession {
         pendingBackspaceTap = false;
         registerPointerDown(pointerId, x, y, eventTimeMs);
         sawMultiTouch = true;
+    }
+
+    void mergeCapsModeOnPointerDown(CapsMode capsMode) {
+        if (capsMode == null || capsMode == CapsMode.AUTO || capsMode == CapsMode.NONE) {
+            return;
+        }
+        currentWordCapsMode = mergePromotedCapsMode(currentWordCapsMode, capsMode);
     }
 
     void onPointerUp(
@@ -1442,6 +1520,8 @@ final class MultiGlideWordSession {
             if (!wasMultiGlideWordActive) {
                 int beforePromoted = wordTokens.size();
                 if (promoteSingleTouchCombine && !promoteMultiTouchPassive) {
+                    currentWordCapsMode = mergePromotedCapsMode(
+                            singleTouchCombineBuffer.initialCapsMode, currentWordCapsMode);
                     String rawPrefix = extractTypedPrefixSinceBaseline(
                             singleTouchCombineBuffer.baselineText, textSnapshotAtActionDown);
                     textSnapshotAtActionDown = singleTouchCombineBuffer.promoteInto(
@@ -1450,6 +1530,8 @@ final class MultiGlideWordSession {
                             ? rawPrefix : null;
                     passiveTapBuffer.clear();
                 } else {
+                    currentWordCapsMode = mergePromotedCapsMode(
+                            passiveTapBuffer.initialCapsMode, currentWordCapsMode);
                     String rawPrefix = extractTypedPrefixSinceBaseline(
                             passiveTapBuffer.baselineText, textSnapshotAtActionDown);
                     textSnapshotAtActionDown = passiveTapBuffer.promoteInto(
@@ -1509,6 +1591,7 @@ final class MultiGlideWordSession {
             callbacks.onNativeTopBarBlankChanged(false);
         }
         String tapBaselineAtDown = textSnapshotAtActionDown;
+        CapsMode strokeCapsMode = currentWordCapsMode;
         boolean strokeHadMultiTouch = sawMultiTouch;
         boolean sawNonLetter = sawNonLetterThisSession;
         int restingDropped = restingDroppedThisSession;
@@ -1531,6 +1614,7 @@ final class MultiGlideWordSession {
                     failedCandidates);
         }
 
+        boolean passiveWasEmpty = passiveTapBuffer.tokens.isEmpty();
         passiveTapBuffer.recordStroke(
                 completedCopy,
                 hasSwipe,
@@ -1540,6 +1624,10 @@ final class MultiGlideWordSession {
                 eventTimeMs,
                 settings.tapToMultiGlideDelayMs,
                 settings.autoSpaceEnabled);
+        if (passiveWasEmpty && !passiveTapBuffer.tokens.isEmpty()) {
+            passiveTapBuffer.initialCapsMode = strokeCapsMode;
+        }
+        boolean combineWasEmpty = singleTouchCombineBuffer.tokens.isEmpty();
         singleTouchCombineBuffer.recordStroke(
                 completedCopy,
                 hasSwipe,
@@ -1548,6 +1636,9 @@ final class MultiGlideWordSession {
                 eventTimeMs,
                 settings.singleTouchCombineDelayMs,
                 settings.autoSpaceEnabled);
+        if (combineWasEmpty && !singleTouchCombineBuffer.tokens.isEmpty()) {
+            singleTouchCombineBuffer.initialCapsMode = strokeCapsMode;
+        }
 
         boolean scheduleStockSwipeAutospace = settings.autoSpaceEnabled
                 && !sawNonLetter
@@ -1656,21 +1747,18 @@ final class MultiGlideWordSession {
 
         String bestWord = candidates.get(0).word;
         String capContext = (textSnapshotAtActionDown != null) ? textSnapshotAtActionDown : liveSnapshot;
-        boolean capitalizeFirst = !attachingAfterDeletion && shouldCapitalizeFirstLetter(capContext);
-        if (attachingAfterDeletion && bestWord.length() > 0) {
-            bestWord = lowercaseFirstChar(bestWord);
-        } else if (capitalizeFirst && bestWord.length() > 0) {
-            bestWord = capitalizeFirstChar(bestWord);
-        }
+        CapsMode effectiveCapsMode = currentWordCapsMode != null ? currentWordCapsMode : CapsMode.AUTO;
+        boolean capitalizeFirst = effectiveCapsMode == CapsMode.CAPS_LOCK
+                || effectiveCapsMode == CapsMode.SHIFT
+                || (effectiveCapsMode == CapsMode.AUTO
+                        && !attachingAfterDeletion
+                        && shouldCapitalizeFirstLetter(capContext));
+        bestWord = applyWordCasing(bestWord, attachingAfterDeletion, effectiveCapsMode, capContext);
 
         List<String> alternativeWords = new ArrayList<>(candidates.size());
         for (int i = 0; i < candidates.size(); i++) {
-            String w = candidates.get(i).word;
-            if (attachingAfterDeletion && w.length() > 0) {
-                w = lowercaseFirstChar(w);
-            } else if (capitalizeFirst && w.length() > 0) {
-                w = capitalizeFirstChar(w);
-            }
+            String w = applyWordCasing(
+                    candidates.get(i).word, attachingAfterDeletion, effectiveCapsMode, capContext);
             if (!alternativeWords.contains(w)) {
                 alternativeWords.add(w);
             }

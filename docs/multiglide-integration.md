@@ -208,9 +208,13 @@ flowchart TD
   - When `MG-21` deletes a whole MultiGlide word, any leading space that preceded the word (e.g., `"Hallo "` before `"Welt"`) remains intact, so `MG-13` does not trigger unless the user explicitly presses Backspace again to delete that space back onto a letter/digit stem.
 - **Implementation:** `MultiGlideWordSession` (`didDeleteTrailingChars`, `isAttachingAfterDeletion`, `lowercaseFirstChar`), `GboardMultiGlideRuntime`, `MultiGlideGeometry.isSpaceKeyAt`.
 
-#### `MG-14` — Sentence-Start & Post-Newline Capitalization
-- **Rule:** When not attaching directly after Backspace (`!attachingAfterBackspace`), MultiGlide capitalizes the first character of `bestWord` and all `alternativeWords` if the text before the cursor is empty, contains only whitespace, ends with `'\n'`, or ends with `'.'`, `'!'`, or `'?'` (ignoring trailing whitespace).
-- **Implementation:** `MultiGlideWordSession.shouldCapitalizeFirstLetter`, `capitalizeFirstChar`.
+#### `MG-14` — Shift, Caps Lock & Sentence-Start Capitalization
+- **Rule:** MultiGlide respects Gboard's live Shift and Caps Lock keyboard state (`CapsMode`) captured on `ACTION_DOWN` (and preserved across promoted `MG-08`/`MG-09` tap/combine prefixes and `MG-10` word continuations):
+  - **`CAPS_LOCK` (`SHIFT_LOCK`):** Uppercases the entire word (`toUpperCase(Locale.ROOT)`) for `bestWord`, all `alternativeWords`, and live-guess previews.
+  - **`SHIFT` (one-shot Shift or auto-caps):** Capitalizes the first character of `bestWord`, all `alternativeWords`, and live-guess previews (`capitalizeFirstChar`), even mid-sentence or after `Backspace -> Shift -> Word`.
+  - **`NONE` (unshifted):** Leaves dictionary casing intact (without forcing sentence-start capitalization even at field start or after `.` / `!` / `?` if the user toggled Shift off), and lowercases the first character when attaching after Backspace (`MG-13`).
+  - **`AUTO` (fallback when keyboard state is unavailable):** Lowercases the first character when attaching after Backspace (`MG-13`); otherwise capitalizes the first character if the text before the cursor is empty, contains only whitespace, ends with `'\n'`, or ends with `'.'`, `'!'`, or `'?'` (ignoring trailing whitespace).
+- **Implementation:** `GboardMultiGlideRuntime.readKeyboardCapsMode`, `MultiGlideWordSession.CapsMode`, `applyWordCasing`, `shouldCapitalizeFirstLetter`, `capitalizeFirstChar`.
 
 ---
 
@@ -294,7 +298,7 @@ flowchart TD
 | `MG-11` | `MultiGlideWordSession.shouldPrependLeadingSpace` | `GboardMultiGlideSettingsTest#detectsWhenLeadingSpaceIsNeededBeforeMultiGlideWord`, `MultiGlideIntegrationTest#prependsLeadingSpaceAfterStockWordWhenAutoSpaceOn` | **Covered** |
 | `MG-12` | `MultiGlideWordSession.finalizeAutospace`, `eatBefore` | `GboardMultiGlideSettingsTest#sanitizesAndPersistsAutoSpaceAndDelayPreferences`, `MultiGlideIntegrationTest#autospaceCommitsSpaceAndRetractsBeforeHuggingPunctuation` | **Covered** |
 | `MG-13` | `MultiGlideWordSession` (`didDeleteTrailingChars`, `isAttachingAfterDeletion`) | `MultiGlideDecoderTest#suppressesLeadingSpaceAndLowercasesWhenAttachingAfterBackspace`, `MultiGlideIntegrationTest#backspaceCompoundAttachmentWorksInShortAndLongTextsAndIgnoresCursorMoves` | **Covered** |
-| `MG-14` | `MultiGlideWordSession.shouldCapitalizeFirstLetter`, `capitalizeFirstChar` | `MultiGlideIntegrationTest#capitalizesSentenceStartsAndNewlinesUnlessAttachingAfterBackspace` | **Covered** |
+| `MG-14` | `GboardMultiGlideRuntime.readKeyboardCapsMode`, `MultiGlideWordSession` (`CapsMode`, `applyWordCasing`, `shouldCapitalizeFirstLetter`) | `MultiGlideIntegrationTest#capitalizesSentenceStartsAndNewlinesUnlessAttachingAfterBackspace`, `respectsShiftCapsLockAndUnshiftedStateAcrossMultiGlideWords` | **Covered** |
 | `MG-15` | `GboardMultiGlideRuntime` (`extractKeysFromNativeLayoutArrays`, etc.) | `MultiGlideDecoderTest#extractsNativeLayoutKeysWithoutTextViewsIncludingUmlauts` | **Covered** |
 | `MG-16` | `MultiGlideGeometry` (`setKeys`, `isOnLetterArea`, `isSpaceKeyAt`) | `MultiGlideDecoderTest#isOnLetterAreaRejectsNonLetterKeysAndAcceptsLetterKeysAndUmlauts` | **Covered** |
 | `MG-17` | `GboardMultiGlideDictionaryManager`, `GboardLmReader` | `GboardLmReaderTest#parsesUnigramsBigramsAndFiltersInternalTokens`, `capsBigramsByStrengthAndSupportsNestedMarisaTailTrie`, `normalizesLanguageTagsConsistently`, `filtersInternalVocabularyTokensAsExpected`, `synthesizesTopCompoundWordsFromUnderscoreBigramsWithGermanCasing`, `synthesizesTopTripleCompoundsFromInfixChainsWithCap`, `extractsExplicitLevel2TrigramsAndFiltersWeakChainedEdges`, `compactTrieSupportsBitmaskTraversalMultiFormsAndPostCompactInsertion` | **Partial** (LM parsing/filtering/compounds/compact trie covered; Android `UserDictionary` ContentResolver query runtime-only) |

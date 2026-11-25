@@ -143,6 +143,7 @@ public final class GboardMultiGlideRuntime {
     private static volatile Field gestureOverlayPaintField;
     private static volatile Field hostBridgeField;
     private static volatile Method claimOwnershipMethod;
+    private static volatile Method getKeyboardStateMethod;
     private static volatile Field bridgeDispatcherField;
     private static volatile Field dispatcherOwnerField;
     private static volatile Field gestureActiveFlagField;
@@ -162,6 +163,7 @@ public final class GboardMultiGlideRuntime {
     private static volatile Field nativeLayoutWidthArrField;
     private static volatile Field nativeLayoutHeightArrField;
     private static volatile Field softKeyViewDefField;
+    private static volatile Field softKeyViewStateField;
     private static volatile Field softKeyDefLabelsField;
     private static volatile Field softKeyDefDescField;
     private static volatile Method basicHandlerTouchMethod;
@@ -466,7 +468,8 @@ public final class GboardMultiGlideRuntime {
                     int pid = event.getPointerId(0);
                     float x = event.getX(0);
                     float y = event.getY(0);
-                    session.core.onActionDown(pid, x, y, eventTime, settings, editor, callbacks);
+                    MultiGlideWordSession.CapsMode capsMode = readKeyboardCapsMode(handler);
+                    session.core.onActionDown(pid, x, y, eventTime, settings, editor, callbacks, capsMode);
                     break;
                 }
 
@@ -476,6 +479,9 @@ public final class GboardMultiGlideRuntime {
                     float y = event.getY(actionIndex);
                     finishTrailForPointer(handler, pid, false);
                     session.core.onPointerDown(pid, x, y, eventTime);
+                    if (!session.core.lastDownOnLetterArea && session.geometry.isOnLetterArea(x, y)) {
+                        session.core.mergeCapsModeOnPointerDown(readKeyboardCapsMode(handler));
+                    }
                     markNativeLetterStarted(handler);
                     ensureSoftKeyMapPopulated(handler, session, event);
                     maybeActivateTakeover(handler, session, multiGlideThreshold, false);
@@ -913,6 +919,7 @@ public final class GboardMultiGlideRuntime {
         final boolean replacingTapPrefix = session.core.hasPendingTapPrefixInEditor();
         final String snapshotAtDown = session.core.textSnapshotAtActionDown;
         final boolean suppressLeadingSpace = session.core.suppressNextLeadingSpace;
+        final MultiGlideWordSession.CapsMode capsModeAtDown = session.core.currentWordCapsMode;
         final MultiGlideGeometry geomRef = session.geometry;
         LIVE_PREVIEW_EXECUTOR.execute(() -> {
             try {
@@ -934,7 +941,7 @@ public final class GboardMultiGlideRuntime {
                     return;
                 }
                 String formatted = MultiGlideWordSession.formatWordForContext(
-                        candidates.get(0).word, snapshotAtDown, suppressLeadingSpace);
+                        candidates.get(0).word, snapshotAtDown, suppressLeadingSpace, capsModeAtDown);
                 if (formatted != null && !formatted.isEmpty()) {
                     GboardThiccTopBarRuntime.updateLiveGuess(formatted, replacingTapPrefix);
                 }
@@ -2086,7 +2093,7 @@ public final class GboardMultiGlideRuntime {
     private static char findSoftKeyCharAt(View view, float localX, float localY) {
         if (view == null || view.getVisibility() != View.VISIBLE) return '\0';
         if (view.getClass().getSimpleName().contains("SoftKeyView")) {
-            return extractSingleLetterFromSoftKeyView(view);
+            return Character.toLowerCase(extractRawSingleLetterFromSoftKeyView(view));
         }
         if (view instanceof ViewGroup group) {
             for (int i = group.getChildCount() - 1; i >= 0; i--) {
@@ -2436,7 +2443,227 @@ public final class GboardMultiGlideRuntime {
                 || MultiGlideGeometry.NO_SPACE_BEFORE.indexOf(ch) >= 0;
     }
 
+    static final long GBOARD_STATE_SHIFT = 0x1L;
+    static final long GBOARD_STATE_SHIFT_LOCK_MASK = 0x2L;
+    static final long GBOARD_STATE_SHIFT_LOCK = 0x3L;
+    static final long GBOARD_STATE_CAPS = 0x20000000000L;
+    static final long GBOARD_STATE_CAPS_LOCK = 0x60000000000L;
+
+    /**
+     * Reads Gboard's live Shift / Caps Lock state directly from the motion-event host bridge
+     * ({@code handler.p.b()} -> {@code IKeyboard.getStates()}), falling back to {@code SoftKeyView}
+     * state bitmasks and key-label casing inspection if reflection is unavailable.
+     */
+    static MultiGlideWordSession.CapsMode readKeyboardCapsMode(Object handler) {
+        if (handler == null) return MultiGlideWordSession.CapsMode.AUTO;
+        long liveState = readHostBridgeKeyboardState(handler);
+        if (liveState >= 0L) {
+            return capsModeFromKeyboardState(liveState);
+        }
+        Object kbView = null;
+        try {
+            if (keyboardViewField != null) {
+                kbView = keyboardViewField.get(handler);
+            }
+            long combinedState = readCombinedSoftKeyStateMask(handler, kbView);
+            if (combinedState >= 0L) {
+                return capsModeFromStateMask(combinedState, handler, kbView);
+            }
+        } catch (Throwable ignored) {
+        }
+        return detectCapsModeFromKeyLabels(handler, kbView);
+    }
+
+    private static long readHostBridgeKeyboardState(Object handler) {
+        try {
+            if (hostBridgeField == null || getKeyboardStateMethod == null) {
+                return -1L;
+            }
+            Object bridge = hostBridgeField.get(handler);
+            if (bridge == null) {
+                return -1L;
+            }
+            Object res = getKeyboardStateMethod.invoke(bridge);
+            if (res instanceof Long) {
+                return ((Long) res).longValue();
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1L;
+    }
+
+    static MultiGlideWordSession.CapsMode capsModeFromKeyboardState(long state) {
+        if ((state & GBOARD_STATE_SHIFT_LOCK) == GBOARD_STATE_SHIFT_LOCK
+                || (state & GBOARD_STATE_CAPS_LOCK) == GBOARD_STATE_CAPS_LOCK) {
+            return MultiGlideWordSession.CapsMode.CAPS_LOCK;
+        }
+        if ((state & GBOARD_STATE_SHIFT) != 0L
+                || (state & GBOARD_STATE_CAPS) != 0L) {
+            return MultiGlideWordSession.CapsMode.SHIFT;
+        }
+        return MultiGlideWordSession.CapsMode.NONE;
+    }
+
+    private static long readCombinedSoftKeyStateMask(Object handler, Object kbView) {
+        long combined = 0L;
+        int inspected = 0;
+        try {
+            if (nativeLayoutDataField != null && nativeLayoutKeysArrayField != null) {
+                Object nativeLayout = nativeLayoutDataField.get(handler);
+                if (nativeLayout != null) {
+                    Object sparseObj = nativeLayoutKeysArrayField.get(nativeLayout);
+                    if (sparseObj instanceof SparseArray) {
+                        SparseArray<?> map = (SparseArray<?>) sparseObj;
+                        for (int i = 0; i < map.size(); i++) {
+                            Object keyObj = map.valueAt(i);
+                            if (keyObj == null) continue;
+                            if (keyObj instanceof View && ((View) keyObj).getVisibility() != View.VISIBLE) {
+                                continue;
+                            }
+                            Field f = resolveUniqueLongField(keyObj.getClass(), "f", softKeyViewStateField);
+                            if (f == null) continue;
+                            softKeyViewStateField = f;
+                            combined |= f.getLong(keyObj);
+                            inspected++;
+                            if ((combined & GBOARD_STATE_SHIFT_LOCK_MASK) != 0L) {
+                                return combined;
+                            }
+                        }
+                    }
+                }
+            }
+            if (inspected == 0 && kbView instanceof ViewGroup) {
+                long[] out = new long[] {0L, 0L}; // [0]=combined, [1]=count
+                collectSoftKeyStateFromViewGroup((ViewGroup) kbView, out);
+                if (out[1] > 0L) {
+                    return out[0];
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return (inspected > 0) ? combined : -1L;
+    }
+
+    private static void collectSoftKeyStateFromViewGroup(ViewGroup group, long[] out) throws IllegalAccessException {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child == null || child.getVisibility() != View.VISIBLE) continue;
+            if (child.getClass().getSimpleName().contains("SoftKeyView")) {
+                Field f = resolveUniqueLongField(child.getClass(), "f", softKeyViewStateField);
+                if (f != null) {
+                    softKeyViewStateField = f;
+                    out[0] |= f.getLong(child);
+                    out[1]++;
+                    if ((out[0] & GBOARD_STATE_SHIFT_LOCK_MASK) != 0L) {
+                        return;
+                    }
+                }
+            } else if (child instanceof ViewGroup) {
+                collectSoftKeyStateFromViewGroup((ViewGroup) child, out);
+                if ((out[0] & GBOARD_STATE_SHIFT_LOCK_MASK) != 0L) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private static MultiGlideWordSession.CapsMode capsModeFromStateMask(
+            long state,
+            Object handler,
+            Object kbView
+    ) {
+        MultiGlideWordSession.CapsMode fromBits = capsModeFromKeyboardState(state);
+        if (fromBits != MultiGlideWordSession.CapsMode.NONE) {
+            return fromBits;
+        }
+        // Cross-check letter key labels in case Gboard shifts bit positions in a future build.
+        if (detectCapsModeFromKeyLabels(handler, kbView) == MultiGlideWordSession.CapsMode.SHIFT) {
+            return MultiGlideWordSession.CapsMode.SHIFT;
+        }
+        return MultiGlideWordSession.CapsMode.NONE;
+    }
+
+    private static Field resolveUniqueLongField(Class<?> cls, String preferredName, Field cached) {
+        if (cached != null) return cached;
+        if (cls == null) return null;
+        Field unique = null;
+        int longCount = 0;
+        for (Field f : cls.getDeclaredFields()) {
+            if (f.getType() == long.class) {
+                f.setAccessible(true);
+                if (preferredName.equals(f.getName())) {
+                    return f;
+                }
+                unique = f;
+                longCount++;
+            }
+        }
+        return (longCount == 1) ? unique : null;
+    }
+
+    private static MultiGlideWordSession.CapsMode detectCapsModeFromKeyLabels(Object handler, Object kbView) {
+        int[] counts = new int[2]; // [0]=upper, [1]=lower
+        try {
+            if (nativeLayoutDataField != null && nativeLayoutKeysArrayField != null) {
+                Object nativeLayout = nativeLayoutDataField.get(handler);
+                if (nativeLayout != null) {
+                    Object sparseObj = nativeLayoutKeysArrayField.get(nativeLayout);
+                    if (sparseObj instanceof SparseArray) {
+                        SparseArray<?> map = (SparseArray<?>) sparseObj;
+                        for (int i = 0; i < map.size() && (counts[0] + counts[1]) < 8; i++) {
+                            Object keyObj = map.valueAt(i);
+                            if (keyObj == null) continue;
+                            if (keyObj instanceof View && ((View) keyObj).getVisibility() != View.VISIBLE) {
+                                continue;
+                            }
+                            tallyRawLetterCase(extractRawSupportedCharFromSoftKey(keyObj), counts);
+                        }
+                    }
+                }
+            }
+            if ((counts[0] + counts[1]) < 3 && kbView instanceof ViewGroup) {
+                tallyKeyLabelsFromViewGroup((ViewGroup) kbView, counts);
+            }
+        } catch (Throwable ignored) {
+        }
+        if (counts[0] >= 3 && counts[0] > counts[1]) {
+            return MultiGlideWordSession.CapsMode.SHIFT;
+        }
+        if (counts[1] >= 3 && counts[1] > counts[0]) {
+            return MultiGlideWordSession.CapsMode.NONE;
+        }
+        return MultiGlideWordSession.CapsMode.AUTO;
+    }
+
+    private static void tallyKeyLabelsFromViewGroup(ViewGroup group, int[] counts) {
+        for (int i = 0; i < group.getChildCount() && (counts[0] + counts[1]) < 8; i++) {
+            View child = group.getChildAt(i);
+            if (child == null || child.getVisibility() != View.VISIBLE) continue;
+            if (child.getClass().getSimpleName().contains("SoftKeyView")) {
+                tallyRawLetterCase(extractRawSupportedCharFromSoftKey(child), counts);
+            } else if (child instanceof ViewGroup) {
+                tallyKeyLabelsFromViewGroup((ViewGroup) child, counts);
+            }
+        }
+    }
+
+    private static void tallyRawLetterCase(char rawCh, int[] counts) {
+        if (rawCh == '\0' || !Character.isLetter(rawCh)) return;
+        if (Character.isUpperCase(rawCh)) {
+            counts[0]++;
+        } else if (Character.isLowerCase(rawCh)) {
+            counts[1]++;
+        }
+    }
+
     private static char extractSupportedCharFromSoftKey(Object softKeyObj) {
+        char raw = extractRawSupportedCharFromSoftKey(softKeyObj);
+        return (raw == '\0' || raw == MultiGlideGeometry.KEY_CHAR_BACKSPACE)
+                ? raw
+                : Character.toLowerCase(raw);
+    }
+
+    private static char extractRawSupportedCharFromSoftKey(Object softKeyObj) {
         try {
             Field defField = softKeyViewDefField;
             if (defField == null) {
@@ -2455,18 +2682,18 @@ public final class GboardMultiGlideRuntime {
             }
             Object softKeyDef = (defField != null) ? defField.get(softKeyObj) : null;
             if (softKeyDef != null) {
-                char fromDef = extractSupportedCharFromSoftKeyDef(softKeyDef);
+                char fromDef = extractRawSupportedCharFromSoftKeyDef(softKeyDef);
                 if (fromDef != '\0') return fromDef;
             }
         } catch (Throwable ignored) {
         }
         if (softKeyObj instanceof View) {
-            return extractSingleLetterFromSoftKeyView((View) softKeyObj);
+            return extractRawSingleLetterFromSoftKeyView((View) softKeyObj);
         }
         return '\0';
     }
 
-    private static char extractSupportedCharFromSoftKeyDef(Object softKeyDef) {
+    private static char extractRawSupportedCharFromSoftKeyDef(Object softKeyDef) {
         try {
             if (softKeyDefLabelsField == null) {
                 Field iCandidate = null;
@@ -2507,9 +2734,9 @@ public final class GboardMultiGlideRuntime {
                         if (item instanceof CharSequence) {
                             String text = item.toString().trim();
                             if (text.length() == 1) {
-                                char ch = Character.toLowerCase(text.charAt(0));
-                                if (isSupportedGeometryChar(ch)) {
-                                    return ch;
+                                char raw = text.charAt(0);
+                                if (isSupportedGeometryChar(Character.toLowerCase(raw))) {
+                                    return raw;
                                 }
                             }
                         }
@@ -2522,9 +2749,9 @@ public final class GboardMultiGlideRuntime {
                 if (desc instanceof String) {
                     String s = ((String) desc).trim();
                     if (s.length() == 1) {
-                        char ch = Character.toLowerCase(s.charAt(0));
-                        if (isSupportedGeometryChar(ch)) {
-                            return ch;
+                        char raw = s.charAt(0);
+                        if (isSupportedGeometryChar(Character.toLowerCase(raw))) {
+                            return raw;
                         }
                     } else if (isBackspaceDescription(s)) {
                         return MultiGlideGeometry.KEY_CHAR_BACKSPACE;
@@ -2588,7 +2815,7 @@ public final class GboardMultiGlideRuntime {
         }
     }
 
-    private static char extractSingleLetterFromSoftKeyView(View softKeyView) {
+    private static char extractRawSingleLetterFromSoftKeyView(View softKeyView) {
         if (softKeyView instanceof ViewGroup) {
             ViewGroup vg = (ViewGroup) softKeyView;
             for (int i = 0; i < vg.getChildCount(); i++) {
@@ -2596,9 +2823,9 @@ public final class GboardMultiGlideRuntime {
                 if (c instanceof TextView && c.getVisibility() == View.VISIBLE) {
                     CharSequence text = ((TextView) c).getText();
                     if (text != null && text.length() == 1) {
-                        char ch = Character.toLowerCase(text.charAt(0));
-                        if (isSupportedGeometryChar(ch)) {
-                            return ch;
+                        char raw = text.charAt(0);
+                        if (isSupportedGeometryChar(Character.toLowerCase(raw))) {
+                            return raw;
                         }
                     }
                 }
@@ -2606,9 +2833,9 @@ public final class GboardMultiGlideRuntime {
         }
         CharSequence desc = softKeyView.getContentDescription();
         if (desc != null && desc.length() == 1) {
-            char ch = Character.toLowerCase(desc.charAt(0));
-            if (isSupportedGeometryChar(ch)) {
-                return ch;
+            char raw = desc.charAt(0);
+            if (isSupportedGeometryChar(Character.toLowerCase(raw))) {
+                return raw;
             }
         }
         return '\0';
@@ -2739,6 +2966,14 @@ public final class GboardMultiGlideRuntime {
                                 Method m = type.getDeclaredMethod("m");
                                 m.setAccessible(true);
                                 claimOwnershipMethod = m;
+                            } catch (Throwable ignored) {
+                            }
+                            try {
+                                Method stateMethod = type.getDeclaredMethod("b");
+                                if (stateMethod.getReturnType() == long.class) {
+                                    stateMethod.setAccessible(true);
+                                    getKeyboardStateMethod = stateMethod;
+                                }
                             } catch (Throwable ignored) {
                             }
                         } else if (nativeLayoutDataField == null && looksLikeNativeLayoutData(type)) {
