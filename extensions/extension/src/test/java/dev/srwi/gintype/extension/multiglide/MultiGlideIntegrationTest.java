@@ -1579,6 +1579,63 @@ public class MultiGlideIntegrationTest {
         session.onActionUp(startMs + 60L, settings, editor, decoder, callbacks);
     }
 
+    @Test
+    public void singleFingerTapJitterDoesNotForceGestureStartOrInsertSpacesBetweenLetters() {
+        SettingsSnapshot gboardStyle = new SettingsSnapshot(true, true, 300, 150, true, true);
+        DecodePort decoder = (tokens, prevWord) -> Collections.singletonList(cand("wrong", 1f));
+
+        char[] word = new char[] { 'h', 'a', 'l', 'l', 'o' };
+        long t = 1000L;
+        for (int i = 0; i < word.length; i++) {
+            KeySpec k = key(word[i]);
+            session.onActionDown(0, k.centerX, k.centerY, t, gboardStyle, editor, callbacks);
+            if (i == 1 || i == 2) {
+                // Simulate a ~30px thumb slip inside the key (> multiGlideThresholdPx), while
+                // stock Gboard correctly keeps stockShouldStart == false.
+                session.activePointers.get(0).addPoint(k.centerX + 30f, k.centerY, t + 20L, session.geometry);
+                assertFalse(
+                        "Single-finger tap jitter must not force Gboard into swipe mode",
+                        session.shouldStartGesture(true, false, false));
+            }
+            session.onActionUp(t + 40L, gboardStyle, editor, decoder, callbacks);
+            editor.stockType(String.valueOf(word[i]));
+            assertFalse(
+                    "Unconfirmed single-finger tap jitter must not schedule stock swipe autospace",
+                    callbacks.stockSwipeAutospaceScheduled);
+            assertFalse(
+                    "Unconfirmed single-finger tap jitter must not arm leading space before next letter",
+                    session.pendingLeadingSpaceBeforeNextWord);
+            t += 220L;
+        }
+
+        assertTrue("Pure taps with minor jitter must not decode via MultiGlide", callbacks.decodedWords.isEmpty());
+        assertEquals("hallo", editor.text());
+    }
+
+    @Test
+    public void confirmedSingleFingerStockSwipeStillArmsAutoSpaceBeforeNextWord() {
+        SettingsSnapshot gboardStyle = new SettingsSnapshot(true, true, 300, 150, true, true);
+        DecodePort decoder = (tokens, prevWord) -> Collections.emptyList();
+
+        KeySpec h = key('h');
+        KeySpec o = key('o');
+        session.onActionDown(0, h.centerX, h.centerY, 1000L, gboardStyle, editor, callbacks);
+        session.activePointers.get(0).addPoint(o.centerX, o.centerY, 1080L, session.geometry);
+        assertTrue(session.shouldStartGesture(true, true, false));
+        session.onActionUp(1100L, gboardStyle, editor, decoder, callbacks);
+        editor.stockType("hallo");
+
+        assertTrue(callbacks.stockSwipeAutospaceScheduled);
+        session.finalizeStockSwipeAutospace(true, true, editor, callbacks);
+        assertTrue(session.pendingLeadingSpaceBeforeNextWord);
+
+        KeySpec w = key('w');
+        session.onActionDown(0, w.centerX, w.centerY, 1500L, gboardStyle, editor, callbacks);
+        session.onActionUp(1540L, gboardStyle, editor, decoder, callbacks);
+        editor.stockType("w");
+        assertEquals("hallo w", editor.text());
+    }
+
     private boolean performBackspaceTap(
             long downMs,
             SettingsSnapshot settings,

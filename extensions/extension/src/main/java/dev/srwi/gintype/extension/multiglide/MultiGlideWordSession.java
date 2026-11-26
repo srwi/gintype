@@ -742,6 +742,8 @@ final class MultiGlideWordSession {
     boolean multiGlideTakeoverActive = false;
     boolean multiGlideWordActive = false;
     boolean sawNonLetterThisSession = false;
+    boolean observedShouldStartGestureThisStroke = false;
+    boolean stockGestureStartedThisStroke = false;
     String textSnapshotAtActionDown = null;
     boolean leadingSpaceEvaluated = false;
     boolean suppressNextLeadingSpace = false;
@@ -792,6 +794,8 @@ final class MultiGlideWordSession {
         sawMultiTouch = false;
         multiGlideTakeoverActive = false;
         sawNonLetterThisSession = false;
+        observedShouldStartGestureThisStroke = false;
+        stockGestureStartedThisStroke = false;
         restingDroppedThisSession = 0;
     }
 
@@ -1385,7 +1389,10 @@ final class MultiGlideWordSession {
             callbacks.onClearTrailManagerActive();
         }
 
-        boolean allowTapOnlySingleCombine = !settings.autoSpaceEnabled || settings.tapToMultiGlideDelayMs > 0;
+        boolean singleTouchSwipeConfirmed = !observedShouldStartGestureThisStroke
+                || stockGestureStartedThisStroke;
+        boolean allowTapOnlySingleCombine = (!settings.autoSpaceEnabled || settings.tapToMultiGlideDelayMs > 0)
+                && singleTouchSwipeConfirmed;
         boolean promoteMultiTouchPassive = !multiGlideWordActive
                 && passiveTapBuffer.canPromoteMultiTouchSwipe(completedTokens);
         boolean promoteSingleTouchCombine = !multiGlideWordActive
@@ -1618,10 +1625,14 @@ final class MultiGlideWordSession {
                     failedCandidates);
         }
 
+        boolean stockSwipeConfirmed = hasSwipe
+                && (!observedShouldStartGestureThisStroke || stockGestureStartedThisStroke);
+        boolean effectiveStrokeHasSwipe = strokeHadMultiTouch ? hasSwipe : stockSwipeConfirmed;
+
         boolean passiveWasEmpty = passiveTapBuffer.tokens.isEmpty();
         passiveTapBuffer.recordStroke(
                 completedCopy,
-                hasSwipe,
+                effectiveStrokeHasSwipe,
                 sawNonLetter,
                 strokeHadMultiTouch,
                 tapBaselineAtDown,
@@ -1634,7 +1645,7 @@ final class MultiGlideWordSession {
         boolean combineWasEmpty = singleTouchCombineBuffer.tokens.isEmpty();
         singleTouchCombineBuffer.recordStroke(
                 completedCopy,
-                hasSwipe,
+                effectiveStrokeHasSwipe,
                 sawNonLetter,
                 tapBaselineAtDown,
                 eventTimeMs,
@@ -1647,7 +1658,9 @@ final class MultiGlideWordSession {
         boolean scheduleStockSwipeAutospace = settings.autoSpaceEnabled
                 && !sawNonLetter
                 && !strokeHadMultiTouch
-                && (hasSwipe || (!singleTouchCombineBuffer.tokens.isEmpty() && singleTouchCombineBuffer.hasSwipeToken));
+                && (stockSwipeConfirmed
+                        || (!singleTouchCombineBuffer.tokens.isEmpty()
+                                && singleTouchCombineBuffer.hasSwipeToken));
         if (scheduleStockSwipeAutospace && settings.autoSpaceBeforeWord
                 && (settings.singleTouchCombineDelayMs <= 0 || singleTouchCombineBuffer.tokens.isEmpty())) {
             pendingLeadingSpaceBeforeNextWord = true;
@@ -2168,8 +2181,10 @@ final class MultiGlideWordSession {
 
     boolean shouldStartGesture(boolean enabled, boolean stockShouldStart, boolean gestureAlreadyActive) {
         if (!enabled) return stockShouldStart;
+        observedShouldStartGestureThisStroke = true;
         boolean multiGlideControlled = sawMultiTouch || multiGlideTakeoverActive || multiGlideWordActive;
         if (stockShouldStart) {
+            stockGestureStartedThisStroke = true;
             if (multiGlideControlled) {
                 multiGlideTakeoverActive = true;
             }
@@ -2178,10 +2193,8 @@ final class MultiGlideWordSession {
         if (gestureAlreadyActive) {
             return false;
         }
-        if (hasAnySwipingPointer(multiGlideThresholdPx())) {
-            if (multiGlideControlled) {
-                multiGlideTakeoverActive = true;
-            }
+        if (multiGlideControlled && hasAnySwipingPointer(multiGlideThresholdPx())) {
+            multiGlideTakeoverActive = true;
             return true;
         }
         return false;
