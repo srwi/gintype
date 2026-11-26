@@ -9,7 +9,8 @@ import com.android.tools.smali.dexlib2.AccessFlags
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
 import com.android.tools.smali.dexlib2.immutable.ImmutableMethodImplementation
 import dev.srwi.gintype.patches.gboard.shared.addHelperMethodIfMissing
-import dev.srwi.gintype.patches.gboard.shared.findMutableMethodOrThrow
+import dev.srwi.gintype.patches.gboard.shared.findBasicMotionEventHandlerFireKeyDataMethod
+import dev.srwi.gintype.patches.gboard.shared.findSoftKeyboardViewTargetHeightMethod
 import dev.srwi.gintype.patches.gboard.shared.gboardPatchesExtensionCarrierPatch
 import dev.srwi.gintype.patches.gboard.shared.instructionIndices
 import dev.srwi.gintype.patches.gboard.shared.isMethodReference
@@ -77,15 +78,7 @@ internal val gboardThiccTopBarBytecodePatch = bytecodePatch(
         dispatchTouchMethod.applySoftKeyboardViewTouchDelegate()
 
         val basicHandlerClass = mutableClass(BASIC_MOTION_EVENT_HANDLER_CLASS)
-        val fireKeyDataMethod = basicHandlerClass.methods.firstOrNull {
-            it.name == "o" &&
-                it.returnType == "V" &&
-                it.parameterTypes.size >= 4 &&
-                it.parameterTypes[0] == TOUCH_ACTION_BUNDLE_CLASS &&
-                it.parameterTypes[3] == SOFT_KEY_DEF_CLASS
-        } ?: throw PatchException(
-            "Could not find o(...)V in $BASIC_MOTION_EVENT_HANDLER_CLASS",
-        )
+        val fireKeyDataMethod = findBasicMotionEventHandlerFireKeyDataMethod(basicHandlerClass)
         fireKeyDataMethod.applyKeyDataDispatchedDelegate()
 
         softKeyboardViewClass.applyHeaderTargetHeightWrapper()
@@ -207,14 +200,7 @@ internal fun MutableClass.applyHeaderTargetHeightWrapper() {
     val scaleAbi = RuntimeAbiCatalog.abi(
         RuntimeCallId.THICC_TOP_BAR_RUNTIME_SCALE_HEADER_TARGET_HEIGHT,
     )
-    val targetMethod = methods.firstOrNull {
-        it.name == TARGET_HEIGHT_METHOD_NAME &&
-            it.parameterTypes.isEmpty() &&
-            it.returnType == "I" &&
-            (it.accessFlags and AccessFlags.STATIC.value) == 0
-    } ?: throw PatchException(
-        "Could not find $TARGET_HEIGHT_METHOD_NAME()I in $type",
-    )
+    val targetMethod = findSoftKeyboardViewTargetHeightMethod(this)
 
     val existingHelper = methods.any { it.name == ORIG_TARGET_HEIGHT_HELPER_NAME }
     val existingScaleCalls = targetMethod.implementation?.instructions
@@ -222,7 +208,7 @@ internal fun MutableClass.applyHeaderTargetHeightWrapper() {
         ?: 0
     if (existingHelper || existingScaleCalls > 0) {
         check(existingHelper && existingScaleCalls == 1) {
-            "Expected $type->$TARGET_HEIGHT_METHOD_NAME()I to be wrapped once"
+            "Expected $type->${targetMethod.name}()I to be wrapped once"
         }
         return
     }
@@ -279,8 +265,4 @@ private const val SOFT_KEYBOARD_VIEW_CLASS =
     "Lcom/google/android/libraries/inputmethod/widgets/SoftKeyboardView;"
 private const val BASIC_MOTION_EVENT_HANDLER_CLASS =
     "Lcom/google/android/libraries/inputmethod/motioneventhandler/BasicMotionEventHandler;"
-private const val TOUCH_ACTION_BUNDLE_CLASS = "Lqin;"
-private const val SOFT_KEY_DEF_CLASS =
-    "Lcom/google/android/libraries/inputmethod/metadata/SoftKeyDef;"
-private const val TARGET_HEIGHT_METHOD_NAME = "z"
 private const val ORIG_TARGET_HEIGHT_HELPER_NAME = "gboardPatchesOriginalTargetHeight"

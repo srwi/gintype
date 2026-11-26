@@ -33,6 +33,7 @@ import dev.srwi.gintype.extension.thicctopbar.ThiccTopBarGboardReflector;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -244,16 +245,10 @@ public final class GboardCustomHoldPopupsRuntime {
     // SoftKeyDef reflection
     private static volatile Class<?> softKeyDefClass;
     private static volatile Constructor<?> softKeyDefCtor;
-    private static volatile Field softKeyDefComposeField;       // e : SoftKeyDef$Compose
-    private static volatile Field softKeyDefIdField;            // f : I
-    private static volatile Field softKeyDefLayoutIdField;      // g : I
-    private static volatile Field softKeyDefActionDefsField;    // h : Lwns;
-    private static volatile Field softKeyDefLabelsField;        // i : Lwns;
-    private static volatile Field softKeyDefLabelLocsField;     // j : [I
-    private static volatile Field softKeyDefIconsField;         // k : Lwns;
-    private static volatile Field softKeyDefIconLocsField;      // l : [I
-    private static volatile Field softKeyDefContentDescField;   // m : String
-    private static volatile Field softKeyDefTooltipField;       // n : String
+    private static volatile Field[] softKeyDefCtorFields;
+    private static volatile int softKeyDefActionDefsParamIndex = -1;
+    private static volatile Field softKeyDefActionDefsField;
+    private static volatile Field softKeyDefLabelsField;
 
     // SoftKeyView reflection
     private static volatile Field softKeyViewDefField;          // e : SoftKeyDef
@@ -1361,17 +1356,15 @@ public final class GboardCustomHoldPopupsRuntime {
         }
 
         Object actionDefsImmutable = toImmutableList(updatedActionDefs.toArray(new Object[0]));
-        return softKeyDefCtor.newInstance(
-                softKeyDefComposeField.get(originalSoftKeyDef),
-                softKeyDefIdField.getInt(originalSoftKeyDef),
-                softKeyDefLayoutIdField.getInt(originalSoftKeyDef),
-                actionDefsImmutable,
-                softKeyDefLabelsField.get(originalSoftKeyDef),
-                softKeyDefLabelLocsField.get(originalSoftKeyDef),
-                softKeyDefIconsField.get(originalSoftKeyDef),
-                softKeyDefIconLocsField.get(originalSoftKeyDef),
-                softKeyDefContentDescField.get(originalSoftKeyDef),
-                softKeyDefTooltipField.get(originalSoftKeyDef));
+        Field[] ctorFields = softKeyDefCtorFields;
+        int actionDefsIdx = softKeyDefActionDefsParamIndex;
+        Object[] ctorArgs = new Object[ctorFields.length];
+        for (int i = 0; i < ctorFields.length; i++) {
+            ctorArgs[i] = (i == actionDefsIdx)
+                    ? actionDefsImmutable
+                    : ctorFields[i].get(originalSoftKeyDef);
+        }
+        return softKeyDefCtor.newInstance(ctorArgs);
     }
 
     private static boolean isSingleLetterSymbol(String s) {
@@ -1686,80 +1679,105 @@ public final class GboardCustomHoldPopupsRuntime {
                                 false,
                                 classLoader);
                 softKeyDefClass = skdCls;
-                softKeyDefComposeField = findDeclaredField(skdCls, "e");
-                softKeyDefIdField = findDeclaredField(skdCls, "f");
-                softKeyDefLayoutIdField = findDeclaredField(skdCls, "g");
-                softKeyDefActionDefsField = findDeclaredField(skdCls, "h");
-                softKeyDefLabelsField = findDeclaredField(skdCls, "i");
-                softKeyDefLabelLocsField = findDeclaredField(skdCls, "j");
-                softKeyDefIconsField = findDeclaredField(skdCls, "k");
-                softKeyDefIconLocsField = findDeclaredField(skdCls, "l");
-                softKeyDefContentDescField = findDeclaredField(skdCls, "m");
-                softKeyDefTooltipField = findDeclaredField(skdCls, "n");
+
+                // Resolve SoftKeyDef primary constructor and non-static, non-transient fields
+                // structurally so both 18.5.4 (10-arg with Compose) and 18.8.1+ (20-arg Kotlin)
+                // work identically without hardcoding obfuscated field letters.
+                List<Field> skdFields = collectInstanceCtorFields(skdCls);
+                Constructor<?> skdCtor = findMatchingPrimaryConstructor(skdCls, skdFields);
+                if (skdCtor == null) {
+                    throw new NoSuchMethodException(
+                            "Could not match primary SoftKeyDef constructor to " + skdFields.size() + " fields");
+                }
+                skdCtor.setAccessible(true);
+                softKeyDefCtor = skdCtor;
+                softKeyDefCtorFields = skdFields.toArray(new Field[0]);
+
+                int listFieldCount = 0;
+                for (int i = 0; i < skdFields.size(); i++) {
+                    Field f = skdFields.get(i);
+                    if (List.class.isAssignableFrom(f.getType())) {
+                        if (listFieldCount == 0) {
+                            softKeyDefActionDefsField = f;
+                            softKeyDefActionDefsParamIndex = i;
+                        } else if (listFieldCount == 1) {
+                            softKeyDefLabelsField = f;
+                        }
+                        listFieldCount++;
+                    }
+                }
+                if (softKeyDefActionDefsField == null || softKeyDefLabelsField == null) {
+                    throw new NoSuchFieldException("Could not locate actionDefs/labels fields on SoftKeyDef");
+                }
 
                 Class<?> immutableListClass = softKeyDefActionDefsField.getType();
-                immutableListCopyOfArrayMethod =
-                        immutableListClass.getDeclaredMethod("q", Object[].class);
-                immutableListCopyOfArrayMethod.setAccessible(true);
-
-                softKeyDefCtor = skdCls.getDeclaredConstructor(
-                        softKeyDefComposeField.getType(),
-                        int.class,
-                        int.class,
-                        immutableListClass,
-                        immutableListClass,
-                        int[].class,
-                        immutableListClass,
-                        int[].class,
-                        String.class,
-                        String.class);
-                softKeyDefCtor.setAccessible(true);
+                Method copyOfArray = null;
+                for (Method m : immutableListClass.getDeclaredMethods()) {
+                    int mods = m.getModifiers();
+                    if (Modifier.isPublic(mods)
+                            && Modifier.isStatic(mods)
+                            && m.getReturnType() == immutableListClass
+                            && m.getParameterCount() == 1
+                            && m.getParameterTypes()[0] == Object[].class) {
+                        copyOfArray = m;
+                        break;
+                    }
+                }
+                if (copyOfArray == null) {
+                    throw new NoSuchMethodException(
+                            "Could not find public static copyOf(Object[]) on " + immutableListClass.getName());
+                }
+                copyOfArray.setAccessible(true);
+                immutableListCopyOfArrayMethod = copyOfArray;
 
                 Class<?> adCls = Class.forName(
                         "com.google.android.libraries.inputmethod.metadata.ActionDef",
                         false,
                         classLoader);
                 actionDefClass = adCls;
-                actionDefActionField = findDeclaredField(adCls, "e");
-                actionDefKeyDatasField = findDeclaredField(adCls, "f");
-                actionDefActionOnDownField = findDeclaredField(adCls, "g");
-                actionDefRepeatableField = findDeclaredField(adCls, "h");
-                actionDefPopupLayoutField = findDeclaredField(adCls, "i");
-                actionDefAlwaysShowField = findDeclaredField(adCls, "j");
-                actionDefPlayMediaField = findDeclaredField(adCls, "k");
-                actionDefPlayReleaseField = findDeclaredField(adCls, "l");
-                actionDefIconBgLevelField = findDeclaredField(adCls, "m");
-                actionDefMergeIdxField = findDeclaredField(adCls, "n");
-                actionDefContentDescField = findDeclaredField(adCls, "o");
-                actionDefPopupLabelsField = findDeclaredField(adCls, "p");
-                actionDefPopupIconsField = findDeclaredField(adCls, "q");
-                actionDefSuppressLongField = findDeclaredField(adCls, "r");
+                List<Field> adFields = collectInstanceCtorFields(adCls);
+                Constructor<?> adCtor = findMatchingPrimaryConstructor(adCls, adFields);
+                if (adCtor == null || adFields.size() < 14) {
+                    throw new NoSuchMethodException(
+                            "Could not match primary ActionDef constructor to " + adFields.size() + " fields");
+                }
+                adCtor.setAccessible(true);
+                actionDefCtor = adCtor;
+                actionDefActionField = adFields.get(0);
+                actionDefKeyDatasField = adFields.get(1);
+                actionDefActionOnDownField = adFields.get(2);
+                actionDefRepeatableField = adFields.get(3);
+                actionDefPopupLayoutField = adFields.get(4);
+                actionDefAlwaysShowField = adFields.get(5);
+                actionDefPlayMediaField = adFields.get(6);
+                actionDefPlayReleaseField = adFields.get(7);
+                actionDefIconBgLevelField = adFields.get(8);
+                actionDefMergeIdxField = adFields.get(9);
+                actionDefContentDescField = adFields.get(10);
+                actionDefPopupLabelsField = adFields.get(11);
+                actionDefPopupIconsField = adFields.get(12);
+                actionDefSuppressLongField = adFields.get(13);
 
                 Class<?> actionEnumCls = actionDefActionField.getType();
-                Field pressField = findDeclaredField(actionEnumCls, "a");
-                Field longPressField = findDeclaredField(actionEnumCls, "b");
-                actionPressEnum = pressField.get(null);
-                actionLongPressEnum = longPressField.get(null);
+                actionPressEnum = findEnumConstant(actionEnumCls, "PRESS", "a");
+                actionLongPressEnum = findEnumConstant(actionEnumCls, "LONG_PRESS", "b");
 
-                actionDefCtor = adCls.getDeclaredConstructor(
-                        actionEnumCls,
-                        immutableListClass,
-                        boolean.class,
-                        boolean.class,
-                        int.class,
-                        boolean.class,
-                        boolean.class,
-                        boolean.class,
-                        int.class,
-                        int.class,
-                        String.class,
-                        immutableListClass,
-                        int[].class,
-                        boolean.class);
-                actionDefCtor.setAccessible(true);
-
-                Class<?> kdCls = Class.forName("qbc", false, classLoader);
-                initKeyDataClass(kdCls);
+                // Derive KeyData class dynamically from ActionDef's zero-arg KeyData getter
+                // (e.g. ActionDef.b() -> Lqbc in 18.5.4, Lagmb in 18.8.1).
+                Class<?> kdCls = null;
+                for (Method m : adCls.getDeclaredMethods()) {
+                    if (!Modifier.isStatic(m.getModifiers())
+                            && m.getParameterCount() == 0
+                            && !m.getReturnType().isPrimitive()
+                            && m.getReturnType() != String.class
+                            && m.getReturnType() != Object.class) {
+                        kdCls = m.getReturnType();
+                        break;
+                    }
+                }
+                if (kdCls != null) {
+                    initKeyDataClass(kdCls);
+                }
 
                 reflectionReady = true;
                 return true;
@@ -1769,6 +1787,56 @@ public final class GboardCustomHoldPopupsRuntime {
                 return false;
             }
         }
+    }
+
+    private static List<Field> collectInstanceCtorFields(Class<?> cls) {
+        List<Field> fields = new ArrayList<Field>();
+        for (Field f : cls.getDeclaredFields()) {
+            int mods = f.getModifiers();
+            if (Modifier.isStatic(mods) || Modifier.isTransient(mods)) {
+                continue;
+            }
+            f.setAccessible(true);
+            fields.add(f);
+        }
+        return fields;
+    }
+
+    private static Constructor<?> findMatchingPrimaryConstructor(
+            Class<?> cls,
+            List<Field> instanceFields) {
+        for (Constructor<?> ctor : cls.getDeclaredConstructors()) {
+            Class<?>[] params = ctor.getParameterTypes();
+            if (params.length != instanceFields.size()) {
+                continue;
+            }
+            boolean match = true;
+            for (int i = 0; i < params.length; i++) {
+                if (!params[i].equals(instanceFields.get(i).getType())) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return ctor;
+            }
+        }
+        return null;
+    }
+
+    private static Object findEnumConstant(
+            Class<?> enumCls,
+            String expectedName,
+            String fallbackFieldName) throws Exception {
+        Object[] constants = enumCls.getEnumConstants();
+        if (constants != null) {
+            for (Object constant : constants) {
+                if (constant instanceof Enum<?> && expectedName.equals(((Enum<?>) constant).name())) {
+                    return constant;
+                }
+            }
+        }
+        return findDeclaredField(enumCls, fallbackFieldName).get(null);
     }
 
     private static void ensureKeyDataReflection(Object sampleKeyData) throws Exception {
@@ -1781,12 +1849,30 @@ public final class GboardCustomHoldPopupsRuntime {
     private static synchronized void initKeyDataClass(Class<?> kdCls) throws Exception {
         if (keyDataCtor != null) return;
         keyDataClass = kdCls;
-        keyDataCodeField = findDeclaredField(kdCls, "c");
-        keyDataIntentionField = findDeclaredField(kdCls, "d");
-        keyDataDataField = findDeclaredField(kdCls, "e");
+        Field codeField = null;
+        Field intentionField = null;
+        Field dataField = null;
+        for (Field f : kdCls.getDeclaredFields()) {
+            if (Modifier.isStatic(f.getModifiers())) continue;
+            f.setAccessible(true);
+            Class<?> ft = f.getType();
+            if (codeField == null && ft == int.class) {
+                codeField = f;
+            } else if (intentionField == null && ft.isEnum()) {
+                intentionField = f;
+            } else if (dataField == null && ft == Object.class) {
+                dataField = f;
+            }
+        }
+        if (codeField == null || intentionField == null || dataField == null) {
+            throw new NoSuchFieldException(
+                    "Could not resolve KeyData fields on " + kdCls.getName());
+        }
+        keyDataCodeField = codeField;
+        keyDataIntentionField = intentionField;
+        keyDataDataField = dataField;
         Class<?> intentionEnumCls = keyDataIntentionField.getType();
-        Field commitField = findDeclaredField(intentionEnumCls, "c");
-        intentionCommitEnum = commitField.get(null);
+        intentionCommitEnum = findEnumConstant(intentionEnumCls, "COMMIT", "c");
         keyDataCtor = kdCls.getDeclaredConstructor(
                 int.class, intentionEnumCls, Object.class, int.class);
         keyDataCtor.setAccessible(true);
@@ -1802,33 +1888,27 @@ public final class GboardCustomHoldPopupsRuntime {
                 Field stateField = softKeyViewStateField;
                 Method setDefMethod = null;
                 for (Class<?> c = skvCls; c != null && c != Object.class; c = c.getSuperclass()) {
-                    if (defField == null) {
-                        try {
-                            Field e = c.getDeclaredField("e");
-                            if (e.getType().getName().endsWith("SoftKeyDef")) {
-                                e.setAccessible(true);
-                                defField = e;
-                            }
-                        } catch (NoSuchFieldException ignored) {
-                        }
-                    }
-                    if (stateField == null) {
-                        try {
-                            Field f = c.getDeclaredField("f");
-                            if (f.getType() == long.class) {
-                                f.setAccessible(true);
-                                stateField = f;
-                            }
-                        } catch (NoSuchFieldException ignored) {
+                    for (Field f : c.getDeclaredFields()) {
+                        if (Modifier.isStatic(f.getModifiers())) continue;
+                        if (defField == null && f.getType().getName().endsWith("SoftKeyDef")) {
+                            f.setAccessible(true);
+                            defField = f;
+                        } else if (stateField == null && f.getType() == long.class) {
+                            f.setAccessible(true);
+                            stateField = f;
                         }
                     }
                     if (setDefMethod == null && defField != null) {
-                        try {
-                            Method s = c.getDeclaredMethod(
-                                    "s", defField.getType(), long.class);
-                            s.setAccessible(true);
-                            setDefMethod = s;
-                        } catch (NoSuchMethodException ignored) {
+                        for (Method m : c.getDeclaredMethods()) {
+                            if (!Modifier.isStatic(m.getModifiers())
+                                    && m.getReturnType() == boolean.class
+                                    && m.getParameterCount() == 2
+                                    && m.getParameterTypes()[0] == defField.getType()
+                                    && m.getParameterTypes()[1] == long.class) {
+                                m.setAccessible(true);
+                                setDefMethod = m;
+                                break;
+                            }
                         }
                     }
                 }
@@ -1851,49 +1931,125 @@ public final class GboardCustomHoldPopupsRuntime {
             try {
                 if (touchActionBundleObj != null && bundlePopupManagerField == null) {
                     Class<?> bundleCls = touchActionBundleObj.getClass();
-                    Field skvField = findDeclaredFieldOrNull(bundleCls, "m");
+                    Field skvField = null;
+                    Field adField = null;
+                    Field pmField = null;
+                    for (Field f : bundleCls.getDeclaredFields()) {
+                        if (Modifier.isStatic(f.getModifiers())) continue;
+                        Class<?> ft = f.getType();
+                        String typeName = ft.getName();
+                        if (skvField == null && typeName.endsWith("SoftKeyView")) {
+                            f.setAccessible(true);
+                            skvField = f;
+                        } else if (adField == null && typeName.endsWith("ActionDef")) {
+                            f.setAccessible(true);
+                            adField = f;
+                        } else if (pmField == null && AutoCloseable.class.isAssignableFrom(ft)
+                                && looksLikePopupManagerClass(ft)) {
+                            f.setAccessible(true);
+                            pmField = f;
+                        }
+                    }
                     bundleSoftKeyViewField = skvField;
-                    bundleActionDefField = findDeclaredFieldOrNull(bundleCls, "n");
+                    bundleActionDefField = adField;
                     if (skvField != null && softKeyViewDefField == null) {
+                        for (Field f : skvField.getType().getDeclaredFields()) {
+                            if (!Modifier.isStatic(f.getModifiers())
+                                    && f.getType().getName().endsWith("SoftKeyDef")) {
+                                f.setAccessible(true);
+                                softKeyViewDefField = f;
+                                break;
+                            }
+                        }
+                    }
+                    // Close-popup helper on TouchActionBundle: C()V in 18.5.4, E()V in 18.8.1.
+                    for (String closeName : new String[]{"C", "E"}) {
                         try {
-                            Field e = skvField.getType().getDeclaredField("e");
-                            e.setAccessible(true);
-                            softKeyViewDefField = e;
+                            Method closePopup = bundleCls.getDeclaredMethod(closeName);
+                            if (closePopup.getReturnType() == void.class) {
+                                closePopup.setAccessible(true);
+                                bundleClosePopupMethod = closePopup;
+                                break;
+                            }
                         } catch (Throwable ignored) {
                         }
                     }
-                    try {
-                        Method closePopup = bundleCls.getDeclaredMethod("C");
-                        closePopup.setAccessible(true);
-                        bundleClosePopupMethod = closePopup;
-                    } catch (Throwable ignored) {
-                    }
                     // Publish guard field last
-                    bundlePopupManagerField = findDeclaredFieldOrNull(bundleCls, "q");
+                    bundlePopupManagerField = pmField;
                 }
                 if (popupManagerObj != null && popupSelectedKeyDataField == null) {
                     Class<?> pmCls = popupManagerObj.getClass();
-                    popupContextField = findDeclaredFieldOrNull(pmCls, "a");
-                    popupViewField = findDeclaredFieldOrNull(pmCls, "e");
-                    popupKeyboardViewField = findDeclaredFieldOrNull(pmCls, "r");
+                    Field ctxField = null;
+                    Field viewField = null;
+                    Field kbViewField = null;
+                    Field selectedKdField = null;
+                    Class<?> kdCls = keyDataClass;
+                    for (Field f : pmCls.getDeclaredFields()) {
+                        int mods = f.getModifiers();
+                        if (Modifier.isStatic(mods)) continue;
+                        Class<?> ft = f.getType();
+                        String typeName = ft.getName();
+                        if (ctxField == null && Context.class.isAssignableFrom(ft)) {
+                            f.setAccessible(true);
+                            ctxField = f;
+                        } else if (kbViewField == null && typeName.endsWith("SoftKeyboardView")) {
+                            f.setAccessible(true);
+                            kbViewField = f;
+                        } else if (viewField == null && ft == View.class && !Modifier.isFinal(mods)) {
+                            f.setAccessible(true);
+                            viewField = f;
+                        } else if (selectedKdField == null && kdCls != null && ft == kdCls) {
+                            f.setAccessible(true);
+                            selectedKdField = f;
+                        }
+                    }
+                    if (viewField == null) {
+                        viewField = findDeclaredFieldOrNull(pmCls, "e");
+                    }
+                    if (selectedKdField == null) {
+                        selectedKdField = findDeclaredFieldOrNull(pmCls, "f");
+                    }
+                    popupContextField = ctxField;
+                    popupViewField = viewField;
+                    popupKeyboardViewField = kbViewField;
                     try {
                         Method isShowing = pmCls.getDeclaredMethod("b");
-                        isShowing.setAccessible(true);
-                        popupIsShowingMethod = isShowing;
+                        if (isShowing.getReturnType() == boolean.class) {
+                            isShowing.setAccessible(true);
+                            popupIsShowingMethod = isShowing;
+                        }
                     } catch (Throwable ignored) {
                     }
-                    try {
-                        Method hide = pmCls.getDeclaredMethod("a", long.class);
-                        hide.setAccessible(true);
-                        popupHideMethod = hide;
-                    } catch (Throwable ignored) {
+                    for (Method m : pmCls.getDeclaredMethods()) {
+                        if (!Modifier.isStatic(m.getModifiers())
+                                && m.getReturnType() == void.class
+                                && m.getParameterCount() == 1
+                                && m.getParameterTypes()[0] == long.class) {
+                            m.setAccessible(true);
+                            popupHideMethod = m;
+                            break;
+                        }
                     }
                     // Publish guard field last
-                    popupSelectedKeyDataField = findDeclaredFieldOrNull(pmCls, "f");
+                    popupSelectedKeyDataField = selectedKdField;
                 }
             } catch (Throwable ignored) {
             }
         }
+    }
+
+    private static boolean looksLikePopupManagerClass(Class<?> cls) {
+        for (Method m : cls.getDeclaredMethods()) {
+            if (!Modifier.isStatic(m.getModifiers())
+                    && m.getReturnType() == boolean.class
+                    && m.getParameterCount() == 3
+                    && m.getParameterTypes()[0] == float.class
+                    && m.getParameterTypes()[1] == float.class
+                    && m.getParameterTypes()[2] == boolean.class) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Field findDeclaredField(Class<?> cls, String name) throws NoSuchFieldException {

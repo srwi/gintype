@@ -2,6 +2,7 @@ package dev.srwi.gintype.patches.gboard.registry
 
 import com.google.gson.JsonParser
 import dev.srwi.gintype.patches.gboard.features.packagerename.gboardPackageRenameResourcePatch
+import dev.srwi.gintype.patches.gboard.shared.generated.GboardTargetAdmission
 import dev.srwi.gintype.patches.shared.Constants.COMPATIBILITY_GBOARD
 import dev.srwi.gintype.patches.shared.Constants.GBOARD_PACKAGE_NAME
 import dev.srwi.gintype.patches.shared.Constants.GBOARD_PATCHED_PACKAGE_NAME
@@ -42,7 +43,7 @@ class GboardPackageRenamePatchContractTest {
         assertSame(COMPATIBILITY_GBOARD, compatibilities.single())
         assertEquals(GBOARD_PACKAGE_NAME, compatibilities.single().packageName)
         assertEquals(
-            listOf(TARGET_VERSION),
+            GboardTargetAdmission.versionNames,
             compatibilities.single().targets.map { target -> target.version },
         )
         assertTrue(compatibilities.single().targets.none { target -> target.isExperimental })
@@ -77,7 +78,7 @@ class GboardPackageRenamePatchContractTest {
         val packages = row.getAsJsonObject("compatiblePackages")
         assertEquals(setOf(GBOARD_PACKAGE_NAME), packages.keySet())
         assertEquals(
-            listOf(TARGET_VERSION),
+            GboardTargetAdmission.versionNames,
             packages.getAsJsonArray(GBOARD_PACKAGE_NAME).map { it.asString },
         )
     }
@@ -107,7 +108,6 @@ class GboardPackageRenamePatchContractTest {
     }
 
     private companion object {
-        const val TARGET_VERSION = "18.5.4.993608717-release-arm64-v8a"
         const val PACKAGE_RENAME_DESCRIPTION =
             "Rename the package to dev.srwi.com.google.android.inputmethod.latin and allow " +
                 "a custom app name so it can be installed alongside official Gboard."

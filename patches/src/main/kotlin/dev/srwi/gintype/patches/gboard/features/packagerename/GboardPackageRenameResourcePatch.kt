@@ -351,9 +351,41 @@ internal fun applyGboardPackageRename(
         settingsDocuments = settingsDocuments,
         state = state,
     )
-    val allowedPackageAttributes = selectedAttributes + listOfNotNull(
+    val baseAllowedAttributes = selectedAttributes + listOfNotNull(
         settingsIdentity.providerAuthority,
     )
+
+    // Support additional version-specific package-derived manifest attributes (e.g.
+    // `com.google.android.inputmethod.latin.train.androidx-startup` added in Gboard 18.8.x)
+    // while keeping component class names untouched and rejecting mixed or unexpected values.
+    val dynamicAdditionalAttributes = allManifestAttributes.mapNotNull { (element, attribute) ->
+        val attr = attribute as? Attr ?: return@mapNotNull null
+        if (baseAllowedAttributes.any { allowed -> allowed === attr }) {
+            return@mapNotNull null
+        }
+        val value = attr.value
+        val hasSourcePackage = value.contains(GBOARD_PACKAGE_NAME)
+        val hasRenamedPackage = value.contains(GBOARD_PATCHED_PACKAGE_NAME)
+        if (!hasSourcePackage && !hasRenamedPackage) {
+            return@mapNotNull null
+        }
+        if (!isExtensiblePackageDerivedAttribute(element, attr, value)) {
+            return@mapNotNull null
+        }
+        when (state) {
+            PackageState.ORIGINAL -> check(!hasRenamedPackage) {
+                "Mixed renamed package-derived manifest value at ${element.localElementName()} " +
+                    "${attr.nodeName}: $value"
+            }
+            PackageState.RENAMED -> check(hasRenamedPackage) {
+                "Unrenamed package-derived manifest value at ${element.localElementName()} " +
+                    "${attr.nodeName}: $value"
+            }
+        }
+        attr
+    }
+
+    val allowedPackageAttributes = baseAllowedAttributes + dynamicAdditionalAttributes
     val unexpectedPackageAttribute = allManifestAttributes.firstOrNull { (_, attribute) ->
         attribute.nodeValue.contains(GBOARD_PACKAGE_NAME) &&
             allowedPackageAttributes.none { allowed -> allowed === attribute }
@@ -372,12 +404,40 @@ internal fun applyGboardPackageRename(
     selectedAttributes.zip(GBOARD_PACKAGE_RENAME_MAPPINGS).forEach { (attribute, mapping) ->
         attribute.value = mapping.renamedValue
     }
+    dynamicAdditionalAttributes.forEach { attribute ->
+        attribute.value = attribute.value.replace(GBOARD_PACKAGE_NAME, GBOARD_PATCHED_PACKAGE_NAME)
+    }
     settingsIdentity.providerAuthority?.value =
         GBOARD_PATCHED_PACKAGE_NAME + GBOARD_PATCHES_SETTINGS_PROVIDER_AUTHORITY_SUFFIX
     settingsIdentity.targetPackages.forEach { attribute ->
         attribute.value = GBOARD_PATCHED_PACKAGE_NAME
     }
     return GboardPackageRenameResult.RENAMED
+}
+
+private fun isExtensiblePackageDerivedAttribute(
+    element: Element,
+    attribute: Attr,
+    value: String,
+): Boolean {
+    val elementName = element.localElementName()
+    val localAttrName = attribute.localName ?: attribute.nodeName.substringAfter(':')
+    val isAndroidAttr = attribute.namespaceURI == ANDROID_NS ||
+        attribute.nodeName == "android:$localAttrName"
+    if (!isAndroidAttr) return false
+
+    return when (elementName) {
+        "provider" -> localAttrName == "authorities" &&
+            (value.startsWith("$GBOARD_PACKAGE_NAME.") || value.startsWith("$GBOARD_PATCHED_PACKAGE_NAME."))
+        "permission" -> localAttrName == "name" &&
+            (value.startsWith("$GBOARD_PACKAGE_NAME.") || value.startsWith("$GBOARD_PATCHED_PACKAGE_NAME."))
+        "receiver", "service", "activity" -> localAttrName == "permission" &&
+            (value.startsWith("$GBOARD_PACKAGE_NAME.") || value.startsWith("$GBOARD_PATCHED_PACKAGE_NAME."))
+        "meta-data" -> localAttrName == "name" &&
+            value.startsWith("com.google.android.gms.phenotype.registration.") &&
+            (value.endsWith(":$GBOARD_PACKAGE_NAME") || value.endsWith(":$GBOARD_PATCHED_PACKAGE_NAME"))
+        else -> false
+    }
 }
 
 private fun sanitizeStandaloneSplitManifest(manifestDocument: Document) {

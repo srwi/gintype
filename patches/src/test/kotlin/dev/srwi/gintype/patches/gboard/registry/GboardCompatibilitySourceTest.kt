@@ -14,13 +14,13 @@ class GboardCompatibilitySourceTest {
     private val repositoryRoot = findRepositoryRoot()
 
     @Test
-    fun defaultCompatibilityPreservesExactGboard1854Identity() {
+    fun defaultCompatibilityPreservesExactSupportedGboardIdentities() {
         val constants = readSource(CONSTANTS_PATH)
 
         assertEquals(GBOARD_PACKAGE, COMPATIBILITY_GBOARD.packageName)
         assertEquals(ApkFileType.APK, COMPATIBILITY_GBOARD.apkFileType)
         assertEquals(EXPECTED_SIGNATURES, COMPATIBILITY_GBOARD.signatures)
-        assertEquals(listOf(TARGET_VERSION), COMPATIBILITY_GBOARD.targets.map { it.version })
+        assertEquals(TARGET_VERSIONS, COMPATIBILITY_GBOARD.targets.map { it.version })
         assertTrue(COMPATIBILITY_GBOARD.targets.none { it.isExperimental })
         assertTrue(constants.contains("GboardTargetAdmission.packageName"))
         assertTrue(constants.contains("GboardTargetAdmission.versionNames"))
@@ -73,7 +73,10 @@ class GboardCompatibilitySourceTest {
     }
 
     private companion object {
-        const val TARGET_VERSION = "18.5.4.993608717-release-arm64-v8a"
+        val TARGET_VERSIONS = listOf(
+            "18.5.4.993608717-release-arm64-v8a",
+            "18.8.1.1022711984-beta-arm64-v8a",
+        )
         const val GBOARD_PACKAGE = "com.google.android.inputmethod.latin"
         val EXPECTED_SIGNATURES = setOf(
             "7ce83c1b71f3d572fed04c8d40c5cb10ff75e6d87d9df6fbd53f0468c2905053",

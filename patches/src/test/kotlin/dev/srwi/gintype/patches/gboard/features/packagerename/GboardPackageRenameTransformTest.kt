@@ -735,6 +735,35 @@ class GboardPackageRenameTransformTest {
         )
     }
 
+    @Test
+    fun `package rename handles additional version-specific providers such as train androidx-startup`() {
+        val manifest = loadManifest()
+        val application = elements(manifest, "application").single()
+        val trainProvider = manifest.createElement("provider")
+        trainProvider.setAttributeNS(ANDROID_NS, "android:name", "androidx.startup.InitializationProvider")
+        trainProvider.setAttributeNS(
+            ANDROID_NS,
+            "android:authorities",
+            "$SOURCE_PACKAGE.train.androidx-startup",
+        )
+        application.appendChild(trainProvider)
+        val settings = loadSettingsDocuments()
+
+        val first = applyGboardPackageRename(manifest, settings)
+        assertEquals(GboardPackageRenameResult.RENAMED, first)
+        assertEquals(
+            "$FINAL_PACKAGE.train.androidx-startup",
+            androidAttribute(trainProvider, "authorities"),
+        )
+
+        val second = applyGboardPackageRename(manifest, settings)
+        assertEquals(GboardPackageRenameResult.ALREADY_RENAMED, second)
+        assertEquals(
+            "$FINAL_PACKAGE.train.androidx-startup",
+            androidAttribute(trainProvider, "authorities"),
+        )
+    }
+
     private fun assertFinalSettingsIdentity(
         manifest: Document,
         settings: List<Document>,

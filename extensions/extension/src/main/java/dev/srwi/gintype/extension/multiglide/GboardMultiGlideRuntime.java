@@ -32,6 +32,7 @@ import dev.srwi.gintype.extension.multiglide.MultiGlideInputToken.WordCandidate;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -745,9 +746,17 @@ public final class GboardMultiGlideRuntime {
             Method m = basicHandlerTouchMethod;
             if (m == null) {
                 Class<?> cls = basicHandler.getClass();
-                try {
-                    m = cls.getDeclaredMethod("t", MotionEvent.class);
-                } catch (NoSuchMethodException ignored) {
+                for (Method candidate : cls.getDeclaredMethods()) {
+                    if (!Modifier.isStatic(candidate.getModifiers())
+                            && Modifier.isPrivate(candidate.getModifiers())
+                            && candidate.getReturnType() == void.class
+                            && candidate.getParameterCount() == 1
+                            && candidate.getParameterTypes()[0] == MotionEvent.class) {
+                        m = candidate;
+                        break;
+                    }
+                }
+                if (m == null) {
                     m = cls.getMethod("g", MotionEvent.class);
                 }
                 m.setAccessible(true);
@@ -2962,47 +2971,16 @@ public final class GboardMultiGlideRuntime {
                             gestureResetField = f;
                         } else if ("d".equals(name) && SparseArray.class.isAssignableFrom(type)) {
                             softKeyMapField = f;
-                        } else if ("U".equals(name) && !type.isPrimitive()) {
-                            trailManagerField = f;
-                            try {
-                                Field aField = type.getDeclaredField("a");
-                                if (aField.getType() == boolean.class) {
-                                    aField.setAccessible(true);
-                                    trailActiveBoolField = aField;
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                            try {
-                                Field bField = type.getDeclaredField("b");
-                                bField.setAccessible(true);
-                                trailSparseArrayField = bField;
-                            } catch (Throwable ignored) {
-                            }
-                            try {
-                                Field cField = type.getDeclaredField("c");
-                                cField.setAccessible(true);
-                                trailStartIndexArrayField = cField;
-                            } catch (Throwable ignored) {
-                            }
-                            try {
-                                Field eField = type.getDeclaredField("e");
-                                eField.setAccessible(true);
-                                trailFadingListField = eField;
-                            } catch (Throwable ignored) {
-                            }
-                            try {
-                                Method eMeth = type.getDeclaredMethod("e", List.class);
-                                eMeth.setAccessible(true);
-                                recyclePointsMethod = eMeth;
-                            } catch (Throwable ignored) {
-                            }
+                        } else if (trailManagerField == null && tryProbeTrailManagerField(f)) {
+                            // Resolved structurally (e.g. U:Lnhj in 18.5.4, R:Lolh in 18.8.1).
                         } else if ("p".equals(name) && type.isInterface()) {
                             hostBridgeField = f;
-                            try {
-                                Method m = type.getDeclaredMethod("m");
-                                m.setAccessible(true);
-                                claimOwnershipMethod = m;
-                            } catch (Throwable ignored) {
+                            for (Method bm : type.getDeclaredMethods()) {
+                                if (bm.getParameterCount() == 0 && bm.getReturnType() == void.class) {
+                                    bm.setAccessible(true);
+                                    claimOwnershipMethod = bm;
+                                    break;
+                                }
                             }
                             try {
                                 Method stateMethod = type.getDeclaredMethod("b");
@@ -3026,6 +3004,60 @@ public final class GboardMultiGlideRuntime {
                 probedClasses.add(handlerClass);
             }
         }
+    }
+
+    private static boolean tryProbeTrailManagerField(Field candidateField) {
+        Class<?> type = candidateField.getType();
+        if (type.isPrimitive() || type.isInterface() || type.isArray()) return false;
+        String typeName = type.getName();
+        if (typeName.startsWith("java.") || typeName.startsWith("android.")
+                || typeName.startsWith("j$.")) {
+            return false;
+        }
+        Field activeBool = null;
+        Field sparseArray = null;
+        Field startIndexArray = null;
+        Field fadingList = null;
+        for (Field tf : type.getDeclaredFields()) {
+            if (Modifier.isStatic(tf.getModifiers())) continue;
+            Class<?> ft = tf.getType();
+            if (ft == boolean.class && activeBool == null) {
+                activeBool = tf;
+            } else if (SparseArray.class.isAssignableFrom(ft) && sparseArray == null) {
+                sparseArray = tf;
+            } else if (android.util.SparseIntArray.class.isAssignableFrom(ft) && startIndexArray == null) {
+                startIndexArray = tf;
+            } else if (List.class.isAssignableFrom(ft) && fadingList == null) {
+                fadingList = tf;
+            }
+        }
+        if (activeBool == null || sparseArray == null || startIndexArray == null || fadingList == null) {
+            return false;
+        }
+        Method recycleMethod = null;
+        for (Method tm : type.getDeclaredMethods()) {
+            if (!Modifier.isStatic(tm.getModifiers())
+                    && tm.getParameterCount() == 1
+                    && tm.getParameterTypes()[0] == List.class) {
+                recycleMethod = tm;
+                break;
+            }
+        }
+        if (recycleMethod == null) {
+            return false;
+        }
+        activeBool.setAccessible(true);
+        sparseArray.setAccessible(true);
+        startIndexArray.setAccessible(true);
+        fadingList.setAccessible(true);
+        recycleMethod.setAccessible(true);
+        trailManagerField = candidateField;
+        trailActiveBoolField = activeBool;
+        trailSparseArrayField = sparseArray;
+        trailStartIndexArrayField = startIndexArray;
+        trailFadingListField = fadingList;
+        recyclePointsMethod = recycleMethod;
+        return true;
     }
 
     private static void logMissingHandlerMembers(Class<?> handlerClass) {

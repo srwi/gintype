@@ -39,8 +39,7 @@ private const val SOFT_KEY_DEF_CLASS =
     "Lcom/google/android/libraries/inputmethod/metadata/SoftKeyDef;"
 
 private const val HANDLE_GESTURE_MOTION_EVENT_METHOD_NAME = "g"
-private const val SHOULD_START_GESTURE_METHOD_NAME = "t"
-private const val RESET_GESTURE_STATE_METHOD_NAME = "B"
+private const val FALLBACK_RESET_GESTURE_STATE_METHOD_NAME = "B"
 
 internal val gboardMultiGlideBytecodePatch = bytecodePatch(
     description = "Hooks Gboard's gesture motion handler to decode MultiGlide two-finger swipe and tap+swipe gestures.",
@@ -49,6 +48,16 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
     dependsOn(gboardPatchesExtensionCarrierPatch)
 
     execute {
+        val abstractMotionHandlerClass = mutableClass(ABSTRACT_MOTION_EVENT_HANDLER_CLASS)
+        val hostBridgeType = abstractMotionHandlerClass.fields
+            .firstOrNull { field ->
+                (field.accessFlags and AccessFlags.STATIC.value) == 0 &&
+                    field.type.startsWith("L") &&
+                    field.type != "Landroid/content/Context;"
+            }?.type ?: throw PatchException(
+            "Could not resolve host bridge field type in $ABSTRACT_MOTION_EVENT_HANDLER_CLASS",
+        )
+
         val handlerClass = mutableClass(ABSTRACT_GESTURE_HANDLER_CLASS)
 
         val handleGestureMethod = handlerClass.methods.firstOrNull {
@@ -131,31 +140,31 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
             )
         }
 
-        val shouldStartCallIndex = insns.indexOfFirst { instruction ->
-            if (instruction.opcode != Opcode.INVOKE_VIRTUAL) return@indexOfFirst false
+        val shouldStartCallIndex = (letterStartedIgetIndex + 1 until insns.size).firstOrNull { index ->
+            val instruction = insns[index]
+            if (instruction.opcode != Opcode.INVOKE_VIRTUAL) return@firstOrNull false
             val methodRef = (instruction as? ReferenceInstruction)?.reference as? MethodReference
-                ?: return@indexOfFirst false
+                ?: return@firstOrNull false
             methodRef.definingClass == ABSTRACT_GESTURE_HANDLER_CLASS &&
-                methodRef.name == SHOULD_START_GESTURE_METHOD_NAME &&
                 methodRef.returnType == "Z" &&
                 methodRef.parameterTypes.isEmpty()
-        }
+        } ?: -1
         if (shouldStartCallIndex < 0) {
             throw PatchException(
-                "Unable to locate shouldStartGesture invoke-virtual ->t()Z in AbstractGestureMotionEventHandler.g(MotionEvent).",
+                "Unable to locate shouldStartGesture invoke-virtual ->*()Z after letterStarted guard in AbstractGestureMotionEventHandler.g(MotionEvent).",
             )
         }
         val shouldStartInsn = insns[shouldStartCallIndex] as? FiveRegisterInstruction
             ?: throw PatchException("shouldStartGesture instruction is not FiveRegisterInstruction.")
         val shouldStartMoveResult = insns.getOrNull(shouldStartCallIndex + 1) as? OneRegisterInstruction
         if (shouldStartMoveResult == null || shouldStartMoveResult.opcode != Opcode.MOVE_RESULT) {
-            throw PatchException("Expected move-result immediately after ->t()Z in AbstractGestureMotionEventHandler.g(MotionEvent).")
+            throw PatchException("Expected move-result immediately after shouldStartGesture()Z in AbstractGestureMotionEventHandler.g(MotionEvent).")
         }
         val tThisReg = shouldStartInsn.registerC
         val tResultReg = shouldStartMoveResult.registerA
         if (tThisReg > 15 || tResultReg > 15) {
             throw PatchException(
-                "Expected 4-bit registers for ->t()Z hook in AbstractGestureMotionEventHandler.g(MotionEvent), got v$tThisReg, v$tResultReg.",
+                "Expected 4-bit registers for shouldStartGesture()Z hook in AbstractGestureMotionEventHandler.g(MotionEvent), got v$tThisReg, v$tResultReg.",
             )
         }
 
@@ -163,15 +172,33 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
             if (instruction.opcode != Opcode.INVOKE_INTERFACE) return@indexOfLast false
             val methodRef = (instruction as? ReferenceInstruction)?.reference as? MethodReference
                 ?: return@indexOfLast false
-            methodRef.name == "n" &&
+            methodRef.definingClass == hostBridgeType &&
                 methodRef.returnType == "V" &&
-                methodRef.parameterTypes.size == 1
+                methodRef.parameterTypes.size == 1 &&
+                !methodRef.parameterTypes[0].startsWith("Ljava/") &&
+                !methodRef.parameterTypes[0].startsWith("Landroid/")
         }
         if (dispatchIndex < 0) {
             throw PatchException(
-                "Unable to locate gesture event dispatch invoke-interface ->n(...)V in AbstractGestureMotionEventHandler.g(MotionEvent).",
+                "Unable to locate gesture event dispatch invoke-interface on $hostBridgeType in AbstractGestureMotionEventHandler.g(MotionEvent).",
             )
         }
+
+        val resetMethodName = (dispatchIndex + 1 until insns.size).firstNotNullOfOrNull { index ->
+            val instruction = insns[index]
+            if (instruction.opcode != Opcode.INVOKE_DIRECT) return@firstNotNullOfOrNull null
+            val methodRef = (instruction as? ReferenceInstruction)?.reference as? MethodReference
+                ?: return@firstNotNullOfOrNull null
+            if (
+                methodRef.definingClass == ABSTRACT_GESTURE_HANDLER_CLASS &&
+                methodRef.returnType == "V" &&
+                methodRef.parameterTypes.isEmpty()
+            ) {
+                methodRef.name
+            } else {
+                null
+            }
+        } ?: FALLBACK_RESET_GESTURE_STATE_METHOD_NAME
 
         if (!(dispatchIndex > shouldStartCallIndex + 1 && shouldStartCallIndex + 1 > letterStartedIgetIndex && letterStartedIgetIndex >= 2)) {
             throw PatchException(
@@ -264,16 +291,16 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
         }
 
         val resetMethod = handlerClass.methods.firstOrNull {
-            it.name == RESET_GESTURE_STATE_METHOD_NAME &&
+            it.name == resetMethodName &&
                 it.returnType == "V" &&
                 it.parameterTypes.isEmpty()
         } ?: throw PatchException(
-            "Could not find reset gesture state method B() in $ABSTRACT_GESTURE_HANDLER_CLASS",
+            "Could not find reset gesture state method $resetMethodName() in $ABSTRACT_GESTURE_HANDLER_CLASS",
         )
         val resetRegCount = resetMethod.implementation?.registerCount ?: 0
         if (resetRegCount <= 1) {
             throw PatchException(
-                "Reset method $RESET_GESTURE_STATE_METHOD_NAME() has insufficient local registers ($resetRegCount)",
+                "Reset method $resetMethodName() has insufficient local registers ($resetRegCount)",
             )
         }
         val shouldInterceptResetAbi = RuntimeAbiCatalog.abi(
@@ -299,9 +326,9 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
             )
         }
 
-        // Override AbstractMotionEventHandler.gu()Z so dispatcher ownership transitions from
-        // BasicMotionEventHandler do not cancel AbstractGestureMotionEventHandler while active.
-        val abstractMotionHandlerClass = mutableClass(ABSTRACT_MOTION_EVENT_HANDLER_CLASS)
+        // Override AbstractMotionEventHandler zero-arg boolean method (gu/eI) so dispatcher
+        // ownership transitions from BasicMotionEventHandler do not cancel
+        // AbstractGestureMotionEventHandler while active.
         val receiveEventsMethod = abstractMotionHandlerClass.methods.singleOrNull {
             it.returnType == "Z" && it.parameterTypes.isEmpty()
         } ?: throw PatchException(
@@ -414,7 +441,10 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
             )
         }
 
-        // Hook Lqil.c(MotionEvent, Z) right before Lqil.t(Lqin, MotionEvent, I)V on ACTION_POINTER_DOWN.
+        // Hook TouchBundleHandler.c(MotionEvent, Z) right before its static rollover commit call
+        // (e.g. Lqil.t / Lagyn.s) on ACTION_POINTER_DOWN. Handles both Gboard 18.5.4
+        // (SoftKeyDef.o()Z -> move-result -> if-nez -> invoke-static) and 18.8.1+
+        // (iget-boolean SoftKeyDef.u -> if-nez -> invoke-static).
         val touchBundleHandlerClass = mutableClass(touchBundleCallRef.definingClass)
         val touchBundleMethod = touchBundleHandlerClass.methods.firstOrNull {
             it.name == touchBundleCallRef.name &&
@@ -424,40 +454,35 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
             "Could not find ${touchBundleCallRef.name}(MotionEvent, Z) in ${touchBundleCallRef.definingClass}.",
         )
         val tbInsns = touchBundleMethod.instructions
-        val softKeyOIndex = tbInsns.indexOfFirst { instruction ->
-            if (instruction.opcode != Opcode.INVOKE_VIRTUAL) return@indexOfFirst false
+        val commitIndex = tbInsns.indexOfFirst { instruction ->
+            if (instruction.opcode != Opcode.INVOKE_STATIC) return@indexOfFirst false
             val methodRef = (instruction as? ReferenceInstruction)?.reference as? MethodReference
                 ?: return@indexOfFirst false
-            methodRef.definingClass == SOFT_KEY_DEF_CLASS &&
-                methodRef.returnType == "Z" &&
-                methodRef.parameterTypes.isEmpty()
+            methodRef.definingClass == touchBundleCallRef.definingClass &&
+                methodRef.returnType == "V" &&
+                methodRef.parameterTypes.size == 3 &&
+                methodRef.parameterTypes[1] == "Landroid/view/MotionEvent;" &&
+                methodRef.parameterTypes[2] == "I"
         }
-        if (softKeyOIndex < 0) {
+        if (commitIndex < 1) {
             throw PatchException(
-                "Unable to locate SoftKeyDef.o()Z rollover check in ${touchBundleCallRef.definingClass}.${touchBundleCallRef.name}.",
+                "Unable to locate rollover commit invoke-static(..., MotionEvent, I)V in ${touchBundleCallRef.definingClass}.${touchBundleCallRef.name}.",
             )
         }
-        val oMoveResult = tbInsns.getOrNull(softKeyOIndex + 1) as? OneRegisterInstruction
-        val oIfNez = tbInsns.getOrNull(softKeyOIndex + 2)
-        val commitInsn = tbInsns.getOrNull(softKeyOIndex + 3) as? FiveRegisterInstruction
-        val commitMethodRef = (tbInsns.getOrNull(softKeyOIndex + 3) as? ReferenceInstruction)?.reference as? MethodReference
+        val guardIfNez = tbInsns[commitIndex - 1] as? OneRegisterInstruction
+        val commitInsn = tbInsns[commitIndex] as? FiveRegisterInstruction
+        val commitMethodRef = (tbInsns[commitIndex] as? ReferenceInstruction)?.reference as? MethodReference
         if (
-            oMoveResult == null ||
-            oMoveResult.opcode != Opcode.MOVE_RESULT ||
-            oIfNez?.opcode != Opcode.IF_NEZ ||
+            guardIfNez == null ||
+            guardIfNez.opcode != Opcode.IF_NEZ ||
             commitInsn == null ||
-            tbInsns[softKeyOIndex + 3].opcode != Opcode.INVOKE_STATIC ||
-            commitMethodRef == null ||
-            commitMethodRef.definingClass != touchBundleCallRef.definingClass ||
-            commitMethodRef.returnType != "V" ||
-            commitMethodRef.parameterTypes.size != 3 ||
-            commitMethodRef.parameterTypes[1] != "Landroid/view/MotionEvent;"
+            commitMethodRef == null
         ) {
             throw PatchException(
-                "Unexpected instruction pattern after SoftKeyDef.o()Z in ${touchBundleCallRef.definingClass}.${touchBundleCallRef.name}.",
+                "Unexpected instruction pattern before rollover commit in ${touchBundleCallRef.definingClass}.${touchBundleCallRef.name}.",
             )
         }
-        val flagReg = oMoveResult.registerA
+        val flagReg = guardIfNez.registerA
         val tbEventReg = commitInsn.registerD
         if (flagReg > 15 || tbEventReg > 15) {
             throw PatchException(
@@ -477,7 +502,7 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
             ?.any { it.isMethodReference(suppressRolloverAbi.reference) } == true
         if (!alreadyHookedRollover) {
             touchBundleMethod.addInstructionsWithLabels(
-                softKeyOIndex + 4,
+                commitIndex + 1,
                 """
                     move-result v$flagReg
                     if-nez v$flagReg, :multiglide_skip_rollover_commit
@@ -486,7 +511,7 @@ internal val gboardMultiGlideBytecodePatch = bytecodePatch(
                     nop
                 """.trimIndent(),
             )
-            touchBundleMethod.replaceInstruction(softKeyOIndex + 3, suppressRolloverInvoke)
+            touchBundleMethod.replaceInstruction(commitIndex, suppressRolloverInvoke)
         }
 
         // Preload active language dictionary when SoftKeyboardView is inflated or attached so
