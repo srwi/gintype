@@ -1053,34 +1053,53 @@ public final class ThiccTopBarGboardReflector {
     }
 
     public static View findVoiceButton(View headerRoot) {
+        return findVoiceButton(headerRoot, null);
+    }
+
+    public static View findVoiceButton(View headerRoot, View excludedView) {
         if (headerRoot == null) return null;
         try {
-            // 1. Recursive search for voice button by characteristics
-            View match = findVoiceButtonRecursive(headerRoot);
+            int headerWidth = headerRoot.getWidth();
+
+            // 1. Recursive search for a visible voice button by characteristics
+            View match = findVoiceButtonRecursive(headerRoot, excludedView);
             if (match != null) {
                 // If match is a nested descendant inside a direct child of headerRoot,
-                // return the direct child so LayoutParams match headerRoot
+                // return the direct child so LayoutParams match headerRoot.
                 View cur = match;
                 while (cur.getParent() instanceof View p && p != headerRoot) {
                     cur = p;
                 }
-                return cur;
+                if (cur.getVisibility() == View.VISIBLE
+                        && !isExcludedVoiceSlotCandidate(cur, excludedView)
+                        && (headerWidth <= 0 || cur.getWidth() <= 0
+                                || isValidRightSideVoiceSlot(cur.getLeft(), cur.getRight(), headerWidth))) {
+                    return cur;
+                }
             }
 
-            // 2. Structural search: In ConstraintHeaderViewImpl, find the rightmost clickable child
-            if (headerRoot instanceof ViewGroup vg) {
+            // 2. Structural search: In ConstraintHeaderViewImpl, find the rightmost narrow clickable child
+            // strictly on the right side of the header, never selecting the candidates/top-bar container.
+            if (headerRoot instanceof ViewGroup vg && headerWidth > 0) {
                 View rightmost = null;
                 int maxRight = -1;
                 for (int i = 0; i < vg.getChildCount(); i++) {
                     View child = vg.getChildAt(i);
-                    if (child.getVisibility() == View.VISIBLE) {
-                        String name = child.getClass().getName();
-                        if (!name.contains("CandidatesHolder") && !name.contains("Matrix") && !name.contains("FixedCount")) {
-                            if (child.getRight() > maxRight) {
-                                maxRight = child.getRight();
-                                rightmost = child;
-                            }
-                        }
+                    if (child.getVisibility() != View.VISIBLE) {
+                        continue;
+                    }
+                    if (isExcludedVoiceSlotCandidate(child, excludedView)) {
+                        continue;
+                    }
+                    if (!isValidRightSideVoiceSlot(child.getLeft(), child.getRight(), headerWidth)) {
+                        continue;
+                    }
+                    if (!hasVisibleClickableTarget(child)) {
+                        continue;
+                    }
+                    if (child.getRight() > maxRight) {
+                        maxRight = child.getRight();
+                        rightmost = child;
                     }
                 }
                 if (rightmost != null && maxRight > 0) {
@@ -1093,12 +1112,81 @@ public final class ThiccTopBarGboardReflector {
         return null;
     }
 
-    private static View findVoiceButtonRecursive(View view) {
-        if (view == null) return null;
+    /**
+     * Pure-JVM geometric guard ensuring a candidate header child is a narrow right-side action slot
+     * (like the voice button) rather than the full-width center candidates strip or left-side toolbar.
+     */
+    static boolean isValidRightSideVoiceSlot(int childLeft, int childRight, int headerWidth) {
+        if (headerWidth <= 0) {
+            return false;
+        }
+        int childWidth = childRight - childLeft;
+        if (childWidth <= 0) {
+            return false;
+        }
+        if (childWidth > headerWidth / 3) {
+            return false;
+        }
+        return childLeft >= headerWidth / 2;
+    }
+
+    static boolean isExcludedVoiceSlotClassName(String className) {
+        if (className == null || className.isEmpty()) {
+            return false;
+        }
+        return className.contains("CandidatesHolder")
+                || className.contains("ThiccTopBar")
+                || className.contains("JumpToEndArrow")
+                || className.contains("Matrix")
+                || className.contains("FixedCount");
+    }
+
+    private static boolean isExcludedVoiceSlotCandidate(View candidate, View excludedView) {
+        if (candidate == null) {
+            return true;
+        }
+        if (candidate instanceof ThiccTopBarView || candidate instanceof JumpToEndArrowView) {
+            return true;
+        }
+        if (isExcludedVoiceSlotClassName(candidate.getClass().getName())) {
+            return true;
+        }
+        if (excludedView != null) {
+            View cur = excludedView;
+            while (cur != null) {
+                if (cur == candidate) {
+                    return true;
+                }
+                cur = (cur.getParent() instanceof View p) ? p : null;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasVisibleClickableTarget(View view) {
+        if (view == null || view.getVisibility() != View.VISIBLE) {
+            return false;
+        }
+        if (view.isClickable()) {
+            return true;
+        }
+        if (view instanceof ViewGroup vg) {
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                if (hasVisibleClickableTarget(vg.getChildAt(i))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static View findVoiceButtonRecursive(View view, View excludedView) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return null;
+        if (isExcludedVoiceSlotCandidate(view, excludedView)) return null;
         if (isVoiceButton(view)) return view;
         if (view instanceof ViewGroup vg) {
             for (int i = 0; i < vg.getChildCount(); i++) {
-                View found = findVoiceButtonRecursive(vg.getChildAt(i));
+                View found = findVoiceButtonRecursive(vg.getChildAt(i), excludedView);
                 if (found != null) {
                     return found;
                 }

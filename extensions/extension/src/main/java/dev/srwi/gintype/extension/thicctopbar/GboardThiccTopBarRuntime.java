@@ -91,6 +91,7 @@ public final class GboardThiccTopBarRuntime {
     private static volatile long lastMultiGlideTimestamp = 0;
 
     private static WeakReference<View> currentVoiceButtonRef = null;
+    private static int currentVoiceButtonOriginalVisibility = View.VISIBLE;
     private static JumpToEndArrowView currentJumpToEndArrow = null;
     private static Runnable pendingJumpRunnable = null;
 
@@ -2105,15 +2106,13 @@ public final class GboardThiccTopBarRuntime {
         }
 
         ViewGroup headerContainer = ThiccTopBarGboardReflector.findHeaderContainer(holderView);
+        ViewGroup holderParent = parentViewGroup(holderView);
         View voiceBtn = null;
         if (headerContainer != null) {
-            voiceBtn = ThiccTopBarGboardReflector.findVoiceButton(headerContainer);
+            voiceBtn = ThiccTopBarGboardReflector.findVoiceButton(headerContainer, holderView);
         }
-        if (voiceBtn == null) {
-            ViewGroup holderParent = parentViewGroup(holderView);
-            if (holderParent != null) {
-                voiceBtn = ThiccTopBarGboardReflector.findVoiceButton(holderParent);
-            }
+        if (voiceBtn == null && holderParent != null && holderParent != headerContainer) {
+            voiceBtn = ThiccTopBarGboardReflector.findVoiceButton(holderParent, holderView);
         }
 
         Context context = holderView.getContext();
@@ -2131,6 +2130,7 @@ public final class GboardThiccTopBarRuntime {
 
         if (voiceBtn != null && voiceBtn.getParent() instanceof ViewGroup voiceParent) {
             currentVoiceButtonRef = new WeakReference<>(voiceBtn);
+            currentVoiceButtonOriginalVisibility = voiceBtn.getVisibility();
             voiceBtn.setVisibility(View.INVISIBLE);
             ViewGroup.LayoutParams lp = copyLayoutParams(voiceBtn);
             ViewGroup arrowParent = parentViewGroup(currentJumpToEndArrow);
@@ -2139,17 +2139,35 @@ public final class GboardThiccTopBarRuntime {
             }
             voiceParent.addView(currentJumpToEndArrow, lp);
         } else {
-            ViewGroup fallbackTarget = headerContainer != null ? headerContainer : parentViewGroup(holderView);
+            // No dedicated voice button slot (e.g. Voice Typing disabled in Gboard settings).
+            // Prefer the FrameLayout attachTarget (holderParent) so the narrow 44dp arrow docks
+            // cleanly on the right edge without covering the center words or swallowing double-taps.
+            ViewGroup fallbackTarget;
+            if (holderParent instanceof FrameLayout) {
+                fallbackTarget = holderParent;
+            } else if (headerContainer instanceof FrameLayout) {
+                fallbackTarget = headerContainer;
+            } else {
+                fallbackTarget = holderParent != null ? holderParent : headerContainer;
+            }
             if (fallbackTarget != null) {
                 ViewGroup arrowParent = parentViewGroup(currentJumpToEndArrow);
                 if (arrowParent != null) {
                     arrowParent.removeView(currentJumpToEndArrow);
                 }
+                ThiccTopBarGboardReflector.applyKeyboardBackground(currentJumpToEndArrow, holderView);
                 int width = (int) TypedValue.applyDimension(
                         TypedValue.COMPLEX_UNIT_DIP, 44f, context.getResources().getDisplayMetrics());
                 ViewGroup.LayoutParams lp;
                 if (fallbackTarget instanceof FrameLayout) {
-                    lp = new FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END | Gravity.CENTER_VERTICAL);
+                    lp = new FrameLayout.LayoutParams(
+                            width, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END | Gravity.CENTER_VERTICAL);
+                } else if (fallbackTarget instanceof android.widget.RelativeLayout) {
+                    android.widget.RelativeLayout.LayoutParams rlp =
+                            new android.widget.RelativeLayout.LayoutParams(
+                                    width, ViewGroup.LayoutParams.MATCH_PARENT);
+                    rlp.addRule(android.widget.RelativeLayout.ALIGN_PARENT_END);
+                    lp = rlp;
                 } else {
                     lp = new ViewGroup.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT);
                 }
@@ -2165,8 +2183,9 @@ public final class GboardThiccTopBarRuntime {
         try {
             View voiceBtn = getCurrentVoiceButton();
             if (voiceBtn != null) {
-                voiceBtn.setVisibility(View.VISIBLE);
+                voiceBtn.setVisibility(currentVoiceButtonOriginalVisibility);
                 currentVoiceButtonRef = null;
+                currentVoiceButtonOriginalVisibility = View.VISIBLE;
             }
             if (currentJumpToEndArrow != null) {
                 currentJumpToEndArrow.setVisibility(View.GONE);
